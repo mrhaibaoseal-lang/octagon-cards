@@ -7,6 +7,21 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P4-3 20 張牌組、5 張手牌自動翻面與 v0.3.0 完整 MMA 實機沙盒打包)
+- 完成 **P4-3 20 張牌組、5 張手牌抽補與進地面自動翻面切換 + iPhone 實機沙盒更新**：
+  - 新增 `Packages/OctagonCore/Sources/FightEngine/DeckHand.swift` 與 `DeckHandTests.swift`（共 55 項測試 / 9 大測試套件全過，run `41634265166`）：
+    - `DeckBuilder`：依選手流派（打擊手 / 摔角手 / 柔術家）自動生成 20 張出廠預設站立＋抱摔牌組，並驗證同名卡上限 `<= 3`、進攻卡 `>= 6`、格擋閃避卡 `>= 4`、移動卡 `>= 3` 與牌組點數預算。
+    - `HandManager`：站立時維持 5 張手牌（出完自動從抽牌堆補滿，抽牌堆用盡自動洗回棄牌堆；處於 `isRocked` 時保底含防守/移動卡）；一旦進入地面或發生位置轉移/掃技翻轉，**自動翻面為 5 張上位或下位地面專屬手牌**（保證涵蓋上/下位全部 4 種戰術意圖），起身後自動翻回站立手牌！
+  - 更新 `App/Sources/ContentView.swift` 與 `App/Sources/LungeDemoScene.swift`（版本提升至 `0.3.0 (3)`）：
+    - 頂部新增三種跨流派對戰秒切鈕（`🥊打擊 vs 🤼摔角`、`🥋柔術 vs 🤼摔角`、`🤼摔角 vs 🥊打擊`）。
+    - 新增 **地面 5 階位置進度條（1.全防守 ～ 5.背控）**、上下位身分標籤、消極計數（`X/3`）與 **2 階段鎖技對決緊迫進度條（Setup → Locked In!）**。
+    - 支援「`🃏 5張手牌抽補模式`」與「`📚 全部合法卡牌沙盒模式`」一鍵切換。
+    - SpriteKit 畫面支援進地面上下位纏鬥躺姿、地面砸拳（Posture Up & Slam）、掃技翻轉與鎖技脈動演出。
+  - 觸發 `build-unsigned-ipa.yml` 雲端打包成功（run `41634266609`），已下載最新未簽名 IPA 至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`。
+- **P0、P2、P3、P4 全數完成！** 下一棒可進入 **P1 資料管線（ufcstats 爬蟲 + 真實賽事表現動態升降 + 本機像素化）** 或 **ART-1 美術規範與第一批特效生圖**。
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P3-1 ~ P3-4 完整地面戰引擎與 P4-2 30 張抱摔/地面卡牌庫)
 - 完成 **P3-1 地面位置階層與站立抱摔橋樑**（`GroundPosition.swift`、`GroundPositionTests.swift`）：
   - 定義 5 大地面位置階層（`fullGuard` 全防守 → `halfGuard` 半防守 → `sideControl` 側控 → `fullMount` 騎乘 → `backControl` 背控）、上下位角色（`GroundRole`）與 `TakedownEngine.breakdown`（支援 `takedown` vs `takedownDefense`、近距離/籠邊/對手腿傷加成、下壓防摔 `Sprawl`、迎擊飛膝 `interceptKnee` 與順勢拉斷頭台 `jumpGuillotine`）。
