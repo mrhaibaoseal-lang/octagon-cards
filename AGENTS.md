@@ -9,8 +9,8 @@
 
 | 標籤 | 建議模型 | 負責 | 不做 |
 |---|---|---|---|
-| `[規劃]` | Claude Opus | 寫/改 `docs/` 設計文件、拆任務寫進 `docs/TASKS.md`、審查實作是否符合設計 | 不寫產品程式碼（小型驗證腳本可以） |
-| `[實作]` | Claude Sonnet | 依 `docs/TASKS.md` 的任務寫程式、測試、打包 | 不擅自改設計；發現設計有問題 → 記到 `docs/HANDOFF.md` 的「待規劃確認」 |
+| `[規劃]` | Claude Opus / Gemini 4 Argon | 寫/改 `docs/` 設計文件、拆任務寫進 `docs/TASKS.md`、審查實作是否符合設計 | 不寫產品程式碼（小型驗證腳本可以） |
+| `[實作]` | Claude Sonnet / Gemini 4 Argon | 依 `docs/TASKS.md` 的任務寫程式、測試、打包 | 不擅自改設計；發現設計有問題 → 記到 `docs/HANDOFF.md` 的「待規劃確認」 |
 | `[美術]` | 任一模型 + 生圖工具 | 依 `docs/ART_BRIEFS.md` 生成共用素材、放到 `art/`、更新清單 | 不為個別選手逐一生圖（見 RULES.md §2） |
 
 ## 2. 交接協議（共享記憶 = repo 裡的檔案，不是聊天紀錄）

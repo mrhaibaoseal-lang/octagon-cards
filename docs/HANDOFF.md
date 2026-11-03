@@ -14,7 +14,7 @@
 - 新增（`Packages/OctagonCore/Sources/FightEngine/`）：`Fighter.swift`（`FighterAttributes`、`Trait`、`Stance`、`Fighter`）、`Card.swift`（`CardType`、`Distance`、`HitTarget`、`CardTag`、`Card`）、`FightState.swift`（`Side`、`CagePosition`、`BodyHealth`、`FighterCondition`、`FightState`）、`SampleData.swift`（2 位範例選手、10 張範例卡，涵蓋 6 種類型）
 - 測試：`Tests/FightEngineTests/ModelTests.swift`（Sendable、Codable 往返、屬性夾限、10 張卡覆蓋全類型、狀態預設值）
 - 全部型別 `Sendable` + `Codable`；數值在 init 內夾限，Distance 可比較（遠 < 中 < 近）
-- 測試結果：本機無 Swift 工具鏈，**尚未編譯**，以 CI 結果為準（見下方 push 後的狀態）
+- 測試結果：CI `swift test` **通過**（run `41619680491`，42s）
 - 下一棒：P2-2 機率優勢表
 
 ---
