@@ -18,7 +18,7 @@
   - 測試單回合 8 次交手與角落恢復
   - 測試 150 場隨機/風格 AI 對戰同時涵蓋 KO/TKO 終結與三回合判定，且每手 `stateAfter.isValid` 不變量全過
   - 測試 `isRocked` 選牌限制與 `computeReadModifier` 連續重複出牌加成
-- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 測試結果：CI `swift test` **通過**（run `41623897541`，48s）
 - 下一棒：P2-6 平衡模擬器（命令列）＋ 20 萬次不變量壓力測試
 
 ---
