@@ -104,4 +104,31 @@ public struct FightState: Sendable, Codable, Hashable {
             }
         }
     }
+
+    /// Verifies that all numerical state fields are finite and within their legal bounds (0...100).
+    /// Returns an empty array when valid, or a list of human-readable violation descriptions.
+    public func validateInvariants() -> [String] {
+        var violations: [String] = []
+        for side in Side.allCases {
+            let cond = self[side]
+            let prefix = "Side.\(side.rawValue)"
+            for target in HitTarget.allCases {
+                let hp = cond.health[target]
+                if hp.isNaN || hp.isInfinite || hp < 0.0 || hp > BodyHealth.max {
+                    violations.append("\(prefix).health.\(target.rawValue) out of range: \(hp)")
+                }
+            }
+            if cond.stamina.isNaN || cond.stamina.isInfinite || cond.stamina < 0.0 || cond.stamina > FighterCondition.maxStamina {
+                violations.append("\(prefix).stamina out of range: \(cond.stamina)")
+            }
+            if cond.momentum.isNaN || cond.momentum.isInfinite || cond.momentum < 0.0 || cond.momentum > FighterCondition.maxMomentum {
+                violations.append("\(prefix).momentum out of range: \(cond.momentum)")
+            }
+        }
+        return violations
+    }
+
+    public var isValid: Bool {
+        validateInvariants().isEmpty
+    }
 }

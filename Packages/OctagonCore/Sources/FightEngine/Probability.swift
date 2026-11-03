@@ -15,6 +15,38 @@ public struct FighterPlay: Sendable, Codable, Hashable {
     }
 }
 
+/// Detailed breakdown of how a card's success probability was computed (`ExchangeLog` / Debug HUD).
+public struct OddsBreakdown: Sendable, Codable, Hashable {
+    public var base: Double
+    public var attributeModifier: Double
+    public var distanceModifier: Double
+    public var conditionModifier: Double
+    public var momentumModifier: Double
+    public var traitModifier: Double
+    public var readModifier: Double
+    public var finalOdds: Double
+
+    public init(
+        base: Double,
+        attributeModifier: Double = 0.0,
+        distanceModifier: Double = 0.0,
+        conditionModifier: Double = 0.0,
+        momentumModifier: Double = 0.0,
+        traitModifier: Double = 0.0,
+        readModifier: Double = 0.0,
+        finalOdds: Double
+    ) {
+        self.base = base
+        self.attributeModifier = attributeModifier
+        self.distanceModifier = distanceModifier
+        self.conditionModifier = conditionModifier
+        self.momentumModifier = momentumModifier
+        self.traitModifier = traitModifier
+        self.readModifier = readModifier
+        self.finalOdds = finalOdds
+    }
+}
+
 public enum Odds {
     public static let minimum = 0.05
     public static let maximum = 0.95
@@ -171,6 +203,41 @@ public enum Odds {
         return mod
     }
 
+    /// Computes the full `OddsBreakdown` for `my` play against `opp` play in `state`.
+    public static func breakdown(
+        my: FighterPlay,
+        opp: FighterPlay,
+        state: FightState,
+        readModifier: Double = 0.0
+    ) -> OddsBreakdown {
+        let base = baseProbability(my: my.card.type, against: opp.card.type)
+        let myCondition = state[my.side]
+        let oppCondition = state[opp.side]
+        let attrMod = attributeModifier(
+            myFighter: my.fighter, myCard: my.card,
+            oppFighter: opp.fighter, oppCard: opp.card
+        )
+        let distMod = distanceModifier(for: my.card, at: state.distance)
+        let condMod = conditionModifier(condition: myCondition, card: my.card)
+        let momMod = momentumModifier(myCondition: myCondition, oppCondition: oppCondition)
+        let traitMod = traitModifier(myFighter: my.fighter, myCard: my.card, oppFighter: opp.fighter)
+        let clampedRead = min(max(readModifier, -0.10), 0.10)
+        let finalOdds = resolve(
+            base: base,
+            modifiers: [attrMod, distMod, condMod, momMod, traitMod, clampedRead]
+        )
+        return OddsBreakdown(
+            base: base,
+            attributeModifier: attrMod,
+            distanceModifier: distMod,
+            conditionModifier: condMod,
+            momentumModifier: momMod,
+            traitModifier: traitMod,
+            readModifier: clampedRead,
+            finalOdds: finalOdds
+        )
+    }
+
     /// Full exchange odds resolution for `my` play against `opp` play in `state`, clamped to 5%...95%.
     public static func resolveOdds(
         my: FighterPlay,
@@ -178,25 +245,7 @@ public enum Odds {
         state: FightState,
         readModifier: Double = 0.0
     ) -> Double {
-        let base = baseProbability(my: my.card.type, against: opp.card.type)
-        let myCondition = state[my.side]
-        let oppCondition = state[opp.side]
-        let clampedRead = min(max(readModifier, -0.10), 0.10)
-
-        return resolve(
-            base: base,
-            modifiers: [
-                attributeModifier(
-                    myFighter: my.fighter, myCard: my.card,
-                    oppFighter: opp.fighter, oppCard: opp.card
-                ),
-                distanceModifier(for: my.card, at: state.distance),
-                conditionModifier(condition: myCondition, card: my.card),
-                momentumModifier(myCondition: myCondition, oppCondition: oppCondition),
-                traitModifier(myFighter: my.fighter, myCard: my.card, oppFighter: opp.fighter),
-                clampedRead,
-            ]
-        )
+        breakdown(my: my, opp: opp, state: state, readModifier: readModifier).finalOdds
     }
 
     /// Convenience overload when resolving directly from cards and optional fighters.

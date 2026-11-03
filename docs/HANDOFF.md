@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P2-4)
+- 完成 **P2-4 單次交手結算**
+- 修改 `Packages/OctagonCore/Sources/FightEngine/FightState.swift`：
+  - 新增 `validateInvariants() -> [String]` 與 `isValid: Bool`，強制檢查雙方三部位血量、體力、氣勢皆在 `0...100` 且無 `NaN`/`Infinite`
+- 修改 `Packages/OctagonCore/Sources/FightEngine/Probability.swift`：
+  - 新增 `OddsBreakdown` 與 `Odds.breakdown(my:opp:state:readModifier:)`，保留基準機率與 6 項修正明細
+- 新增 `Packages/OctagonCore/Sources/FightEngine/Exchange.swift`：
+  - 實作 `FinishReason`（`.ko`, `.tkoBody`, `.tkoLegs`）、`ExchangeFinish`、`ExchangeSideLog`、`ExchangeLog`、`ExchangeResult`
+  - 實作 `ExchangeEngine.resolve` 與頂層 `resolveExchange`：包含先後手有效速度判定、基礎傷害公式、6 大卡牌類型完整互動、先手 KO/Rocked 中斷後手機制、抗打檢定（Chin Check）觸發 `isRocked` 與下一手存活恢復機制
+- 新增 `Packages/OctagonCore/Tests/FightEngineTests/ExchangeTests.swift`：
+  - 涵蓋全部 6 種卡牌類型結算測試、Rocked 觸發與恢復測試、頭/身/腿三部位 KO/TKO 與中斷測試、連續 500 次隨機交手不變量自檢測試
+- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 下一棒：P2-5 一回合 & 一場比賽
+
+---
+
 ## 2026-11-03 · [規劃] Gemini 4 Argon (P2-4 規格與四道防錯驗收機制)
 - 針對「如何確保實際遊戲沒出錯、無隱藏 Bug」制定 **4 道防線**，並寫入 `docs/STRIKING_AND_DECK.md` §12 與 `docs/TASKS.md`：
   1. **透明算式戰報 `ExchangeLog`（P2-4）**：每次交手回傳完整的 `OddsBreakdown`（基準與各項加減成拆解）、RNG 原始骰值、傷害與狀態變化。
