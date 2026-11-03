@@ -239,7 +239,7 @@
 ### 12.2 六大卡牌類型結算數值
 
 - **基礎傷害公式（`baseDamage`）**：
-  - `raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.28`（約 `8–28` 點）
+  - `raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.265`（經 P2-6 一萬場模擬器校準）
   - 若出牌前體力 `< 40`：`raw *= 0.80`
   - 若攻方具 `.onePunch` 且 `card.power >= 75`：`raw *= 1.15`
 - **各類型效果**：
@@ -264,11 +264,13 @@
 
 - **Rocked 恢復**：交手開始時已處於 `isRocked == true` 的選手，若在本手結束時未被新打入 Rocked 且未倒下，則恢復為 `isRocked = false`。
 - **觸發 Rocked（抗打檢定 Chin Check）**：
-  - 當單次交手對 `head` 造成實際傷害 `>= 12.0`，且受擊後 `head < 65.0`（或單發傷害 `>= 18.0`）：
-  - `rockedOdds = Odds.resolve(base: 0.35, modifiers: [(damage - 12.0) * 0.02, (60.0 - Double(defender.attributes.chin)) * 0.005, defender.has(.ironChin) ? -0.15 : 0.0, defender.has(.glassChin) ? 0.15 : 0.0, attacker.has(.onePunch) ? 0.10 : 0.0])`
+  - 當單次交手對 `head` 造成實際傷害 `>= 12.0` 且受擊後 `head < 55.0`（或單發傷害 `>= 18.0`）：
+  - `rockedOdds = Odds.resolve(base: 0.22, modifiers: [(damage - 12.0) * 0.02, (60.0 - Double(defender.attributes.chin)) * 0.005, defender.has(.ironChin) ? -0.15 : 0.0, defender.has(.glassChin) ? 0.15 : 0.0, attacker.has(.onePunch) ? 0.10 : 0.0])`
   - 若 `rng.roll(probability: rockedOdds)` 為真，守方進入 `isRocked = true`（氣勢額外 `-10`）。
-- **直接終結（Finish）**：
+- **直接終結（Finish）与身體/腿部特殊 TKO 檢定**：
   - 任一部位血量歸零（`head <= 0` → `.ko`，`body <= 0` → `.tkoBody`，`legs <= 0` → `.tkoLegs`），交手立即以終結結束。
+  - **肝擊痙攣檢定（Liver Shot Fold）**：當打中 `.body` 實際傷害 `>= 11.0` 且受擊後 `body < 78.0`、`stamina < 82.0` 時，以 `Odds.resolve(base: 0.07, modifiers: ...)` 檢定是否直接癱倒觸發 `.tkoBody`。
+  - **支撐腿踢垮檢定（Leg Kick Buckle）**：當打中 `.legs` 實際傷害 `>= 11.0` 且受擊後 `legs < 48.0` 時，以 `Odds.resolve(base: 0.08, modifiers: ...)` 檢定是否直接失去站立能力觸發 `.tkoLegs`。
 
 ### 12.4 四道防錯與實機除錯機制（Quality & Debug Architecture）
 
