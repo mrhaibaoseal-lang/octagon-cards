@@ -3,7 +3,50 @@
 > 每次收工在**最上方**新增一筆。下一棒開工先讀最上面 2–3 筆。
 
 ## 待規劃確認
-- （目前無）
+- **P2-6 一萬場平衡模擬數據供 `[規劃]` 檢視**：
+  - 終結率（40.1%–44.0%）與判定率（56.0%–59.9%）、場均 Rocked 次數（2.23–2.47 次/場，完全落在設計目標 1–3 次內）皆非常貼近真實 UFC 分布。
+  - 因為 `SampleData.cards` 的 5 張打擊卡有 3 張打頭（加反擊鉤拳共 4 張打頭），僅 1 張打身、1 張打腿，所以直接靠身體/腿部歸零 TKO 的比例較低（0.2%–0.4%），主要發揮「削弱回氣」與「扣移動/閃避命中」的輔助效果。若希望提升肝擊/低掃 TKO 率，可在擴充 40 張卡牌庫時增加身體與腿部重擊卡或調整肝擊低體力終結門檻。
+
+---
+
+## 2026-11-03 · [實作] Gemini 4 Argon (P2-6)
+- 完成 **P2-6 平衡模擬器（命令列）＋ 40 萬次交手不變量壓力測試**
+- 修改 `Packages/OctagonCore/Package.swift` 與 `.github/workflows/ci.yml`：新增 `Simulate` 可執行目標，並在 CI 自動執行 `swift run Simulate --games 10000`
+- 新增 `Packages/OctagonCore/Sources/FightEngine/Simulation.swift`、`Sources/Simulate/main.swift`、`Tests/FightEngineTests/SimulationTests.swift`
+- **CI 實測輸出（run `41624691714`，共 20,000 場、432,401 次交手，`Invariant Violations: 0`）**：
+
+```text
+=== OctagonCore Balance Simulator — RandomAI vs RandomAI (10000 games) ===
+Games: 10000 | Total Exchanges: 217192 (avg 21.7/game) | Invariant Violations: 0
+Fighter Win Rate: Side A (Sample Striker)  69.1% (6912) | Side B (Sample Wrestler)  25.4% (2540) | Draw   5.5% (548)
+Outcomes: Total Finish  40.1% [Head KO  39.8% (3984), Body TKO   0.2% (20), Legs TKO   0.0% (3)] | Decision  59.9% (5993)
+Drama: Total Rocked 22270 (avg 2.23/game)
+
+| CardType | Played | Usage % | Effect Success % | Match Win % (when played) | Avg Dmg/Play |
+|---|---:|---:|---:|---:|---:|
+| strike  | 211283 |  48.6% |  44.1% |  48.9% |   7.24 |
+| block   |  47172 |  10.9% |  41.9% |  42.7% |   0.00 |
+| evade   |  49002 |  11.3% |  51.9% |  45.1% |   0.00 |
+| counter |  39112 |   9.0% |  26.5% |  51.1% |   7.50 |
+| feint   |  41204 |   9.5% |  39.2% |  46.2% |   0.00 |
+| move    |  46611 |  10.7% |  48.2% |  41.7% |   0.00 |
+
+=== OctagonCore Balance Simulator — StyleAI vs StyleAI (10000 games) ===
+Games: 10000 | Total Exchanges: 215209 (avg 21.5/game) | Invariant Violations: 0
+Fighter Win Rate: Side A (Sample Striker)  69.5% (6955) | Side B (Sample Wrestler)  25.8% (2578) | Draw   4.7% (467)
+Outcomes: Total Finish  44.0% [Head KO  43.5% (4355), Body TKO   0.0% (0), Legs TKO   0.4% (45)] | Decision  56.0% (5600)
+Drama: Total Rocked 24731 (avg 2.47/game)
+
+| CardType | Played | Usage % | Effect Success % | Match Win % (when played) | Avg Dmg/Play |
+|---|---:|---:|---:|---:|---:|
+| strike  | 203078 |  47.2% |  48.4% |  49.5% |   7.81 |
+| block   |  22094 |   5.1% |  47.2% |  43.2% |   0.00 |
+| evade   |  62008 |  14.4% |  48.8% |  43.7% |   0.00 |
+| counter |  27561 |   6.4% |  34.5% |  58.4% |   9.83 |
+| feint   |  51666 |  12.0% |  37.4% |  45.9% |   0.00 |
+| move    |  64011 |  14.9% |  49.3% |  42.3% |   0.00 |
+```
+- 下一棒：P2-7 iPhone 站立實機沙盒與 Debug 戰報抽屜（含打包 IPA）
 
 ---
 
