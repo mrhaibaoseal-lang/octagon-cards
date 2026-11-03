@@ -15,7 +15,7 @@
 - 新增 `Packages/OctagonCore/Tests/FightEngineTests/RandomTests.swift`：
   - 驗證同 seed 連續 1,000 次 `next()` / `nextUnit()` 與 500 次 `roll(probability:)` 完全一致
   - 驗證不同 seed 序列不同、`0.0..<1.0` 範圍、`0%`/`100%` 輸入受 `Odds.clamp` 保護不會必中或必敗、中途 `Codable` 序列化後還原狀態一致
-- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 測試結果：CI `swift test` **通過**（run `41621269686`，49s）
 - 下一棒：P2-4 單次交手結算
 
 ---
