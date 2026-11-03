@@ -86,6 +86,8 @@ public struct FightState: Sendable, Codable, Hashable {
     public var b: FighterCondition
     /// Non-nil when the fight is on the ground (`docs/GROUND_GAME_DESIGN.md` §2).
     public var ground: GroundState?
+    /// Current round number (1-indexed; used for round sweat/grip modifiers in `GROUND_GAME_DESIGN.md` §4).
+    public var round: Int
 
     public var isGrounded: Bool { ground != nil }
 
@@ -93,12 +95,14 @@ public struct FightState: Sendable, Codable, Hashable {
         distance: Distance = .long,
         a: FighterCondition = FighterCondition(),
         b: FighterCondition = FighterCondition(),
-        ground: GroundState? = nil
+        ground: GroundState? = nil,
+        round: Int = 1
     ) {
         self.distance = distance
         self.a = a
         self.b = b
         self.ground = ground
+        self.round = Swift.max(round, 1)
     }
 
     public subscript(side: Side) -> FighterCondition {
@@ -130,6 +134,12 @@ public struct FightState: Sendable, Codable, Hashable {
             if cond.momentum.isNaN || cond.momentum.isInfinite || cond.momentum < 0.0 || cond.momentum > FighterCondition.maxMomentum {
                 violations.append("\(prefix).momentum out of range: \(cond.momentum)")
             }
+        }
+        if round < 1 {
+            violations.append("round out of range: \(round)")
+        }
+        if let g = ground, g.stallCount < 0 {
+            violations.append("ground.stallCount out of range: \(g.stallCount)")
         }
         return violations
     }
