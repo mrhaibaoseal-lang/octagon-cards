@@ -17,7 +17,9 @@
   - 移動 `move`（3 張）：前進逼近（`preferredDistance: .close`）、滑步後撤（`preferredDistance: .long`）、推開脫離（`preferredDistance: .mid`）
 - 修改 `Card.swift` 與 `Exchange.swift`：新增 `preferredDistance` 讓前進卡與後撤卡能精準往目標距離推進/拉開
 - 修改 `Simulation.swift` 與 `App/Sources/ContentView.swift`：預設使用完整 28 張站立牌庫，並在 iPhone UI 加入「只看適用距離 / 顯示全部 (28)」快速篩選鈕
-- 測試結果：已推送至 GitHub Actions CI 執行單元測試與 10,000 場模擬器驗證
+- 測試結果：CI 單元測試（34 tests）與 28 張卡 20,000 場模擬器 **全數通過**（run `41629406277`，430,810 次交手 `0 違規`）：
+  - `StyleAI vs StyleAI`：總終結率 `46.8%`（**頭部 KO `42.3%`、身體肝擊/膝撞 TKO `2.8%`、低掃/卡夫踢腿部 TKO `1.7%`**）、判定率 `53.2%`、場均 Rocked `1.89` 次、打擊命中率 `46.7%`！擴充前踢/中段踢/箍頸膝撞與卡夫踢後，身體與腿部 TKO 自然落入真實 UFC 的 ~2%–3% 黃金區間！
+- 下一棒：P3-1 地面位置階層與站立抱摔橋樑（或 P4-2 抱摔與地面卡牌庫）
 
 ---
 
