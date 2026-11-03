@@ -7,6 +7,23 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P3-1 ~ P3-4 完整地面戰引擎與 P4-2 30 張抱摔/地面卡牌庫)
+- 完成 **P3-1 地面位置階層與站立抱摔橋樑**（`GroundPosition.swift`、`GroundPositionTests.swift`）：
+  - 定義 5 大地面位置階層（`fullGuard` 全防守 → `halfGuard` 半防守 → `sideControl` 側控 → `fullMount` 騎乘 → `backControl` 背控）、上下位角色（`GroundRole`）與 `TakedownEngine.breakdown`（支援 `takedown` vs `takedownDefense`、近距離/籠邊/對手腿傷加成、下壓防摔 `Sprawl`、迎擊飛膝 `interceptKnee` 與順勢拉斷頭台 `jumpGuillotine`）。
+- 完成 **P3-2 上下位 4×4 讀心矩陣與掃技翻轉** & **P3-3 2 階段降伏鎖技對決**（`GroundExchange.swift`、`GroundExchangeTests.swift`）：
+  - 資料驅動 4×4 上下位機率表（`GroundOdds.topBaseTable` / `bottomBaseTable`）：上位 `Advance` / `GnP` / `Submission` / `Smother` vs 下位 `Frame` / `Escape` / `SweepOrSub` / `Shell`，所有機率嚴格經過 `Odds.resolve`（`5%–95%`）。
+  - 實作 **Khabib 式重壓完封起身**（`.smother` vs `.escape` 抽乾下位 11 點體力並回體）、**Oliveira 式抓砸拳大逆轉**（下位 `.sweepOrSub` 抓上位 `.gnp` 撐高瞬間，觸發蝴蝶掃翻轉上下位或直接鎖入下位三角絞/十字固），以及 **連續 3 次消極裁判強制分開（Referee Stand Up）**。
+  - 實作 **2 階段降伏鎖技系統**（`SubmissionHold`：`Setup` 抓把位 → `LockedIn` 深鎖 → `.submission` 拍墊投降），納入第 1 回合乾澀加成、第 3 回合流汗滑脫（關節技 `-6%`）與低體力絞技加成（對手體力 `<35` 時絞技 `+10%`）。
+- 完成 **P4-2 抱摔與地面卡牌庫（30 張，`SampleData.grapplingAndGroundCards`）**：
+  - 8 張站立抱摔/防摔反制卡 + 10 張上位推進/重壓/砸拳卡 + 6 張核心降伏卡（RNC、斷頭台、肩固/達斯絞、木村鎖、三角絞、十字固）+ 6 張下位防禦/蝦行/扶籠起身/蝴蝶掃卡；全庫合計 **58 張 MMA 卡牌（`SampleData.allCards`）**。
+- 完成 **P3-4 綜合 MMA 模擬器（26,666 場 / 559,305 次交手 `0 違規`）**（CI run `41632824319`，53 tests in 8 suites 全過）：
+  - **打擊手 vs 摔角手（10,000 場 StyleAI）**：勝率從純站立時的 `84% vs 16%` 逆轉為 **46.3% 打擊手 vs 46.2% 摔角手（五五開！）**，場均抱摔 `1.49` 次、地面佔比 `26.4%`、KO/TKO `31.5%`、降伏 `7.4%`、判定 `61.1%`。
+  - **摔角手 vs 柔術家（3,333 場 StyleAI）**：**柔術家 52.2% vs 摔角手 40.7%**（地面佔比 `30.3%`、降伏率 `19.8%`、掃技翻轉 `946` 次），完美呈現柔術家在下位反制摔角手。
+  - **柔術家 vs 打擊手（3,333 場 StyleAI）**：**打擊手 51.5% vs 柔術家 44.0%**（地面佔比降至 `16.3%`、KO/TKO 率 `36.5%`），打擊手靠防摔將比賽留在站立擊敗柔術家，形成完整 **「摔角手 ⇄ 打擊手 ⇄ 柔術家」三角相剋**！
+- 下一棒：P4-3（20 張牌組、5 張手牌抽補與進地面自動翻面切換 + iPhone 實機沙盒更新與打包 IPA）
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P4-1 站立核心卡牌庫擴充 28 張)
 - 完成 **P4-1 站立核心卡牌庫擴充（共 28 張，`SampleData.standingCards`）**：
   - 進攻 `strike`（16 張）：刺拳、前踢、小腿卡夫踢、低掃、側踹、超人拳、高踢、直拳、左鉤拳、上鉤拳、過肩重拳、肝臟鉤拳、中段掃踢、貼身橫肘、箍頸膝撞、內圍髒拳
