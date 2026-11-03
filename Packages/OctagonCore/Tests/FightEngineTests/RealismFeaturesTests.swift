@@ -40,7 +40,7 @@ struct RealismFeaturesTests {
             ground: GroundState(topSide: .a, position: .fullMount)
         )
         let gnpElbowPlay = FighterPlay(fighter: SampleData.wrestler, card: SampleData.groundElbows, side: .a)
-        let botEscapePlay = FighterPlay(fighter: SampleData.striker, card: SampleData.hipEscape, side: .b)
+        let botEscapePlay = FighterPlay(fighter: SampleData.striker, card: SampleData.shrimpEscape, side: .b)
         var groundCutTriggered = false
         for seed in UInt64(1)...2_000 {
             var rng = SeededRNG(seed: seed)
@@ -56,9 +56,9 @@ struct RealismFeaturesTests {
 
         // 4. Cutman reduces cutSeverity by 1 level per round break (`2 -> 1 -> 0`)
         var cornerState = FightState(
+            distance: .close,
             a: FighterCondition(cutSeverity: 2),
             b: FighterCondition(cutSeverity: 1),
-            distance: .close,
             isClinch: true
         )
         FightMatchEngine.applyCornerRecovery(
@@ -116,7 +116,7 @@ struct RealismFeaturesTests {
         // Verify Clinch modifiers on Knees/Elbows (+bonus), Kicks (-penalty), and Clinch Trips (+bonus)
         let elbowPlay = FighterPlay(fighter: SampleData.wrestler, card: SampleData.closeElbow, side: .a)
         let kickPlay = FighterPlay(fighter: SampleData.striker, card: SampleData.lowKick, side: .b)
-        let tripPlay = FighterPlay(fighter: SampleData.wrestler, card: SampleData.bodyLockTrip, side: .a)
+        let tripPlay = FighterPlay(fighter: SampleData.wrestler, card: SampleData.cageTrip, side: .a)
 
         let elbowNonClinch = Odds.breakdown(my: elbowPlay, opp: feintPlay, state: closeState).finalOdds
         let elbowInClinch = Odds.breakdown(my: elbowPlay, opp: feintPlay, state: clinchState).finalOdds
@@ -158,7 +158,7 @@ struct RealismFeaturesTests {
             tdB: GroundPosition? = nil,
             advB: GroundPosition? = nil
         ) -> ExchangeLog {
-            var logA = ExchangeSideLog(
+            let logA = ExchangeSideLog(
                 side: .a, card: SampleData.cross, odds: baseOdds, roll: 0.2, succeeded: dmgA > 0,
                 damageDealt: dmgA, targetHit: dmgA > 0 ? .head : nil
             )
@@ -169,7 +169,6 @@ struct RealismFeaturesTests {
             )
             logB.takedownLanded = tdB
             logB.positionAdvancedTo = advB
-            _ = logA
             return ExchangeLog(
                 firstSide: .a,
                 stateBefore: endState,
