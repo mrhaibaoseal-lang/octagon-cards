@@ -7,6 +7,18 @@
 
 ---
 
+## 2026-11-04 · [實作] Claude Sonnet 5.5 (穩定化檢查：驗證 v0.5.0 CI／IPA／資料管線)
+- **驗證結果（皆為實測）**：
+  - CI run `41681778781`（commit `9b33c70`）✅ 通過：**64 tests / 11 suites** 全過，`Simulate --games 10000` 通過。
+  - IPA 打包 run `41681781720`（同為 `9b33c70`）✅ 成功；`dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa` 為此版本（v0.5.0）。
+  - `pipeline/`：`ruff check --select UP,E,F,I` 與 `ruff format --check` 全過、`pytest` 4 passed。
+  - repo 衛生：無 `.ipa`/照片/`.xcodeproj` 被追蹤；`data/fighters.json` 32 人，與 `RealUFCRoster.swift` 一致。
+- **修正**：`RealismFeaturesTests.swift:8` 的 `var cond` 改 `let`（CI 唯一的編譯警告）。
+- **已知但不處理**：`pipeline/.venv` 內舊的 `octagon_pipeline.pth` 指向不存在的 `src`（只在本機 .venv，已 gitignore，無影響）。
+- **待使用者**：用 FlareStore 安裝 v0.5.0 實機試玩（尤其是首次選角時的官方照下載＋像素化、離線 fallback），把問題回報到這裡。
+
+---
+
 ## 2026-11-04 · [實作] Gemini 4 Argon (P1-1 ~ P1-3 真實 UFC 選手資料管線、Elo 動態能力值換算與 iPhone 本機官方照自動像素化 v0.5.0)
 - **完成 P1-1 真實 UFC 爬蟲管線（`pipeline/models.py`、`pipeline/scrape_ufcstats.py` → `data/raw_ufcstats.json`）**：
   - 使用現代 Python 工具鏈（`uv` + `httpx` + `beautifulsoup4` + `Pydantic v2` + `ruff`），從 `ufc.com/rankings` 與 `ufc.com/athlete/<slug>`（含分頁歷史戰績 `?page=0..2`）自動抓取 **32 位跨量級真實 UFC 頂尖選手**：

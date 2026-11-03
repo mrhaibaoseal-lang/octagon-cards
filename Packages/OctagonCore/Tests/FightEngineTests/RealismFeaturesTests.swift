@@ -5,7 +5,7 @@ import Testing
 struct RealismFeaturesTests {
     @Test func cutAndBleedingSystemWorksWithVisionPenaltyCutmanAndDoctorStoppage() {
         // 1. Vision penalty (-3% per cutSeverity level on strike / counter / evade, 0% on block)
-        var cond = FighterCondition(cutSeverity: 2)
+        let cond = FighterCondition(cutSeverity: 2)
         #expect(cond.isBleeding)
         let strikeMod = Odds.conditionModifier(condition: cond, card: SampleData.jab)
         let counterMod = Odds.conditionModifier(condition: cond, card: SampleData.counterHook)
