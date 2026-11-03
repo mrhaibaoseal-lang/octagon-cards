@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-11-04 · [實作] Claude Opus 5.5 (首次啟動一次下載全名單像素圖 v0.5.1)
+- **需求（使用者）**：第一次進遊戲就把所有選手圖一次抓好，之後每場不用重載。
+- **修改 `App/Sources/FighterPixelSpriteService.swift`**：
+  - 新增 `prefetchAll(_:maxConcurrent:onProgress:)`：最多同時 4 個下載，已存在的圖直接略過；回傳 `PrefetchProgress`（完成數/總數/失敗數）。
+  - 新增 `missingSpriteCount(in:)` / `hasCachedSprite(for:kind:)`；沒有官方照網址的選手不算「缺圖」（避免每次都重試）。
+  - 快取改存 `Application Support/PixelSprites_v1/`（原本 `Caches` 會被 iOS 在空間不足時清掉→要重新下載），排除 iCloud 備份；啟動時自動把 v0.5.0 舊的 Caches 資料夾搬過去。
+  - 同一張圖同時被要求時共用同一個下載（`inFlight` 去重）；下載＋像素化改在 `Task.detached` 跑，不卡住 actor。
+  - 剪影 fallback 改存獨立的 `fallbackCache`，之後連上網仍會換成真圖。
+- **修改 `App/Sources/ContentView.swift`**：
+  - `.task` 啟動時檢查缺圖 → **只在第一次**跳出全螢幕進度（`@AppStorage("rosterPrefetchCompletedOnce")`），可按「背景下載，先開始玩」；之後若有新選手/先前失敗的圖，只在頂部顯示小膠囊進度。
+  - 完成後自動 `refreshPixelSprites()` 把畫面上的剪影換成真圖；有失敗時提供「重試失敗的 N 張」。
+- `project.yml` → `0.5.1 (6)`。
+- **測試結果**：CI run `41687877472` ✅；IPA run `41687877543` ✅，App 層無編譯警告；已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`。
+  - （run `41687167297` 顯示 failure：macOS runner 排隊容量不足，job 沒有實際執行；同一修正已包含在 `41687877472` 並通過。）
+- **待使用者實測**：首次啟動進度畫面、背景下載膠囊、斷網時的重試按鈕、第二次啟動是否完全不再下載。
+
+---
+
 ## 2026-11-04 · [實作] Claude Sonnet 5.5 (穩定化檢查：驗證 v0.5.0 CI／IPA／資料管線)
 - **驗證結果（皆為實測）**：
   - CI run `41681778781`（commit `9b33c70`）✅ 通過：**64 tests / 11 suites** 全過，`Simulate --games 10000` 通過。
