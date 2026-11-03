@@ -132,7 +132,30 @@ struct ExchangeTests {
     @Test func heavyHeadStrikeTriggersRockedAndRecoversNextExchange() {
         var state = FightState(distance: .mid)
         state.b.health.head = 55.0
-        // Striker's cross (speed 65) is faster than Wrestler's headKick (speed 35), so A acts first.
+
+        // Case 1 (Original): A throws slow headKick (speed 35) vs B's fast feintStep (speed 80).
+        // B acts first (not interrupted), then A's headKick lands second and still rocks B!
+        let slowKickA = FighterPlay(fighter: SampleData.striker, card: SampleData.headKick, side: .a)
+        let fastFeintB = FighterPlay(fighter: SampleData.wrestler, card: SampleData.feintStep, side: .b)
+        var slowKickRocked: ExchangeResult? = nil
+        for seed in UInt64(1)...5_000 {
+            var rng = SeededRNG(seed: seed)
+            let res = resolveExchange(a: slowKickA, b: fastFeintB, state: state, rng: &rng)
+            if res.log.a.inflictedRocked {
+                slowKickRocked = res
+                break
+            }
+        }
+        guard let case1 = slowKickRocked else {
+            Issue.record("Expected slow headKick to trigger Rocked on B")
+            return
+        }
+        #expect(case1.log.firstSide == .b)
+        #expect(!case1.log.b.wasInterrupted)
+        #expect(case1.state.b.isRocked)
+
+        // Case 2: A throws faster cross (speed 65) vs B's slower headKick (speed 35).
+        // A acts first, rocks B, and interrupts B's slower headKick before it can land!
         let playA = FighterPlay(fighter: SampleData.striker, card: SampleData.cross, side: .a)
         let playB = FighterPlay(fighter: SampleData.wrestler, card: SampleData.headKick, side: .b)
 
@@ -153,6 +176,7 @@ struct ExchangeTests {
         #expect(rocked.log.firstSide == .a)
         #expect(rocked.state.b.isRocked)
         #expect(rocked.log.b.wasInterrupted)
+        #expect(rocked.log.b.damageDealt == 0)
 
         // Next exchange: B blocks and survives without being newly rocked -> recovers from Rocked
         var rng2 = SeededRNG(seed: 42)
