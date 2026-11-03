@@ -18,7 +18,7 @@
   - 實作 `ExchangeEngine.resolve` 與頂層 `resolveExchange`：包含先後手有效速度判定、基礎傷害公式、6 大卡牌類型完整互動、先手 KO/Rocked 中斷後手機制、抗打檢定（Chin Check）觸發 `isRocked` 與下一手存活恢復機制
 - 新增 `Packages/OctagonCore/Tests/FightEngineTests/ExchangeTests.swift`：
   - 涵蓋全部 6 種卡牌類型結算測試、Rocked 觸發與恢復測試、頭/身/腿三部位 KO/TKO 與中斷測試、連續 500 次隨機交手不變量自檢測試
-- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 測試結果：CI `swift test` **通過**（run `41622958026`，32 tests in 4 suites 全過）
 - 下一棒：P2-5 一回合 & 一場比賽
 
 ---
