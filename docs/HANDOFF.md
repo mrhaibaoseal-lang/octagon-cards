@@ -7,6 +7,22 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P2-5)
+- 完成 **P2-5 一回合 & 一場比賽**
+- 新增 `Packages/OctagonCore/Sources/FightEngine/FightMatch.swift`：
+  - 定義 `RoundScore`、`RoundLog`、`MatchOutcome`（`.finish` / `.decision` / `.draw`）、`FightMatchConfig` 與 `MatchResult`（全結構 `Sendable` + `Codable`，整場對戰可直接序列化為 JSON 重播包）
+  - 實作 `FighterAI` 協定與兩種內建 AI：`RandomAI`（均勻隨機）與 `StyleAI`（依距離適性、體力狀況、選手特性加權），皆遵守 `isRocked` 狀態下僅能選防守/閃避/移動卡的限制
+  - 實作 `FightMatchEngine`：單回合 8 次交手迴圈（`runRound`）、3 回合完整比賽迴圈（`runMatch`）、回合間角落體力恢復（受 `cardio`、`.gasTank` 與身體血量 `health.body` 影響）、讀心加成累計（`computeReadModifier`）與簡化版 10-Point Must 裁判計分（`scoreRound`，支援 10-9、10-8、10-10）
+- 新增 `Packages/OctagonCore/Tests/FightEngineTests/FightMatchTests.swift`：
+  - 測試同 `seed` 跑兩場 `MatchResult` 100% 一致與 JSON `Codable` 往返
+  - 測試單回合 8 次交手與角落恢復
+  - 測試 150 場隨機/風格 AI 對戰同時涵蓋 KO/TKO 終結與三回合判定，且每手 `stateAfter.isValid` 不變量全過
+  - 測試 `isRocked` 選牌限制與 `computeReadModifier` 連續重複出牌加成
+- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 下一棒：P2-6 平衡模擬器（命令列）＋ 20 萬次不變量壓力測試
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P2-4)
 - 完成 **P2-4 單次交手結算**
 - 修改 `Packages/OctagonCore/Sources/FightEngine/FightState.swift`：
