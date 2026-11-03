@@ -7,6 +7,19 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P2-3)
+- 完成 **P2-3 可重現的亂數**
+- 新增 `Packages/OctagonCore/Sources/FightEngine/SeededRNG.swift`：
+  - 實作 `SeededRNG`（採用 SplitMix64 演算法，符合 `RandomNumberGenerator`、`Sendable`、`Codable`、`Hashable`）
+  - 提供 `nextUnit() -> Double`（`0.0 ..< 1.0`）與 `roll(probability: Double) -> Bool`（自動經 `Odds.clamp` 夾限至 `5%...95%`）
+- 新增 `Packages/OctagonCore/Tests/FightEngineTests/RandomTests.swift`：
+  - 驗證同 seed 連續 1,000 次 `next()` / `nextUnit()` 與 500 次 `roll(probability:)` 完全一致
+  - 驗證不同 seed 序列不同、`0.0..<1.0` 範圍、`0%`/`100%` 輸入受 `Odds.clamp` 保護不會必中或必敗、中途 `Codable` 序列化後還原狀態一致
+- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 下一棒：P2-4 單次交手結算
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon
 - 完成 **P2-2 機率優勢表**
 - 修改 `Packages/OctagonCore/Sources/FightEngine/Probability.swift`：
