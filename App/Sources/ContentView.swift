@@ -3,11 +3,53 @@ import SwiftUI
 import UIKit
 import FightEngine
 
+enum SandboxMatchup: Int, CaseIterable, Identifiable {
+    case strikerVsWrestler = 0
+    case bjjVsWrestler = 1
+    case wrestlerVsStriker = 2
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .strikerVsWrestler: "🥊打擊 vs 🤼摔角"
+        case .bjjVsWrestler: "🥋柔術 vs 🤼摔角"
+        case .wrestlerVsStriker: "🤼摔角 vs 🥊打擊"
+        }
+    }
+
+    var playerFighter: Fighter {
+        switch self {
+        case .strikerVsWrestler: SampleData.striker
+        case .bjjVsWrestler: SampleData.bjjFighter
+        case .wrestlerVsStriker: SampleData.wrestler
+        }
+    }
+
+    var aiFighter: Fighter {
+        switch self {
+        case .strikerVsWrestler: SampleData.wrestler
+        case .bjjVsWrestler: SampleData.wrestler
+        case .wrestlerVsStriker: SampleData.striker
+        }
+    }
+}
+
 struct ContentView: View {
+    @State private var matchup: SandboxMatchup = .strikerVsWrestler
     @State private var scene = LungeDemoScene(size: CGSize(width: 390, height: 165))
     @State private var seed: UInt64 = UInt64.random(in: 1...999_999)
     @State private var rng = SeededRNG(seed: 2026)
     @State private var state = FightState()
+    @State private var playerHand: HandManager = {
+        var initRng = SeededRNG(seed: 2026)
+        return HandManager(side: .a, fighter: SampleData.striker, rng: &initRng)
+    }()
+    @State private var aiHand: HandManager = {
+        var initRng = SeededRNG(seed: 2027)
+        return HandManager(side: .b, fighter: SampleData.wrestler, rng: &initRng)
+    }()
+    @State private var useFiveCardHandMode: Bool = true
     @State private var currentRound: Int = 1
     @State private var currentExchange: Int = 1
     @State private var roundHistory: [ExchangeLog] = []
@@ -15,12 +57,10 @@ struct ContentView: View {
     @State private var replayExchanges: [FightReplayExchange] = []
     @State private var matchOutcome: MatchOutcome? = nil
     @State private var showDebugDrawer: Bool = true
-    @State private var filterEffectiveOnly: Bool = false
     @State private var copiedToast: Bool = false
 
-    private let fighterA = SampleData.striker
-    private let fighterB = SampleData.wrestler
-    private let deck = SampleData.standingCards
+    private var fighterA: Fighter { matchup.playerFighter }
+    private var fighterB: Fighter { matchup.aiFighter }
     private let ai = StyleAI()
     private let totalRounds = 3
     private let exchangesPerRound = 8
@@ -29,10 +69,14 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 10) {
                 headerBar
+                matchupPickerBar
                 scoreboardStrip
                 SpriteView(scene: scene, options: [.ignoresSiblingOrder])
                     .frame(height: 165)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                if let ground = state.ground {
+                    groundStatusBanner(ground)
+                }
                 fightersHUD
 
                 if let outcome = matchOutcome {
@@ -53,14 +97,14 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Header & Scoreboard
+    // MARK: - Header & Matchup Picker
 
     private var headerBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("OCTAGON CARDS · P2 沙盒")
+                Text("OCTAGON CARDS · P4 完整 MMA")
                     .font(.system(.subheadline, design: .monospaced, weight: .heavy))
-                Text("R\(currentRound)/\(totalRounds) · 交手 \(currentExchange)/\(exchangesPerRound) · \(distanceLabel(state.distance))")
+                Text("R\(currentRound)/\(totalRounds) · 交手 \(currentExchange)/\(exchangesPerRound) · \(phaseSummaryText)")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -85,6 +129,25 @@ struct ContentView: View {
         }
     }
 
+    private var matchupPickerBar: some View {
+        HStack(spacing: 6) {
+            ForEach(SandboxMatchup.allCases) { m in
+                Button {
+                    matchup = m
+                    startNewMatch(withSeed: UInt64.random(in: 1...999_999))
+                } label: {
+                    Text(m.label)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity)
+                        .background(matchup == m ? Color.blue.opacity(0.35) : Color.white.opacity(0.07))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private var scoreboardStrip: some View {
         HStack(spacing: 8) {
             Text("Seed: #\(seed)")
@@ -102,6 +165,69 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Ground & Submission Chain Banner
+
+    private func groundStatusBanner(_ ground: GroundState) -> some View {
+        let isPlayerTop = (ground.topSide == .a)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("🥋 地面階段 · \(ground.position.displayName)")
+                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                    .foregroundStyle(.cyan)
+                Spacer()
+                Text(isPlayerTop ? "🟢 玩家上位 (Top)" : "🔴 玩家下位 (Bottom)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background((isPlayerTop ? Color.green : Color.orange).opacity(0.25))
+                    .clipShape(Capsule())
+                Text("消極 \(ground.stallCount)/3")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            // Positional hierarchy indicator (1..5)
+            HStack(spacing: 4) {
+                ForEach(GroundPosition.allCases, id: \.rawValue) { pos in
+                    let active = (pos == ground.position)
+                    Text("\(pos.rawValue).\(shortPositionName(pos))")
+                        .font(.system(size: 9, weight: active ? .heavy : .regular, design: .monospaced))
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity)
+                        .background(active ? Color.cyan.opacity(0.35) : Color.white.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+            }
+
+            if let hold = ground.activeSubmission {
+                let attLabel = hold.attackerSide == .a ? "🟢 玩家發動" : "🔴 AI 發動"
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text("🔒 鎖技對決：【\(hold.name)】(\(attLabel))")
+                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(.yellow)
+                        Spacer()
+                        Text(hold.stage == .lockedIn ? "🔥 階段 2/2 深鎖 (再贏即投降!)" : "階段 1/2 抓把位 (Setup)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(hold.stage == .lockedIn ? .orange : .yellow)
+                    }
+                    ProgressView(value: hold.stage == .lockedIn ? 0.85 : 0.45)
+                        .tint(hold.stage == .lockedIn ? .red : .yellow)
+                }
+                .padding(6)
+                .background(Color.red.opacity(0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+        }
+        .padding(8)
+        .background(Color.cyan.opacity(0.10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.cyan.opacity(0.40), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Fighter Status HUD
@@ -166,37 +292,47 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Card Selection
+    // MARK: - Card Selection (5-Card Auto-Flip Hand vs Full Catalog)
 
     private var cardSelectionSection: some View {
-        let legalIds = Set(FightMatchEngine.legalCards(from: deck, isRocked: state.a.isRocked).map(\.id))
-        let displayedCards = filterEffectiveOnly
-            ? deck.filter { $0.isEffective(at: state.distance) }
-            : deck
+        let fullLegalPool = FightMatchEngine.legalCards(from: SampleData.allCards, for: .a, in: state)
+        let legalIds = Set(fullLegalPool.map(\.id))
+        let displayedCards: [Card] = useFiveCardHandMode
+            ? playerHand.activeHand
+            : fullLegalPool
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                if state.a.isRocked {
+                if let ground = state.ground {
+                    let roleText = ground.topSide == .a ? "上位 Top" : "下位 Bottom"
+                    Text("🥋 地面手牌（已自動翻面為\(roleText)卡 · \(displayedCards.count) 張）：")
+                        .font(.system(.caption, design: .monospaced, weight: .bold))
+                        .foregroundStyle(.cyan)
+                } else if state.a.isRocked {
                     Text("⚠️ 被打暈 (Rocked)！僅能選 格擋/閃避/移動")
                         .font(.system(.caption, design: .monospaced, weight: .bold))
                         .foregroundStyle(.orange)
                 } else {
-                    Text("站立牌庫（\(displayedCards.count)/\(deck.count) 張）：")
-                        .font(.system(.caption, design: .monospaced, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    Text(
+                        useFiveCardHandMode
+                            ? "🃏 站立手牌 (5/5) · 抽牌堆剩 \(playerHand.drawPile.count) 張 / 棄牌 \(playerHand.discardPile.count) 張："
+                            : "📚 全部合法卡牌（\(displayedCards.count) 張）："
+                    )
+                    .font(.system(.caption, design: .monospaced, weight: .semibold))
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(filterEffectiveOnly ? "顯示全部 (28)" : "只看適用距離") {
-                    filterEffectiveOnly.toggle()
+                Button(useFiveCardHandMode ? "切換全牌庫" : "切換5張手牌") {
+                    useFiveCardHandMode.toggle()
                 }
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .buttonStyle(.bordered)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach(displayedCards) { card in
+                ForEach(Array(displayedCards.enumerated()), id: \.offset) { _, card in
                     let isLegal = legalIds.contains(card.id)
-                    let inRange = card.isEffective(at: state.distance)
+                    let inRange = state.isGrounded ? true : card.isEffective(at: state.distance)
                     Button {
                         playTurn(playerCard: card)
                     } label: {
@@ -204,8 +340,9 @@ struct ContentView: View {
                             HStack {
                                 Text(card.name)
                                     .font(.system(.callout, design: .monospaced, weight: .bold))
+                                    .lineLimit(1)
                                 Spacer()
-                                Text(typeBadge(card.type))
+                                Text(cardBadge(card))
                                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2)
@@ -213,10 +350,18 @@ struct ContentView: View {
                                     .clipShape(Capsule())
                             }
                             HStack(spacing: 6) {
-                                Text("距:\(distancesText(card.distances))")
-                                    .foregroundStyle(inRange ? Color.green : Color.orange)
-                                if let t = card.target {
-                                    Text("標:\(targetText(t))")
+                                if state.isGrounded {
+                                    Text(groundCardSubtitle(card))
+                                        .foregroundStyle(.cyan)
+                                } else {
+                                    Text("距:\(distancesText(card.distances))")
+                                        .foregroundStyle(inRange ? Color.green : Color.orange)
+                                    if let land = card.landingPosition {
+                                        Text("摔→\(shortPositionName(land))")
+                                            .foregroundStyle(.cyan)
+                                    } else if let t = card.target {
+                                        Text("標:\(targetText(t))")
+                                    }
                                 }
                                 Spacer()
                                 Text("⚡-\(card.staminaCost)")
@@ -229,7 +374,12 @@ struct ContentView: View {
                         .background(isLegal ? Color.white.opacity(0.08) : Color.white.opacity(0.02))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .stroke(inRange && isLegal ? Color.green.opacity(0.45) : Color.white.opacity(0.15), lineWidth: 1)
+                                .stroke(
+                                    state.isGrounded && isLegal
+                                        ? Color.cyan.opacity(0.50)
+                                        : (inRange && isLegal ? Color.green.opacity(0.45) : Color.white.opacity(0.15)),
+                                    lineWidth: 1
+                                )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
@@ -282,10 +432,15 @@ struct ContentView: View {
 
             if let latest = allLogs.last {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("最新交手 · 先手: \(latest.firstSide == .a ? "🟢 玩家 A" : "🔴 AI B") · 交手後距離: \(distanceLabel(latest.stateAfter.distance))")
+                    Text("最新交手 · 先手: \(latest.firstSide == .a ? "🟢 玩家 A" : "🔴 AI B") · 狀態: \(stateAfterDescription(latest))")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                     sideFormulaView(label: "🟢 玩家 A", log: latest.a)
                     sideFormulaView(label: "🔴 AI B", log: latest.b)
+                    if latest.refereeStandUp {
+                        Text("🔔 雙方地面連續 3 次消極，裁判喊 Work! 強制分開回到站立遠距離！")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.cyan)
+                    }
                     if let fin = latest.finish {
                         Text("🏁 終結觸發: \(fin.winner == .a ? "玩家 A" : "AI B") 以 \(finishReasonText(fin.reason)) 獲勝")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -296,7 +451,7 @@ struct ContentView: View {
                 .background(Color.black.opacity(0.35))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             } else {
-                Text("尚未出牌——點選上方任一張卡牌開始第 1 次交手，這裡會即時顯示完整機率算式與 RNG 擲骰點數。")
+                Text("尚未出牌——點選上方任一張手牌開始交手，進地面時手牌會自動翻面為上位/下位柔術摔角卡！")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -316,12 +471,25 @@ struct ContentView: View {
         } else {
             status = "✗ 失敗"
         }
+
+        var extraTags: [String] = []
+        if log.inflictedRocked { extraTags.append("💥打暈!") }
+        if let td = log.takedownLanded { extraTags.append("🤼摔進\(shortPositionName(td))") }
+        if let adv = log.positionAdvancedTo { extraTags.append("📍位置→\(shortPositionName(adv))") }
+        if let swp = log.sweptToPosition { extraTags.append("🔄掃技翻轉→\(shortPositionName(swp))!") }
+        if log.stoodUpToStanding { extraTags.append("🏃逃脫起身!") }
+        if let sub = log.submissionStageReached {
+            extraTags.append(sub == .lockedIn ? "🔒深鎖階段2!" : "🔒抓把階段1!")
+        }
+        if log.submissionEscaped { extraTags.append("🛡️掙脫鎖技!") }
+        let extraText = extraTags.isEmpty ? "" : " " + extraTags.joined(separator: " ")
+
         return VStack(alignment: .leading, spacing: 2) {
-            Text("\(label) 出【\(log.card.name)】 → \(status) | 傷害: \(String(format: "%.1f", log.damageDealt))\(log.inflictedRocked ? " 💥打暈對手!" : "")")
+            Text("\(label) 出【\(log.card.name)】 → \(status) | 傷: \(String(format: "%.1f", log.damageDealt))\(extraText)")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
             Text(
                 String(
-                    format: "算式: 基%.0f%% 屬%+.0f%% 距%+.0f%% 體%+.0f%% 勢%+.0f%% 特%+.0f%% 讀%+.0f%% = 最終 %.1f%% | 擲骰 %.3f",
+                    format: "算式: 基%.0f%% 屬%+.0f%% 位%+.0f%% 體%+.0f%% 勢%+.0f%% 特%+.0f%% 讀%+.0f%% = 最終 %.1f%% | 擲骰 %.3f",
                     o.base * 100,
                     o.attributeModifier * 100,
                     o.distanceModifier * 100,
@@ -351,16 +519,19 @@ struct ContentView: View {
         replayExchanges = []
         matchOutcome = nil
         copiedToast = false
+        playerHand = HandManager(side: .a, fighter: fighterA, state: state, rng: &rng)
+        aiHand = HandManager(side: .b, fighter: fighterB, state: state, rng: &rng)
         scene.resetPositions(distance: .long)
     }
 
     private func playTurn(playerCard: Card) {
         guard matchOutcome == nil else { return }
 
+        let aiPool = useFiveCardHandMode ? aiHand.activeHand : SampleData.allCards
         let aiCard = ai.chooseCard(
             fighter: fighterB,
             side: .b,
-            availableCards: deck,
+            availableCards: aiPool,
             state: state,
             history: roundHistory,
             rng: &rng
@@ -368,6 +539,7 @@ struct ContentView: View {
         let readA = FightMatchEngine.computeReadModifier(for: .a, history: roundHistory)
         let readB = FightMatchEngine.computeReadModifier(for: .b, history: roundHistory)
 
+        state.round = currentRound
         let exLog = ExchangeEngine.resolve(
             a: FighterPlay(fighter: fighterA, card: playerCard, side: .a),
             b: FighterPlay(fighter: fighterB, card: aiCard, side: .b),
@@ -412,8 +584,9 @@ struct ContentView: View {
 
         if currentExchange < exchangesPerRound {
             currentExchange += 1
+            playerHand.playCard(playerCard, updatedState: state, rng: &rng)
+            aiHand.playCard(aiCard, updatedState: state, rng: &rng)
         } else {
-            // End of round: score the round and either advance or conclude by decision
             let score = FightMatchEngine.scoreRound(
                 round: currentRound,
                 exchanges: roundHistory,
@@ -435,6 +608,9 @@ struct ContentView: View {
                 roundHistory = []
                 currentRound += 1
                 currentExchange = 1
+                state.round = currentRound
+                playerHand.playCard(playerCard, updatedState: state, rng: &rng)
+                aiHand.playCard(aiCard, updatedState: state, rng: &rng)
                 scene.resetPositions(distance: state.distance)
             } else {
                 let rLog = RoundLog(
@@ -475,6 +651,31 @@ struct ContentView: View {
 
     // MARK: - Formatting Helpers
 
+    private var phaseSummaryText: String {
+        if let g = state.ground {
+            return "地面·\(shortPositionName(g.position))"
+        }
+        return distanceLabel(state.distance)
+    }
+
+    private func stateAfterDescription(_ log: ExchangeLog) -> String {
+        if let g = log.stateAfter.ground {
+            let top = g.topSide == .a ? "玩家上位" : "AI上位"
+            return "地面 \(shortPositionName(g.position)) (\(top))"
+        }
+        return distanceLabel(log.stateAfter.distance)
+    }
+
+    private func shortPositionName(_ pos: GroundPosition) -> String {
+        switch pos {
+        case .fullGuard: "全防守"
+        case .halfGuard: "半防守"
+        case .sideControl: "側控"
+        case .fullMount: "騎乘"
+        case .backControl: "背控"
+        }
+    }
+
     private func distanceLabel(_ d: Distance) -> String {
         switch d {
         case .long: "遠距離 Long"
@@ -501,15 +702,54 @@ struct ContentView: View {
         }
     }
 
-    private func typeBadge(_ t: CardType) -> String {
-        switch t {
-        case .strike: "🗡️進攻"
-        case .block: "🛡️格擋"
-        case .evade: "💨閃避"
-        case .counter: "↩️反擊"
-        case .feint: "🎭佯攻"
-        case .move: "🏃移動"
+    private func cardBadge(_ card: Card) -> String {
+        if let top = card.topIntent {
+            switch top {
+            case .advance: return "📍過腿"
+            case .gnp: return "🔨砸拳"
+            case .submission: return "🔒降伏"
+            case .smother: return "🪨重壓"
+            }
         }
+        if let bot = card.bottomIntent {
+            switch bot {
+            case .frame: return "🛡️防過腿"
+            case .escape: return "🏃逃脫"
+            case .sweepOrSub: return card.tags.contains(.submission) ? "🔒下位鎖" : "🔄掃技"
+            case .shell: return "🐢抱頭"
+            }
+        }
+        if card.isTakedown {
+            return "🤼抱摔"
+        }
+        switch card.type {
+        case .strike: return "🗡️進攻"
+        case .block: return "🛡️格擋"
+        case .evade: return "💨閃避"
+        case .counter: return "↩️反擊"
+        case .feint: return "🎭佯攻"
+        case .move: return "🏃移動"
+        }
+    }
+
+    private func groundCardSubtitle(_ card: Card) -> String {
+        if let top = card.topIntent {
+            switch top {
+            case .advance: return "推進下一階位置"
+            case .gnp: return "威力:\(card.power) 命中:\(card.accuracy)%"
+            case .submission: return card.submissionCategory == .choke ? "絞技 (2階段)" : "關節技 (2階段)"
+            case .smother: return "封印起身+吸乾體力"
+            }
+        }
+        if let bot = card.bottomIntent {
+            switch bot {
+            case .frame: return "阻擋過腿與重壓"
+            case .escape: return "退位恢復/扶籠起身"
+            case .sweepOrSub: return card.tags.contains(.submission) ? "抓砸拳鎖入階段1" : "抓砸拳翻轉上下位"
+            case .shell: return "吸收地面砸拳傷害"
+            }
+        }
+        return "地面戰術卡"
     }
 
     private func finishReasonText(_ r: FinishReason) -> String {
