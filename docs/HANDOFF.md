@@ -3,7 +3,21 @@
 > 每次收工在**最上方**新增一筆。下一棒開工先讀最上面 2–3 筆。
 
 ## 待規劃確認
-- （已全數於 2026-11-03 由 `[規劃]` 拍板定案，見下方紀錄）
+- （目前無）
+
+---
+
+## 2026-11-03 · [實作] Gemini 4 Argon
+- 完成 **P2-2 機率優勢表**
+- 修改 `Packages/OctagonCore/Sources/FightEngine/Probability.swift`：
+  - 新增 `FighterPlay`（封裝選手、出牌與角落 `Side`）
+  - 新增純資料表 `Odds.baseTable: [CardType: [CardType: Double]]`（完整對應 `STRIKING_AND_DECK.md` §2.1 的 6×6 矩陣，非 if/else 寫死）
+  - 實作 `attributeModifier`、`distanceModifier`（適用距離內 `0`、差 1 格 `-0.20`、差 2 格 `-0.35`）、`conditionModifier`（低體力與腿傷懲罰）、`momentumModifier`、`traitModifier`
+  - 實作 `resolveOdds(my:opp:state:readModifier:)`（同時提供 `FighterPlay` 版與直接傳 `Card` 的便利多載），最終必經過 `Odds.clamp` 限制在 `5%–95%`
+- 修改 `Packages/OctagonCore/Tests/FightEngineTests/ProbabilityTests.swift`：
+  - 新增 6×6 基準表完整性測試、極端屬性與狀態下所有卡牌組合皆在 `5%–95%` 測試、距離不符時機率下降（差 1 格 `-20%`、差 2 格 `-35%`）測試、屬性/特性/體力腿傷修正測試
+- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 下一棒：P2-3 可重現的亂數
 
 ---
 
