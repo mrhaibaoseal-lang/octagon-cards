@@ -127,7 +127,7 @@ public enum ExchangeEngine {
         card: Card,
         staminaBefore: Double
     ) -> Double {
-        var raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.28
+        var raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.265
         if staminaBefore < 40.0 {
             raw *= 0.80
         }
@@ -154,7 +154,7 @@ public enum ExchangeEngine {
         defender: Fighter
     ) -> Double {
         Odds.resolve(
-            base: 0.35,
+            base: 0.22,
             modifiers: [
                 (damage - 12.0) * 0.02,
                 (60.0 - Double(defender.attributes.chin)) * 0.005,
@@ -410,14 +410,52 @@ public enum ExchangeEngine {
             return
         }
 
-        if canRock && target == .head {
-            let headAfter = state[defenderSide].health.head
-            if clampedDamage >= 18.0 || (clampedDamage >= 12.0 && headAfter < 65.0) {
-                let pRock = rockedProbability(damage: clampedDamage, attacker: attacker, defender: defender)
-                if rng.roll(probability: pRock) {
-                    state[defenderSide].isRocked = true
-                    adjustMomentum(&state[defenderSide], by: -10.0)
-                    myLog.inflictedRocked = true
+        if canRock {
+            switch target {
+            case .head:
+                let headAfter = state[defenderSide].health.head
+                if clampedDamage >= 18.0 || (clampedDamage >= 12.0 && headAfter < 55.0) {
+                    let pRock = rockedProbability(damage: clampedDamage, attacker: attacker, defender: defender)
+                    if rng.roll(probability: pRock) {
+                        state[defenderSide].isRocked = true
+                        adjustMomentum(&state[defenderSide], by: -10.0)
+                        myLog.inflictedRocked = true
+                    }
+                }
+            case .body:
+                // STRIKING_AND_DECK §4: Heavy liver/body shot when defender has low stamina & worn body
+                // has a small chance (clamped 5%...95%) to fold them immediately for a Body TKO.
+                let bodyAfter = state[defenderSide].health.body
+                let defStamina = state[defenderSide].stamina
+                if clampedDamage >= 12.0 && bodyAfter < 72.0 && defStamina < 55.0 {
+                    let pFold = Odds.resolve(
+                        base: 0.14,
+                        modifiers: [
+                            (clampedDamage - 12.0) * 0.015,
+                            (55.0 - defStamina) * 0.004,
+                            (72.0 - bodyAfter) * 0.003,
+                        ]
+                    )
+                    if rng.roll(probability: pFold) {
+                        state[defenderSide].health.body = 0.0
+                        finish = ExchangeFinish(winner: attackerSide, reason: .tkoBody)
+                    }
+                }
+            case .legs:
+                // STRIKING_AND_DECK §4: Heavy leg kick on already-compromised legs can buckle the base for a Leg TKO.
+                let legsAfter = state[defenderSide].health.legs
+                if clampedDamage >= 11.0 && legsAfter < 65.0 {
+                    let pBuckle = Odds.resolve(
+                        base: 0.12,
+                        modifiers: [
+                            (clampedDamage - 11.0) * 0.015,
+                            (65.0 - legsAfter) * 0.005,
+                        ]
+                    )
+                    if rng.roll(probability: pBuckle) {
+                        state[defenderSide].health.legs = 0.0
+                        finish = ExchangeFinish(winner: attackerSide, reason: .tkoLegs)
+                    }
                 }
             }
         }

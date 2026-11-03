@@ -308,17 +308,22 @@ public enum FightMatchEngine {
             + endState.b.momentum * 0.05
 
         let diff = perfA - perfB
+        let rockedDiffA = rockedByA - rockedByB
+        let rockedDiffB = rockedByB - rockedByA
         let pointsA: Int
         let pointsB: Int
-        if abs(diff) < 0.5 {
+        if abs(diff) < 0.08 && rockedByA == rockedByB {
             pointsA = 10
             pointsB = 10
         } else if diff > 0 {
             pointsA = 10
-            pointsB = (diff >= 28.0 || (rockedByA >= 2 && rockedByB == 0)) ? 8 : 9
+            let dominantA = diff >= 42.0 || (diff >= 28.0 && rockedDiffA >= 1) || (rockedDiffA >= 2 && diff >= 18.0)
+            pointsB = dominantA ? 8 : 9
         } else {
             pointsB = 10
-            pointsA = (-diff >= 28.0 || (rockedByB >= 2 && rockedByA == 0)) ? 8 : 9
+            let absDiff = -diff
+            let dominantB = absDiff >= 42.0 || (absDiff >= 28.0 && rockedDiffB >= 1) || (rockedDiffB >= 2 && absDiff >= 18.0)
+            pointsA = dominantB ? 8 : 9
         }
 
         return RoundScore(
