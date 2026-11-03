@@ -8,6 +8,8 @@ final class LungeDemoScene: SKScene {
 
     private let leftFighter = SKSpriteNode(color: .systemGreen, size: CGSize(width: 56, height: 100))
     private let rightFighter = SKSpriteNode(color: .systemRed, size: CGSize(width: 56, height: 100))
+    private var leftHasTexture: Bool = false
+    private var rightHasTexture: Bool = false
     private let cageLine = SKShapeNode()
     private let statusLabel = SKLabelNode(fontNamed: "Menlo-Bold")
     private var currentDistance: Distance = .long
@@ -150,14 +152,36 @@ final class LungeDemoScene: SKScene {
         }
     }
 
+    func applyFighterTexture(side: Side, pngData: Data) {
+        guard !pngData.isEmpty, let image = UIImage(data: pngData) else { return }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .nearest
+        let targetH: CGFloat = 104
+        let aspect = max(0.38, min(0.85, image.size.width / max(1, image.size.height)))
+        let targetW = round(targetH * aspect)
+
+        let node = (side == .left) ? leftFighter : rightFighter
+        node.texture = texture
+        node.size = CGSize(width: targetW, height: targetH)
+        node.color = .white
+        node.colorBlendFactor = 0.0
+        if side == .left {
+            leftHasTexture = true
+        } else {
+            rightHasTexture = true
+        }
+    }
+
     func resetPositions(distance: Distance = .long) {
         currentDistance = distance
         currentGround = nil
         currentClinch = false
         leftFighter.removeAllActions()
         rightFighter.removeAllActions()
-        leftFighter.color = .systemGreen
-        rightFighter.color = .systemRed
+        leftFighter.color = leftHasTexture ? .white : .systemGreen
+        leftFighter.colorBlendFactor = leftHasTexture ? 0.0 : 1.0
+        rightFighter.color = rightHasTexture ? .white : .systemRed
+        rightFighter.colorBlendFactor = rightHasTexture ? 0.0 : 1.0
         updateBannerText()
         layoutFighters(animated: false)
     }
@@ -170,8 +194,21 @@ final class LungeDemoScene: SKScene {
         leftHome = lh
         rightHome = rh
 
-        leftFighter.color = log.stateAfter.a.isRocked ? .systemYellow : .systemGreen
-        rightFighter.color = log.stateAfter.b.isRocked ? .systemOrange : .systemRed
+        if log.stateAfter.a.isRocked {
+            leftFighter.color = .systemYellow
+            leftFighter.colorBlendFactor = leftHasTexture ? 0.55 : 1.0
+        } else {
+            leftFighter.color = leftHasTexture ? .white : .systemGreen
+            leftFighter.colorBlendFactor = leftHasTexture ? 0.0 : 1.0
+        }
+
+        if log.stateAfter.b.isRocked {
+            rightFighter.color = .systemOrange
+            rightFighter.colorBlendFactor = rightHasTexture ? 0.55 : 1.0
+        } else {
+            rightFighter.color = rightHasTexture ? .white : .systemRed
+            rightFighter.colorBlendFactor = rightHasTexture ? 0.0 : 1.0
+        }
         updateBannerText(refereeStandUp: log.refereeStandUp, finish: log.finish)
 
         if let g = currentGround {

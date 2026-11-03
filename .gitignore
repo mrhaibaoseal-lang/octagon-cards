@@ -18,5 +18,8 @@ pixel_test/
 .tmp/
 .venv/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
 .DS_Store
 dist/

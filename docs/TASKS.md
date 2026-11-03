@@ -70,10 +70,13 @@
 
 ---
 
-## P1 資料管線（P2 之後）
-- [ ] P1-1 ufcstats 爬蟲 → `data/fighters.json`（含選手生涯數據、官方圖片網址，以及**每場對戰紀錄：對手 ID、勝負、KO/Sub/Dec 終結方式、單場統計**）
-- [ ] P1-2 能力值換算（百分位＋貝氏收縮＋**真實賽事對手強度 Elo 與單場勝負表現動態加砍系統**，見 `POWER_SYSTEM.md` §1.2）
-- [ ] P1-3 App 端：下載官方去背照 → 本機像素化 → 快取（依 RULES.md §2）
+## ✅ P1 資料管線（完成，設計來源：docs/POWER_SYSTEM.md §1–2, RULES.md §2）
+- [x] **P1-1 ufcstats / UFC.com 爬蟲 → `data/fighters.json`**
+  - 內容：建立 `pipeline/scrape_ufcstats.py`（Python + `uv` + `httpx` + `BeautifulSoup4` + `Pydantic v2`），自動抓取 32 位跨量級真實 UFC 頂尖選手生涯數據、官方去背半身與大頭照 PNG 網址（`athlete_bio_full_body` / `event_results_athlete_headshot`），以及分頁歷史對戰紀錄（對手 ID、勝負、KO/Sub/Dec 終結方式、回合時間），輸出 `data/raw_ufcstats.json`
+- [x] **P1-2 能力值換算（百分位＋貝氏收縮＋真實賽事對手強度 Elo 與單場勝負表現動態加砍系統）**
+  - 內容：實作 `pipeline/rating_calculator.py` 與純 Swift `RatingEngine.swift` / `RealUFCRoster.swift`（見 `POWER_SYSTEM.md` §1.2）：三階段計算（1. 貝氏收縮防新秀小樣本暴衝 → 2. 依時間序重播歷史賽事計算 MMA Elo 與單場勝負方式動態加砍對應屬性 `power`/`chin`/`submission`/`takedownDefense`/`cardio` → 3. 自動貼 2–4 個 L2 `Trait` 特性標籤並產出最新一場比賽 `lastFightPatchNote` 異動報告），輸出 `data/fighters.json`
+- [x] **P1-3 App 端：下載官方去背照 → 本機像素化 → 快取（依 RULES.md §2）**
+  - 內容：實作 `App/Sources/FighterPixelSpriteService.swift` 與 `pipeline/pixelate_sprites.py`（零 AI 額度消耗、不將照片放進公開 repo）：在 iPhone 本機自動下載官方去背 PNG → Alpha 邊界自動裁邊 → 刺青與五官強對比銳化 → BOX 縮圖（`116px` 全身 / `64x64px` 頭像）→ 32 色無抖色量化 → `1px` 深色描邊（`#12141F`）→ 本機磁碟與記憶體快取（離線或無照新秀自動生成量級像素剪影），並接入 `SpriteKit` 八角籠與 `SwiftUI` 選角對戰介面（`v0.5.0`）
 
 ---
 

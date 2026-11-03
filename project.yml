@@ -13,6 +13,8 @@ targets:
     platform: iOS
     sources:
       - path: App/Sources
+      - path: data/fighters.json
+        buildPhase: resources
     dependencies:
       - package: OctagonCore
         product: FightEngine
@@ -30,6 +32,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mrhai.octagoncards
         SWIFT_VERSION: "6.0"
-        MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "0.5.0"
+        CURRENT_PROJECT_VERSION: "5"
         TARGETED_DEVICE_FAMILY: "1"

@@ -4,50 +4,62 @@ import UIKit
 import FightEngine
 
 enum SandboxMatchup: Int, CaseIterable, Identifiable {
-    case strikerVsWrestler = 0
-    case bjjVsWrestler = 1
-    case wrestlerVsStriker = 2
+    case topuriaVsMakhachev = 0
+    case oliveiraVsMakhachev = 1
+    case pereiraVsChimaev = 2
+    case aspinallVsJones = 3
+    case omalleyVsMerab = 4
 
     var id: Int { rawValue }
 
     var label: String {
         switch self {
-        case .strikerVsWrestler: "🥊打擊 vs 🤼摔角"
-        case .bjjVsWrestler: "🥋柔術 vs 🤼摔角"
-        case .wrestlerVsStriker: "🤼摔角 vs 🥊打擊"
+        case .topuriaVsMakhachev: "🥊Topuria vs 🤼Makhachev"
+        case .oliveiraVsMakhachev: "🥋Oliveira vs 🤼Makhachev"
+        case .pereiraVsChimaev: "🗿Pereira vs 🐺Chimaev"
+        case .aspinallVsJones: "👑Aspinall vs 🐐Jones"
+        case .omalleyVsMerab: "⚡O'Malley vs 🫁Merab"
         }
     }
 
     var playerFighter: Fighter {
         switch self {
-        case .strikerVsWrestler: SampleData.striker
-        case .bjjVsWrestler: SampleData.bjjFighter
-        case .wrestlerVsStriker: SampleData.wrestler
+        case .topuriaVsMakhachev: RealUFCRoster.fighter(id: "ilia-topuria") ?? SampleData.striker
+        case .oliveiraVsMakhachev: RealUFCRoster.fighter(id: "charles-oliveira") ?? SampleData.bjjFighter
+        case .pereiraVsChimaev: RealUFCRoster.fighter(id: "alex-pereira") ?? SampleData.striker
+        case .aspinallVsJones: RealUFCRoster.fighter(id: "tom-aspinall") ?? SampleData.striker
+        case .omalleyVsMerab: RealUFCRoster.fighter(id: "sean-omalley") ?? SampleData.striker
         }
     }
 
     var aiFighter: Fighter {
         switch self {
-        case .strikerVsWrestler: SampleData.wrestler
-        case .bjjVsWrestler: SampleData.wrestler
-        case .wrestlerVsStriker: SampleData.striker
+        case .topuriaVsMakhachev: RealUFCRoster.fighter(id: "islam-makhachev") ?? SampleData.wrestler
+        case .oliveiraVsMakhachev: RealUFCRoster.fighter(id: "islam-makhachev") ?? SampleData.wrestler
+        case .pereiraVsChimaev: RealUFCRoster.fighter(id: "khamzat-chimaev") ?? SampleData.wrestler
+        case .aspinallVsJones: RealUFCRoster.fighter(id: "jon-jones") ?? SampleData.wrestler
+        case .omalleyVsMerab: RealUFCRoster.fighter(id: "merab-dvalishvili") ?? SampleData.wrestler
         }
     }
 }
 
 struct ContentView: View {
-    @State private var matchup: SandboxMatchup = .strikerVsWrestler
+    @State private var matchup: SandboxMatchup? = .topuriaVsMakhachev
+    @State private var selectedFighterA: Fighter = RealUFCRoster.fighter(id: "ilia-topuria") ?? SampleData.striker
+    @State private var selectedFighterB: Fighter = RealUFCRoster.fighter(id: "islam-makhachev") ?? SampleData.wrestler
+    @State private var headshotDataA: Data? = nil
+    @State private var headshotDataB: Data? = nil
     @State private var scene = LungeDemoScene(size: CGSize(width: 390, height: 165))
     @State private var seed: UInt64 = UInt64.random(in: 1...999_999)
     @State private var rng = SeededRNG(seed: 2026)
     @State private var state = FightState()
     @State private var playerHand: HandManager = {
         var initRng = SeededRNG(seed: 2026)
-        return HandManager(side: .a, fighter: SampleData.striker, rng: &initRng)
+        return HandManager(side: .a, fighter: RealUFCRoster.fighter(id: "ilia-topuria") ?? SampleData.striker, rng: &initRng)
     }()
     @State private var aiHand: HandManager = {
         var initRng = SeededRNG(seed: 2027)
-        return HandManager(side: .b, fighter: SampleData.wrestler, rng: &initRng)
+        return HandManager(side: .b, fighter: RealUFCRoster.fighter(id: "islam-makhachev") ?? SampleData.wrestler, rng: &initRng)
     }()
     @State private var useFiveCardHandMode: Bool = true
     @State private var currentRound: Int = 1
@@ -61,8 +73,8 @@ struct ContentView: View {
     @State private var showDebugDrawer: Bool = true
     @State private var copiedToast: Bool = false
 
-    private var fighterA: Fighter { matchup.playerFighter }
-    private var fighterB: Fighter { matchup.aiFighter }
+    private var fighterA: Fighter { selectedFighterA }
+    private var fighterB: Fighter { selectedFighterB }
     private let ai = StyleAI()
     private let totalRounds = 3
     private let exchangesPerRound = 8
@@ -104,7 +116,7 @@ struct ContentView: View {
     private var headerBar: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("OCTAGON CARDS · P4 完整 MMA")
+                Text("OCTAGON CARDS · v0.5 真實UFC名單")
                     .font(.system(.subheadline, design: .monospaced, weight: .heavy))
                 Text("R\(currentRound)/\(totalRounds) · 交手 \(currentExchange)/\(exchangesPerRound) · \(phaseSummaryText)")
                     .font(.system(.caption, design: .monospaced))
@@ -132,20 +144,78 @@ struct ContentView: View {
     }
 
     private var matchupPickerBar: some View {
-        HStack(spacing: 6) {
-            ForEach(SandboxMatchup.allCases) { m in
-                Button {
-                    matchup = m
-                    startNewMatch(withSeed: UInt64.random(in: 1...999_999))
-                } label: {
-                    Text(m.label)
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity)
-                        .background(matchup == m ? Color.blue.opacity(0.35) : Color.white.opacity(0.07))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+        VStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(SandboxMatchup.allCases) { m in
+                        Button {
+                            matchup = m
+                            selectedFighterA = m.playerFighter
+                            selectedFighterB = m.aiFighter
+                            startNewMatch(withSeed: UInt64.random(in: 1...999_999))
+                        } label: {
+                            Text(m.label)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(matchup == m ? Color.blue.opacity(0.38) : Color.white.opacity(0.07))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 8) {
+                Menu {
+                    ForEach(RealUFCRoster.all) { f in
+                        Button {
+                            matchup = nil
+                            selectedFighterA = f
+                            startNewMatch(withSeed: UInt64.random(in: 1...999_999))
+                        } label: {
+                            Text("\(f.name) (OVR \(f.overallRating) · Elo \(f.eloRating ?? 1600) · \(f.weightClass ?? ""))")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("🟢 換角: \(fighterA.name) (OVR \(fighterA.overallRating))")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .lineLimit(1)
+                        Spacer()
+                        Text("▼")
+                            .font(.system(size: 9, design: .monospaced))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.green.opacity(0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                Menu {
+                    ForEach(RealUFCRoster.all) { f in
+                        Button {
+                            matchup = nil
+                            selectedFighterB = f
+                            startNewMatch(withSeed: UInt64.random(in: 1...999_999))
+                        } label: {
+                            Text("\(f.name) (OVR \(f.overallRating) · Elo \(f.eloRating ?? 1600) · \(f.weightClass ?? ""))")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("🔴 換敵: \(fighterB.name) (OVR \(fighterB.overallRating))")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .lineLimit(1)
+                        Spacer()
+                        Text("▼")
+                            .font(.system(size: 9, design: .monospaced))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.red.opacity(0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
             }
         }
     }
@@ -236,42 +306,83 @@ struct ContentView: View {
 
     private var fightersHUD: some View {
         HStack(spacing: 10) {
-            fighterCard(title: "🟢 玩家: \(fighterA.name)", cond: state.a, tint: .green)
-            fighterCard(title: "🔴 AI: \(fighterB.name)", cond: state.b, tint: .red)
+            fighterCard(fighter: fighterA, headData: headshotDataA, roleTag: "🟢 玩家", cond: state.a, tint: .green)
+            fighterCard(fighter: fighterB, headData: headshotDataB, roleTag: "🔴 AI", cond: state.b, tint: .red)
         }
     }
 
-    private func fighterCard(title: String, cond: FighterCondition, tint: Color) -> some View {
+    private func fighterCard(
+        fighter: Fighter,
+        headData: Data?,
+        roleTag: String,
+        cond: FighterCondition,
+        tint: Color
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title)
-                    .font(.system(.caption, design: .monospaced, weight: .bold))
-                    .lineLimit(1)
-                Spacer()
-                if cond.isBleeding {
-                    Text("🩸 流血 Lv.\(cond.cutSeverity)")
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color.red)
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
+            HStack(spacing: 6) {
+                if let data = headData, let uiImg = UIImage(data: data) {
+                    Image(uiImage: uiImg)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 34, height: 34)
+                        .background(Color.black.opacity(0.35))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
-                if cond.isRocked {
-                    Text("💥 ROCKED")
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(Color.orange)
-                        .foregroundStyle(.black)
-                        .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(roleTag) \(fighter.name)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .lineLimit(1)
+                    Text("OVR \(fighter.overallRating) · Elo \(fighter.eloRating ?? 1600) · \(fighter.record ?? "")")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+
+            if cond.isBleeding || cond.isRocked {
+                HStack(spacing: 4) {
+                    if cond.isBleeding {
+                        Text("🩸 流血 Lv.\(cond.cutSeverity)")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.red)
+                            .foregroundStyle(.white)
+                            .clipShape(Capsule())
+                    }
+                    if cond.isRocked {
+                        Text("💥 ROCKED")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.orange)
+                            .foregroundStyle(.black)
+                            .clipShape(Capsule())
+                    }
                 }
             }
+
+            if !fighter.traits.isEmpty {
+                Text(fighter.traits.map(\.displayName).joined(separator: " "))
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+            }
+
             statRow(label: "🧠 頭", value: cond.health.head, color: .red)
             statRow(label: "🫁 身", value: cond.health.body, color: .orange)
             statRow(label: "🦵 腿", value: cond.health.legs, color: .yellow)
             statRow(label: "⚡ 體", value: cond.stamina, color: .cyan)
             statRow(label: "🔥 勢", value: cond.momentum, color: .purple)
+
+            if let patch = fighter.lastFightPatchNote {
+                Text("🔁 \(patch)")
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .padding(.top, 2)
+            }
         }
         .padding(8)
         .background(tint.opacity(0.10))
@@ -536,6 +647,30 @@ struct ContentView: View {
         playerHand = HandManager(side: .a, fighter: fighterA, state: state, rng: &rng)
         aiHand = HandManager(side: .b, fighter: fighterB, state: state, rng: &rng)
         scene.resetPositions(distance: .long)
+        refreshPixelSprites()
+    }
+
+    private func refreshPixelSprites() {
+        let fA = fighterA
+        let fB = fighterB
+        Task {
+            async let bodyA = FighterPixelSpriteService.shared.spritePNGData(for: fA, kind: .fullBody)
+            async let bodyB = FighterPixelSpriteService.shared.spritePNGData(for: fB, kind: .fullBody)
+            async let headA = FighterPixelSpriteService.shared.spritePNGData(for: fA, kind: .headshot)
+            async let headB = FighterPixelSpriteService.shared.spritePNGData(for: fB, kind: .headshot)
+
+            let (bA, bB, hA, hB) = await (bodyA, bodyB, headA, headB)
+            await MainActor.run {
+                if fighterA.id == fA.id {
+                    scene.applyFighterTexture(side: .left, pngData: bA)
+                    headshotDataA = hA
+                }
+                if fighterB.id == fB.id {
+                    scene.applyFighterTexture(side: .right, pngData: bB)
+                    headshotDataB = hB
+                }
+            }
+        }
     }
 
     private func playTurn(playerCard: Card) {

@@ -7,6 +7,26 @@
 
 ---
 
+## 2026-11-04 · [實作] Gemini 4 Argon (P1-1 ~ P1-3 真實 UFC 選手資料管線、Elo 動態能力值換算與 iPhone 本機官方照自動像素化 v0.5.0)
+- **完成 P1-1 真實 UFC 爬蟲管線（`pipeline/models.py`、`pipeline/scrape_ufcstats.py` → `data/raw_ufcstats.json`）**：
+  - 使用現代 Python 工具鏈（`uv` + `httpx` + `beautifulsoup4` + `Pydantic v2` + `ruff`），從 `ufc.com/rankings` 與 `ufc.com/athlete/<slug>`（含分頁歷史戰績 `?page=0..2`）自動抓取 **32 位跨量級真實 UFC 頂尖選手**：
+    - 生涯統計：`SLpM`、`Str.Acc%`、`SApM`、`Str.Def%`、`TD Avg`、`TD Acc%`、`TD Def%`、`Sub Avg`、`KD Avg`、平均比賽時間、站立/纏抱/地面佔比、KO/SUB/DEC 勝率。
+    - 官方透明去背 PNG 網址：`fullBodyImageUrl`（`athlete_bio_full_body`）與 `headshotImageUrl`（`event_results_athlete_headshot`），遵守 `RULES.md` §2 絕不將照片進公開 repo。
+    - 歷史對戰紀錄（`bouts`）：對手 slug ID、對手姓名、日期、勝負（自動辨識紅/藍角）、終結方式（`KO/TKO`、`SUB`、`U-DEC`、`S-DEC`、`M-DEC`）與回合時間。
+- **完成 P1-2 三階段能力值與動態升降引擎（`pipeline/rating_calculator.py` + Swift `RatingEngine.swift` / `RealUFCRoster.swift` → `data/fighters.json`）**：
+  - **階段 1（經驗貝氏收縮 Empirical Bayes Shrinkage）**：以 `w = n / (n + 8)` 將小樣本新秀數據往 UFC 母體均值收縮，換算 10 項 L1 基礎屬性（`0...100`）。
+  - **階段 2（歷史賽事時間序 MMA Elo 與單場勝負方式動態加砍 `POWER_SYSTEM.md` §1.2）**：
+    - 依時間順序重播每場比賽，計算期望勝率 `E = 1 / (1 + 10^((R_opp - R_my)/400))` 與含金量加權（近 3 場佔最高動態權重）：
+    - 以 `KO/TKO` 獲勝自動加 `power`、`accuracy`（擊倒鐵下巴強敵額外加成）；被 `KO/TKO` 則直接砍 `chin` 與 `strikingDefense`（近 3 場內多次被 KO 自動拔除 `.ironChin` 並貼上 `.glassChin`）。
+    - 以 `SUB` 獲勝自動加 `submission`、`clinch`；被降伏則砍 `submission`、`takedownDefense`。
+    - 自動產出每位選手最新一場真實 UFC 比賽的異動戰報 `lastFightPatchNote`（例如：`Islam Makhachev: W vs Machado Garry (U-DEC R5): Elo 1743→1754 (+11) · takedown +2, clinch +2, cardio +3`）。
+  - **階段 3（自動貼標 2–4 個 L2 `Trait` 特性）**，並同步匯出 `data/fighters.json` 與純 Swift `RealUFCRoster.swift`（新增 `RatingEngineTests.swift` 單元測試套件）。
+- **完成 P1-3 iPhone 本機官方去背照 5 步像素化與快取（`App/Sources/FighterPixelSpriteService.swift` + `pipeline/pixelate_sprites.py`）**：
+  - 手機端首次選中選手時，自動下載官方透明去背 PNG → 1. Alpha 邊界自動裁邊 → 2. `1.18x` 對比強化保留刺青與五官 → 3. BOX 面積平均縮圖（全身 `116px` 高、頭像 `64x64px`）→ 4. 32 色自適應調色盤無抖色量化 → 5. `1px` 深色描邊（`#12141F`）→ 寫入 `Caches/PixelSprites_v1/` 磁碟與記憶體快取（離線或無照新秀自動生成量級像素剪影）。
+  - 更新 `App/Sources/LungeDemoScene.swift` 與 `App/Sources/ContentView.swift`（`v0.5.0 (5)`）：支援 5 組 UFC 夢幻對決快速切換、32 人全名單雙向自由選角下拉選單、64px 像素頭像、116px 八角籠像素小人、OVR/Elo 積分與最新真實賽事動態加砍戰報顯示。
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P4 後全面機制審查修正 + 三大 UFC 擬真系統擴充 v0.4.0)
 - **第一階段：嚴格代碼與遊戲機制審查（抓出並修復 4 個隱藏機制錯位，commit `1be3e0b`）**：
   1. **修復「下位發動三角絞/十字固時，上位防守方意圖判定錯位」**：原本 `GroundOdds.submissionChainBreakdown` 一律用 `effectiveBottomIntent` 判斷防守方，導致上位選手出 `.block`（如 `dagestaniHandcuff` 重壓）被誤判為抱頭龜縮 `.shell` 反而更容易被絞。已改為依 `defenderRole`（`.top` vs `.bottom`）分開判定強防禦（上位疊壓過腿 `.advance` / 下位防禦撐架 `.frame` 與蝦行逃脫 `.escape`）與破綻意圖（上位撐高砸拳 `.gnp` / 下位抱頭龜縮 `.shell`）。
