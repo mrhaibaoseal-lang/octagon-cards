@@ -423,17 +423,17 @@ public enum ExchangeEngine {
                     }
                 }
             case .body:
-                // STRIKING_AND_DECK §4: Heavy liver/body shot when defender has low stamina & worn body
+                // STRIKING_AND_DECK §4: Heavy liver/body shot when defender's body & gas tank are worn
                 // has a small chance (clamped 5%...95%) to fold them immediately for a Body TKO.
                 let bodyAfter = state[defenderSide].health.body
                 let defStamina = state[defenderSide].stamina
-                if clampedDamage >= 12.0 && bodyAfter < 72.0 && defStamina < 55.0 {
+                if clampedDamage >= 11.0 && bodyAfter < 78.0 && defStamina < 82.0 {
                     let pFold = Odds.resolve(
-                        base: 0.14,
+                        base: 0.07,
                         modifiers: [
-                            (clampedDamage - 12.0) * 0.015,
-                            (55.0 - defStamina) * 0.004,
-                            (72.0 - bodyAfter) * 0.003,
+                            (clampedDamage - 11.0) * 0.012,
+                            (82.0 - defStamina) * 0.0025,
+                            (78.0 - bodyAfter) * 0.003,
                         ]
                     )
                     if rng.roll(probability: pFold) {
@@ -444,12 +444,12 @@ public enum ExchangeEngine {
             case .legs:
                 // STRIKING_AND_DECK §4: Heavy leg kick on already-compromised legs can buckle the base for a Leg TKO.
                 let legsAfter = state[defenderSide].health.legs
-                if clampedDamage >= 11.0 && legsAfter < 65.0 {
+                if clampedDamage >= 11.0 && legsAfter < 48.0 {
                     let pBuckle = Odds.resolve(
-                        base: 0.12,
+                        base: 0.08,
                         modifiers: [
-                            (clampedDamage - 11.0) * 0.015,
-                            (65.0 - legsAfter) * 0.005,
+                            (clampedDamage - 11.0) * 0.012,
+                            (48.0 - legsAfter) * 0.004,
                         ]
                     )
                     if rng.roll(probability: pBuckle) {

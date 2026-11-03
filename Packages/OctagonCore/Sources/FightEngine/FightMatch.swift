@@ -312,17 +312,17 @@ public enum FightMatchEngine {
         let rockedDiffB = rockedByB - rockedByA
         let pointsA: Int
         let pointsB: Int
-        if abs(diff) < 0.08 && rockedByA == rockedByB {
+        if abs(diff) < 0.01 && rockedByA == rockedByB && damageByA == damageByB {
             pointsA = 10
             pointsB = 10
-        } else if diff > 0 {
+        } else if diff >= 0 {
             pointsA = 10
-            let dominantA = diff >= 42.0 || (diff >= 28.0 && rockedDiffA >= 1) || (rockedDiffA >= 2 && diff >= 18.0)
+            let dominantA = diff >= 68.0 || (rockedDiffA >= 2 && diff >= 46.0)
             pointsB = dominantA ? 8 : 9
         } else {
             pointsB = 10
             let absDiff = -diff
-            let dominantB = absDiff >= 42.0 || (absDiff >= 28.0 && rockedDiffB >= 1) || (rockedDiffB >= 2 && absDiff >= 18.0)
+            let dominantB = absDiff >= 68.0 || (rockedDiffB >= 2 && absDiff >= 46.0)
             pointsA = dominantB ? 8 : 9
         }
 
