@@ -16,7 +16,7 @@
   - 實作 `resolveOdds(my:opp:state:readModifier:)`（同時提供 `FighterPlay` 版與直接傳 `Card` 的便利多載），最終必經過 `Odds.clamp` 限制在 `5%–95%`
 - 修改 `Packages/OctagonCore/Tests/FightEngineTests/ProbabilityTests.swift`：
   - 新增 6×6 基準表完整性測試、極端屬性與狀態下所有卡牌組合皆在 `5%–95%` 測試、距離不符時機率下降（差 1 格 `-20%`、差 2 格 `-35%`）測試、屬性/特性/體力腿傷修正測試
-- 測試結果：已推送至 GitHub Actions CI 驗證中
+- 測試結果：CI `swift test` **通過**（run `41620796923`，22s）
 - 下一棒：P2-3 可重現的亂數
 
 ---
