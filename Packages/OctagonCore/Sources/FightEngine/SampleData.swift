@@ -115,6 +115,48 @@ public enum SampleData {
         stepIn, stepBack, pushOff,
     ]
 
+    // MARK: - Takedown & Anti-Takedown Bridge Cards (P3-1 / P4-2: 8 cards)
+
+    public static let doubleLeg = Card(
+        id: "double-leg", name: "爆發雙腿摔", type: .strike, distances: [.mid, .close], target: .body,
+        speed: 68, power: 15, accuracy: 66, staminaCost: 3, deckCost: 2,
+        tags: [.wrestling], landingPosition: .fullGuard)
+    public static let singleLeg = Card(
+        id: "single-leg", name: "單腿抓摔", type: .strike, distances: [.mid, .close], target: .legs,
+        speed: 70, power: 10, accuracy: 70, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], landingPosition: .fullGuard)
+    public static let cageTrip = Card(
+        id: "cage-trip", name: "籠邊絆摔", type: .strike, distances: [.close], target: .legs,
+        speed: 66, power: 15, accuracy: 68, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], landingPosition: .halfGuard)
+    public static let highCrotchSlam = Card(
+        id: "high-crotch-slam", name: "高跨重摔", type: .strike, distances: [.close], target: .body,
+        speed: 55, power: 45, accuracy: 56, staminaCost: 4, deckCost: 3,
+        tags: [.wrestling], landingPosition: .sideControl)
+    public static let catchKickTakedown = Card(
+        id: "catch-kick-td", name: "接踢反摔", type: .counter, distances: [.long, .mid], target: .legs,
+        speed: 68, power: 15, accuracy: 60, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], landingPosition: .halfGuard)
+
+    public static let sprawl = Card(
+        id: "sprawl", name: "下壓防摔 Sprawl", type: .block, distances: [.mid, .close],
+        speed: 78, power: 0, accuracy: 75, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling])
+    public static let interceptKnee = Card(
+        id: "intercept-knee", name: "迎擊飛膝", type: .counter, distances: [.mid, .close], target: .head,
+        speed: 74, power: 82, accuracy: 48, staminaCost: 3, deckCost: 3,
+        tags: [.knee])
+    public static let jumpGuillotine = Card(
+        id: "jump-guillotine", name: "順勢拉斷頭台", type: .counter, distances: [.mid, .close], target: .head,
+        speed: 72, power: 20, accuracy: 52, staminaCost: 3, deckCost: 3,
+        tags: [.submission], landingPosition: .fullGuard)
+
+    /// All 8 standing-to-ground takedown & anti-takedown bridge cards (P3-1).
+    public static let takedownBridgeCards: [Card] = [
+        doubleLeg, singleLeg, cageTrip, highCrotchSlam, catchKickTakedown,
+        sprawl, interceptKnee, jumpGuillotine,
+    ]
+
     /// A well-rounded striker.
     public static let striker = Fighter(
         id: "sample-striker", name: "Sample Striker", stance: .orthodox,

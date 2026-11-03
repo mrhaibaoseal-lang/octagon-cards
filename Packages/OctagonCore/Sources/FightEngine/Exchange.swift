@@ -43,6 +43,7 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
     public var inflictedRocked: Bool
     public var feintSucceeded: Bool
     public var movedDistanceTo: Distance?
+    public var takedownLanded: GroundPosition?
 
     public init(
         side: Side,
@@ -55,7 +56,8 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
         targetHit: HitTarget? = nil,
         inflictedRocked: Bool = false,
         feintSucceeded: Bool = false,
-        movedDistanceTo: Distance? = nil
+        movedDistanceTo: Distance? = nil,
+        takedownLanded: GroundPosition? = nil
     ) {
         self.side = side
         self.card = card
@@ -68,6 +70,7 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
         self.inflictedRocked = inflictedRocked
         self.feintSucceeded = feintSucceeded
         self.movedDistanceTo = movedDistanceTo
+        self.takedownLanded = takedownLanded
     }
 }
 
@@ -215,7 +218,7 @@ public enum ExchangeEngine {
                   let myPlay = plays[activeSide], let oppPlay = plays[oppSide]
             else { continue }
 
-            if finish != nil || oppLog.inflictedRocked {
+            if finish != nil || oppLog.inflictedRocked || oppLog.takedownLanded != nil {
                 myLog.wasInterrupted = true
                 logs[activeSide] = myLog
                 continue
@@ -226,6 +229,51 @@ public enum ExchangeEngine {
                 card: myPlay.card,
                 staminaBefore: stateBefore[activeSide].stamina
             )
+
+            // Standing Takedown card resolution (P3-1 bridge: STRIKING_AND_DECK §8)
+            if myPlay.card.isTakedown, let landingPos = myPlay.card.landingPosition {
+                if oppPlay.card.type == .counter && oppLog.succeeded {
+                    // Intercepted by opponent's counter (e.g. intercepting knee or jump guillotine)
+                } else if oppPlay.card.type == .block && oppPlay.card.tags.contains(.wrestling) && oppLog.succeeded {
+                    // Stuffed by dedicated Sprawl
+                    adjustStamina(&state[activeSide], by: -4.0)
+                    adjustMomentum(&state[activeSide], by: -8.0)
+                    adjustMomentum(&state[oppSide], by: 10.0)
+                } else if (oppPlay.card.type == .evade || oppPlay.card.type == .move) && oppLog.succeeded && !myLog.succeeded {
+                    adjustStamina(&state[activeSide], by: -3.0)
+                    adjustMomentum(&state[activeSide], by: -6.0)
+                    adjustMomentum(&state[oppSide], by: 6.0)
+                } else if myLog.succeeded {
+                    state.ground = GroundState(topSide: activeSide, position: landingPos)
+                    myLog.takedownLanded = landingPos
+                    adjustMomentum(&state[activeSide], by: 14.0)
+                    adjustMomentum(&state[oppSide], by: -10.0)
+                    adjustStamina(&state[oppSide], by: -4.0)
+                    if myPlay.card.power > 0 {
+                        let slamDmg = raw * 0.45
+                        let target = myPlay.card.target ?? .body
+                        applyDamage(
+                            slamDmg,
+                            to: target,
+                            attackerSide: activeSide,
+                            defenderSide: oppSide,
+                            attacker: myPlay.fighter,
+                            defender: oppPlay.fighter,
+                            canRock: false,
+                            state: &state,
+                            rng: &rng,
+                            myLog: &myLog,
+                            finish: &finish
+                        )
+                    }
+                } else {
+                    adjustStamina(&state[activeSide], by: -3.0)
+                    adjustMomentum(&state[activeSide], by: -6.0)
+                    adjustMomentum(&state[oppSide], by: 6.0)
+                }
+                logs[activeSide] = myLog
+                continue
+            }
 
             switch myPlay.card.type {
             case .strike:

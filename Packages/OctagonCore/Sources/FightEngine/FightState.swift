@@ -84,15 +84,21 @@ public struct FightState: Sendable, Codable, Hashable {
     public var distance: Distance
     public var a: FighterCondition
     public var b: FighterCondition
+    /// Non-nil when the fight is on the ground (`docs/GROUND_GAME_DESIGN.md` §2).
+    public var ground: GroundState?
+
+    public var isGrounded: Bool { ground != nil }
 
     public init(
         distance: Distance = .long,
         a: FighterCondition = FighterCondition(),
-        b: FighterCondition = FighterCondition()
+        b: FighterCondition = FighterCondition(),
+        ground: GroundState? = nil
     ) {
         self.distance = distance
         self.a = a
         self.b = b
+        self.ground = ground
     }
 
     public subscript(side: Side) -> FighterCondition {

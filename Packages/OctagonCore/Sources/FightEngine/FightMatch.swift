@@ -320,6 +320,7 @@ public enum FightMatchEngine {
         fighterB: Fighter
     ) {
         state.distance = .long
+        state.ground = nil
         recoverFighter(&state.a, fighter: fighterA)
         recoverFighter(&state.b, fighter: fighterB)
     }

@@ -60,6 +60,8 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
     public var tags: [CardTag]
     /// For `.move` cards: the target distance this movement seeks (`.close` = advance, `.long` = retreat, `.mid` = reset).
     public var preferredDistance: Distance?
+    /// For takedown cards (`.wrestling` tag): the starting `GroundPosition` entered when the takedown succeeds.
+    public var landingPosition: GroundPosition?
 
     /// `speed` / `power` / `accuracy` are clamped into `0...100`; costs are floored at 0.
     public init(
@@ -74,7 +76,8 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
         staminaCost: Int,
         deckCost: Int,
         tags: [CardTag] = [],
-        preferredDistance: Distance? = nil
+        preferredDistance: Distance? = nil,
+        landingPosition: GroundPosition? = nil
     ) {
         func c(_ v: Int) -> Int { min(max(v, Self.statRange.lowerBound), Self.statRange.upperBound) }
         self.id = id
@@ -89,6 +92,12 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
         self.deckCost = max(deckCost, 0)
         self.tags = tags
         self.preferredDistance = preferredDistance
+        self.landingPosition = landingPosition
+    }
+
+    /// True if this card is a standing takedown attempt.
+    public var isTakedown: Bool {
+        landingPosition != nil
     }
 
     /// True if the card is at full effect at `distance`.
