@@ -216,15 +216,66 @@
 
 ---
 
-## 12. 一次交手的完整流程（從頭到尾）
+## 12. 一次交手的完整流程與 P2-4 結算規格
 
 1. 顯示狀態：距離、位置、體力、血量、Rocked 與否
 2. 雙方各選 **1 張**（或連段）→ **蓋牌**
 3. 同時翻開 → 依相剋矩陣與速度決定先後
-4. 結算命中、傷害、體力、位置、氣勢、Rocked
+4. 結算命中、傷害、體力、位置、氣勢、Rocked，並產出結構化戰報 `ExchangeLog`
 5. 演出（L0/L1 動畫）
-6. 補牌、檢查終結條件（KO/降伏/倒地/時間）
+6. 補牌、檢查終結條件（KO/降伏/倒地/時間）與狀態不變量 `validateInvariants()`
 7. 每 8 次交手結束一回合 → 角落時間與計分
+
+### 12.1 順序、機率拆解與擲骰（P2-4 實作規格）
+
+- **體力先行扣除**：雙方先扣除各自出牌的 `card.staminaCost`（最低扣至 `0`）。
+- **機率拆解（`OddsBreakdown`）與擲骰**：
+  - 以出牌前的狀態計算雙方的 `OddsBreakdown`（含 `base`、`attributeModifier`、`distanceModifier`、`conditionModifier`、`momentumModifier`、`traitModifier`、`readModifier` 與夾限後的 `finalOdds`）。
+  - 呼叫 `rng.nextUnit()` 取得原始骰值 `roll`（`0.0 ..< 1.0`），`roll < finalOdds` 即為 `succeeded = true`。
+- **出手先後（Initiative）**：
+  - 計算有效速度：`effectiveSpeed = Double(fighter.attributes.speed + card.speed) / 2.0 * (staminaBefore < 40 ? 0.85 : 1.0)`。
+  - 速度較高的一方先結算（同速則 `.a` 先）。若先手一擊直接將對手打入 **KO/TKO** 或 **新觸發 Rocked**，後手的 `strike` / `counter` 會被**打斷（Interrupted）**而不造成傷害。
+
+### 12.2 六大卡牌類型結算數值
+
+- **基礎傷害公式（`baseDamage`）**：
+  - `raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.28`（約 `8–28` 點）
+  - 若出牌前體力 `< 40`：`raw *= 0.80`
+  - 若攻方具 `.onePunch` 且 `card.power >= 75`：`raw *= 1.15`
+- **各類型效果**：
+  1. **🗡️ 進攻 (`strike`)**：
+     - 對手出 **🛡️ 格擋 (`block`)** 且格擋成功：若 `strike` 也成功（打穿）造成 `raw * 0.45` 穿透傷，否則僅 `raw * 0.25` 擦傷；不觸發 Rocked，守方氣勢 `+4`。
+     - 對手出 **💨 閃避 (`evade`)** 且閃避成功：完全躲開（傷害 `0`），守方氣勢 `+8`；攻方落空額外扣體力 `-2`、氣勢 `-5`。
+     - 對手出 **↩️ 反擊 (`counter`)** 且反擊成功：進攻被反擊截斷（進攻傷害 `0`），由反擊方結算反擊傷害。
+     - 其他情況：若 `strike` 成功，對目標部位（`card.target ?? .head`）造成 `raw` 傷害，攻方氣勢 `+10`、守方氣勢 `-6`；若失敗（Miss），攻方氣勢 `-3`。
+  2. **↩️ 反擊 (`counter`)**：
+     - 對上 **進攻 (`strike`)** 且反擊成功：造成 `raw * (attacker.has(.counterPuncher) ? 1.80 : 1.60)` 傷害至 `card.target ?? .head`，攻方氣勢 `+16`、守方氣勢 `-10`。
+     - 對上非進攻卡且反擊成功（冷門抓到破綻）：造成 `raw * 0.80` 傷害，氣勢 `+8`。
+     - 反擊失敗：額外消耗體力 `-1`、氣勢 `-4`。
+  3. **🎭 佯攻 (`feint`)**：
+     - 成功：自身氣勢 `+10`、對手氣勢 `-6`，並在結果標記 `feintSucceeded = true`（供下一手獲得 `+0.10` 讀心加成）。
+     - 失敗：氣勢 `-2`。
+  4. **🏃 移動 (`move`)**：
+     - 成功：改變場上距離（若當前為 `.long` 則進 `.mid`；若為 `.mid` 且卡牌適用 `.close` 則進 `.close`，否則退 `.long`；若為 `.close` 則退 `.mid`），並改善自身籠邊位置一階（`.cornered` → `.againstCage` → `.center`），氣勢 `+6`。
+  5. **🛡️ 格擋 (`block`) / 💨 閃避 (`evade`)**：
+     - 對上非進攻卡且成功時：`block` 可趁空檔回復體力 `+2`，氣勢 `+2`。
+
+### 12.3 Rocked（被打暈）與 KO/TKO 終結判定
+
+- **Rocked 恢復**：交手開始時已處於 `isRocked == true` 的選手，若在本手結束時未被新打入 Rocked 且未倒下，則恢復為 `isRocked = false`。
+- **觸發 Rocked（抗打檢定 Chin Check）**：
+  - 當單次交手對 `head` 造成實際傷害 `>= 12.0`，且受擊後 `head < 65.0`（或單發傷害 `>= 18.0`）：
+  - `rockedOdds = Odds.resolve(base: 0.35, modifiers: [(damage - 12.0) * 0.02, (60.0 - Double(defender.attributes.chin)) * 0.005, defender.has(.ironChin) ? -0.15 : 0.0, defender.has(.glassChin) ? 0.15 : 0.0, attacker.has(.onePunch) ? 0.10 : 0.0])`
+  - 若 `rng.roll(probability: rockedOdds)` 為真，守方進入 `isRocked = true`（氣勢額外 `-10`）。
+- **直接終結（Finish）**：
+  - 任一部位血量歸零（`head <= 0` → `.ko`，`body <= 0` → `.tkoBody`，`legs <= 0` → `.tkoLegs`），交手立即以終結結束。
+
+### 12.4 四道防錯與實機除錯機制（Quality & Debug Architecture）
+
+1. **透明算式戰報（`ExchangeLog`）**：每次交手回傳完整的 `OddsBreakdown`、RNG 擲骰值、傷害與狀態變化，讓玩家與開發者在 UI 上能一眼核對「為什麼中、為什麼痛」。
+2. **狀態不變量自檢（`FightState.validateInvariants()`）**：每次交手後強制驗證所有部位血量、體力、氣勢皆在 `0...100` 且無 `NaN`，在 P2-6 的 10,000 場（20 萬次交手）模擬中全程開啟。
+3. **可重現重播包（`FightReplayLog`）**：記錄 `seed + 雙方選手 + 出牌序列`，實機遇到任何異常可一鍵複製 JSON 貼回測試重現。
+4. **實機戰鬥沙盒（P2-7）**：在 iPhone 上提供完整 3 回合站立對戰與可展開的 `[Debug]` 算式抽屜。
 
 ---
 

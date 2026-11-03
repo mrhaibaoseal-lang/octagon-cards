@@ -7,6 +7,17 @@
 
 ---
 
+## 2026-11-03 · [規劃] Gemini 4 Argon (P2-4 規格與四道防錯驗收機制)
+- 針對「如何確保實際遊戲沒出錯、無隱藏 Bug」制定 **4 道防線**，並寫入 `docs/STRIKING_AND_DECK.md` §12 與 `docs/TASKS.md`：
+  1. **透明算式戰報 `ExchangeLog`（P2-4）**：每次交手回傳完整的 `OddsBreakdown`（基準與各項加減成拆解）、RNG 原始骰值、傷害與狀態變化。
+  2. **不變量自檢 `FightState.validateInvariants()`（P2-4 / P2-6）**：強制驗證血量/體力/氣勢在 `0...100` 且無 `NaN`，在 P2-6 跑 10,000 場（約 20 萬次交手）時全程檢查。
+  3. **可重現重播包（P2-5 / P2-7）**：保存 `seed` 與出牌序列，遇到問題可一鍵複製 JSON 100% 還原現場。
+  4. **新增任務 P2-7 iPhone 站立實機沙盒與 Debug 抽屜**：P2 邏輯完成後立即接上 iOS 畫面並打包未簽名 IPA，內建 `[Debug]` 算式抽屜與一鍵複製重現碼。
+- 完成 **P2-4 單次交手結算** 詳細數值規格（`docs/STRIKING_AND_DECK.md` §12.1–12.3）：定義先後手順序、基礎傷害公式、6 大卡牌類型互動效果、Rocked 抗打檢定公式與 KO/TKO 終結條件。
+- 下一步：`[實作]` 執行 **P2-4 單次交手結算**
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P2-3)
 - 完成 **P2-3 可重現的亂數**
 - 新增 `Packages/OctagonCore/Sources/FightEngine/SeededRNG.swift`：
