@@ -300,7 +300,7 @@ public enum SampleData {
         id: "sample-striker", name: "Sample Striker", stance: .orthodox,
         attributes: FighterAttributes(
             power: 78, speed: 72, accuracy: 75, strikingDefense: 65, chin: 70,
-            cardio: 68, takedown: 35, takedownDefense: 60, submission: 30, clinch: 50),
+            cardio: 68, takedown: 35, takedownDefense: 64, submission: 30, clinch: 50),
         traits: [.onePunch, .counterPuncher])
 
     /// A wrestler with a weaker chin.
@@ -311,11 +311,11 @@ public enum SampleData {
             cardio: 85, takedown: 88, takedownDefense: 80, submission: 60, clinch: 82),
         traits: [.gasTank, .smother, .cagePinner])
 
-    /// A Brazilian Jiu-Jitsu submission specialist (Charles Oliveira / Damian Maia archetype).
+    /// A Brazilian Jiu-Jitsu submission specialist (Charles Oliveira / Demian Maia archetype).
     public static let bjjFighter = Fighter(
         id: "sample-bjj", name: "Sample BJJ Specialist", stance: .orthodox,
         attributes: FighterAttributes(
-            power: 62, speed: 65, accuracy: 66, strikingDefense: 58, chin: 62,
-            cardio: 76, takedown: 70, takedownDefense: 65, submission: 92, clinch: 78),
+            power: 56, speed: 62, accuracy: 62, strikingDefense: 54, chin: 58,
+            cardio: 76, takedown: 52, takedownDefense: 62, submission: 92, clinch: 76),
         traits: [.blackBeltBJJ, .unorthodox])
 }

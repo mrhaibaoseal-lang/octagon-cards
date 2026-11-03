@@ -150,7 +150,7 @@ public enum ExchangeEngine {
         card: Card,
         staminaBefore: Double
     ) -> Double {
-        var raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.265
+        var raw = (Double(attacker.attributes.power) * 0.40 + Double(card.power) * 0.60) * 0.285
         if staminaBefore < 40.0 {
             raw *= 0.80
         }

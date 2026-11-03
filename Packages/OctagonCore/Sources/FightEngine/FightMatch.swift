@@ -317,17 +317,17 @@ public struct StyleAI: FighterAI {
                     w *= 0.35
                 }
                 if card.isTakedown {
-                    if fighter.attributes.takedown >= 75 {
-                        w += card.isEffective(at: state.distance) ? 2.2 : 0.4
-                    } else if fighter.attributes.takedown >= 65 {
-                        w += card.isEffective(at: state.distance) ? 1.4 : 0.3
+                    if fighter.attributes.takedown >= 80 {
+                        w += card.isEffective(at: state.distance) ? 2.6 : 0.4
+                    } else if fighter.attributes.takedown >= 50 && fighter.attributes.submission >= 80 {
+                        w += card.isEffective(at: state.distance) ? 1.1 : 0.2
                     } else {
-                        w *= 0.12
+                        w *= 0.10
                     }
                 } else if card.tags.contains(.submission) && card.type == .counter {
                     w *= (fighter.attributes.submission >= 75) ? 1.1 : 0.2
                 } else if card.id == "sprawl" {
-                    w *= (fighter.attributes.takedownDefense >= 60) ? 0.9 : 0.5
+                    w += (fighter.attributes.takedownDefense >= 60 && state.distance != .long) ? 0.5 : -0.3
                 }
                 if fighter.attributes.takedown >= 70 && state.distance == .long && card.preferredDistance == .close {
                     w += 1.6
