@@ -17,3 +17,6 @@ jobs:
       - name: Test OctagonCore
         working-directory: Packages/OctagonCore
         run: swift test
+      - name: Run Balance Simulator (10,000 games)
+        working-directory: Packages/OctagonCore
+        run: swift run Simulate --games 10000
