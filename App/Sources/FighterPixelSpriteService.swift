@@ -12,11 +12,14 @@ import FightEngine
 /// 3. Boost contrast & apply unsharp mask to preserve tattoos and facial structure.
 /// 4. Area-average (BOX) downsample to `116px` height (body sprite) or `64x64px` (headshot).
 /// 5. Quantize opaque pixels to a 32-color adaptive palette (zero dithering).
-/// 6. Apply a 1px dark outline (`#12141F`) and cache to disk (`Caches/PixelSprites_v1/`).
+/// 6. Apply a 1px dark outline (`#12141F`) and cache to disk (`Application Support/PixelSprites_v1/`).
+///
+/// On first launch `ContentView` calls `prefetchAll` to download the whole roster once,
+/// so later matches load every sprite from disk with no network.
 actor FighterPixelSpriteService {
     static let shared = FighterPixelSpriteService()
 
-    enum SpriteKind: String, Sendable {
+    enum SpriteKind: String, Sendable, CaseIterable {
         case fullBody = "body_116"
         case headshot = "head_64"
 
@@ -32,14 +35,52 @@ actor FighterPixelSpriteService {
         }
     }
 
+    /// Progress snapshot for the first-launch roster prefetch.
+    struct PrefetchProgress: Sendable, Equatable {
+        var completed: Int
+        var total: Int
+        /// Sprites that could not be downloaded (offline / no official photo) and will use the fallback silhouette.
+        var failed: Int
+
+        var isFinished: Bool { completed >= total }
+        var fraction: Double { total == 0 ? 1 : Double(completed) / Double(total) }
+    }
+
+    private struct SpriteJob: Sendable {
+        let fighter: Fighter
+        let kind: SpriteKind
+    }
+
+    /// Real (official-photo) pixel sprites.
     private var memoryCache: [String: Data] = [:]
+    /// Procedural fallback silhouettes. Kept separate so a later online attempt can still replace them.
+    private var fallbackCache: [String: Data] = [:]
+    /// De-duplicates concurrent requests for the same sprite (e.g. prefetch + match start at the same time).
+    private var inFlight: [String: Task<Data?, Never>] = [:]
     private let cacheDirectory: URL
 
     init() {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        let fm = FileManager.default
+        // Application Support (not Caches) so iOS does not purge the sprites under storage pressure,
+        // which would force a re-download. Excluded from iCloud backup since it can be regenerated.
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = base.appendingPathComponent("PixelSprites_v1", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var dir = base.appendingPathComponent("PixelSprites_v1", isDirectory: true)
+
+        // One-time migration from the v0.5.0 location (Caches/PixelSprites_v1).
+        if !fm.fileExists(atPath: dir.path),
+           let oldBase = fm.urls(for: .cachesDirectory, in: .userDomainMask).first
+        {
+            let oldDir = oldBase.appendingPathComponent("PixelSprites_v1", isDirectory: true)
+            if fm.fileExists(atPath: oldDir.path) {
+                try? fm.createDirectory(at: base, withIntermediateDirectories: true)
+                try? fm.moveItem(at: oldDir, to: dir)
+            }
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
         self.cacheDirectory = dir
     }
 
@@ -52,8 +93,83 @@ actor FighterPixelSpriteService {
         cacheDirectory.appendingPathComponent(key)
     }
 
+    /// Whether a real pixel sprite is already stored on device (no network needed).
+    func hasCachedSprite(for fighter: Fighter, kind: SpriteKind) -> Bool {
+        let key = cacheKey(fighterId: fighter.id, kind: kind)
+        return memoryCache[key] != nil || FileManager.default.fileExists(atPath: diskURL(for: key).path)
+    }
+
+    /// Fighters without any official photo URL always use the silhouette, so they are never "downloadable".
+    private static func hasOfficialPhoto(_ fighter: Fighter) -> Bool {
+        fighter.fullBodyImageUrl != nil || fighter.headshotImageUrl != nil
+    }
+
+    /// Number of downloadable sprites (body + headshot per fighter) not yet stored on device.
+    func missingSpriteCount(in fighters: [Fighter]) -> Int {
+        fighters.filter(Self.hasOfficialPhoto).reduce(0) { count, fighter in
+            count + SpriteKind.allCases.filter { !hasCachedSprite(for: fighter, kind: $0) }.count
+        }
+    }
+
     /// Returns pixelated PNG data for the requested fighter and sprite kind (from memory, disk, or network + on-device pixelator).
+    /// Falls back to a procedural silhouette when offline or when no official photo exists.
     func spritePNGData(for fighter: Fighter, kind: SpriteKind) async -> Data {
+        if let real = await realSprite(for: fighter, kind: kind) {
+            return real
+        }
+        // Offline or newcomer without official photo -> generate procedural pixel silhouette (RULES.md §4.2)
+        let key = cacheKey(fighterId: fighter.id, kind: kind)
+        if let cached = fallbackCache[key] {
+            return cached
+        }
+        if let fallbackCG = Self.makeFallbackSilhouette(
+            for: fighter,
+            targetHeight: kind.targetHeight,
+            isSquareHeadshot: kind.isSquare
+        ),
+           let pngData = UIImage(cgImage: fallbackCG).pngData()
+        {
+            fallbackCache[key] = pngData
+            return pngData
+        }
+        return Data()
+    }
+
+    /// Downloads and pixelates every fighter's body + headshot sprite that is not on device yet,
+    /// with limited concurrency so we stay polite to the image host. Already-cached sprites are skipped instantly.
+    @discardableResult
+    func prefetchAll(
+        _ fighters: [Fighter],
+        maxConcurrent: Int = 4,
+        onProgress: @escaping @MainActor @Sendable (PrefetchProgress) -> Void
+    ) async -> PrefetchProgress {
+        let jobs = fighters.filter(Self.hasOfficialPhoto).flatMap { fighter in
+            SpriteKind.allCases.map { SpriteJob(fighter: fighter, kind: $0) }
+        }
+        var progress = PrefetchProgress(completed: 0, total: jobs.count, failed: 0)
+        await onProgress(progress)
+        guard !jobs.isEmpty else { return progress }
+
+        await withTaskGroup(of: Bool.self) { group in
+            var iterator = jobs.makeIterator()
+            for _ in 0..<max(1, maxConcurrent) {
+                guard let job = iterator.next() else { break }
+                group.addTask { await self.realSprite(for: job.fighter, kind: job.kind) != nil }
+            }
+            for await succeeded in group {
+                progress.completed += 1
+                if !succeeded { progress.failed += 1 }
+                await onProgress(progress)
+                if let job = iterator.next() {
+                    group.addTask { await self.realSprite(for: job.fighter, kind: job.kind) != nil }
+                }
+            }
+        }
+        return progress
+    }
+
+    /// Real pixel sprite from memory, disk, or network. Returns nil if it cannot be obtained right now.
+    private func realSprite(for fighter: Fighter, kind: SpriteKind) async -> Data? {
         let key = cacheKey(fighterId: fighter.id, kind: kind)
         if let mem = memoryCache[key] {
             return mem
@@ -63,41 +179,60 @@ actor FighterPixelSpriteService {
             memoryCache[key] = diskData
             return diskData
         }
+        if let existing = inFlight[key] {
+            return await existing.value
+        }
 
         let urlString = (kind == .fullBody) ? (fighter.fullBodyImageUrl ?? fighter.headshotImageUrl) : (fighter.headshotImageUrl ?? fighter.fullBodyImageUrl)
-        if let urlStr = urlString, let url = URL(string: urlStr) {
-            var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 15)
-            request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
-            if let (rawData, response) = try? await URLSession.shared.data(for: request),
-               let http = response as? HTTPURLResponse,
-               (200...299).contains(http.statusCode),
-               let uiImage = UIImage(data: rawData),
-               let cgImage = uiImage.cgImage,
-               let pixelatedCG = Self.pixelateCGImage(
-                   cgImage,
-                   targetHeight: kind.targetHeight,
-                   isSquareHeadshot: kind.isSquare
-               ),
-               let pngData = UIImage(cgImage: pixelatedCG).pngData()
-            {
-                memoryCache[key] = pngData
-                try? pngData.write(to: fileURL, options: .atomic)
-                return pngData
-            }
+        guard let urlStr = urlString, let url = URL(string: urlStr) else {
+            return nil
         }
 
-        // Offline or newcomer without official photo -> generate procedural pixel silhouette (RULES.md §4.2)
-        if let fallbackCG = Self.makeFallbackSilhouette(
-            for: fighter,
-            targetHeight: kind.targetHeight,
-            isSquareHeadshot: kind.isSquare
-        ),
-           let pngData = UIImage(cgImage: fallbackCG).pngData()
-        {
-            memoryCache[key] = pngData
-            return pngData
+        let targetHeight = kind.targetHeight
+        let isSquare = kind.isSquare
+        // Download + CPU-heavy pixelation run off the actor so cached lookups stay instant during prefetch.
+        let task = Task.detached(priority: .utility) { () -> Data? in
+            await FighterPixelSpriteService.downloadAndPixelate(
+                url: url,
+                targetHeight: targetHeight,
+                isSquareHeadshot: isSquare,
+                saveTo: fileURL
+            )
         }
-        return Data()
+        inFlight[key] = task
+        let result = await task.value
+        inFlight[key] = nil
+        if let result {
+            memoryCache[key] = result
+            fallbackCache[key] = nil
+        }
+        return result
+    }
+
+    private static func downloadAndPixelate(
+        url: URL,
+        targetHeight: Int,
+        isSquareHeadshot: Bool,
+        saveTo fileURL: URL
+    ) async -> Data? {
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 15)
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+        guard let (rawData, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let uiImage = UIImage(data: rawData),
+              let cgImage = uiImage.cgImage,
+              let pixelatedCG = pixelateCGImage(
+                  cgImage,
+                  targetHeight: targetHeight,
+                  isSquareHeadshot: isSquareHeadshot
+              ),
+              let pngData = UIImage(cgImage: pixelatedCG).pngData()
+        else {
+            return nil
+        }
+        try? pngData.write(to: fileURL, options: .atomic)
+        return pngData
     }
 
     // MARK: - 5-Step CoreGraphics Pixelation Pipeline
