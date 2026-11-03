@@ -169,7 +169,7 @@ public enum Odds {
             mod -= (40.0 - condition.stamina) * 0.003
         }
         if condition.health.legs < 50.0 {
-            if card.type == .move || card.type == .evade || card.tags.contains(.kick) {
+            if card.type == .move || card.type == .evade || card.tags.contains(.kick) || card.isTakedown {
                 mod -= 0.10
             }
         }

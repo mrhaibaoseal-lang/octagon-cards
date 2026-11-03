@@ -288,4 +288,56 @@ struct GroundExchangeTests {
         #expect(res.log.a.wasInterrupted)
         #expect(res.state.isValid)
     }
+
+    @Test func topStackDefenseAgainstBottomTriangleAndDamagedLegTakedownPenalty() {
+        // 1. Top fighter caught in Bottom's Triangle Choke: stacking (stackPass) defends much better than GnP
+        let hold = SubmissionHold(
+            cardId: SampleData.triangleChoke.id,
+            name: SampleData.triangleChoke.name,
+            category: .choke,
+            attackerSide: .b,
+            stage: .setup
+        )
+        let subState = FightState(ground: GroundState(topSide: .a, position: .fullGuard, activeSubmission: hold))
+        let topStack = FighterPlay(fighter: SampleData.wrestler, card: SampleData.stackPass, side: .a)
+        let topGnP = FighterPlay(fighter: SampleData.wrestler, card: SampleData.posturedHammerfist, side: .a)
+        let botTriangle = FighterPlay(fighter: SampleData.bjjFighter, card: SampleData.triangleChoke, side: .b)
+
+        let pEscapeWithStack = Odds.resolveOdds(my: topStack, opp: botTriangle, state: subState)
+        let pEscapeWithGnP = Odds.resolveOdds(my: topGnP, opp: botTriangle, state: subState)
+        let pSubVsStack = Odds.resolveOdds(my: botTriangle, opp: topStack, state: subState)
+        let pSubVsGnP = Odds.resolveOdds(my: botTriangle, opp: topGnP, state: subState)
+        #expect(pEscapeWithStack > pEscapeWithGnP)
+        #expect(pSubVsGnP > pSubVsStack)
+
+        // 2. Wrestler with chewed-up legs (< 50) suffers a -10% penalty when shooting a takedown
+        let freshState = FightState(distance: .mid)
+        var hurtLegsState = FightState(distance: .mid)
+        hurtLegsState.a.health.legs = 38.0
+        let tdShot = FighterPlay(fighter: SampleData.wrestler, card: SampleData.doubleLeg, side: .a)
+        let oppJab = FighterPlay(fighter: SampleData.striker, card: SampleData.jab, side: .b)
+        #expect(Odds.resolveOdds(my: tdShot, opp: oppJab, state: hurtLegsState) < Odds.resolveOdds(my: tdShot, opp: oppJab, state: freshState))
+
+        // 3. Catch Kick Takedown has much higher odds vs a Kick than vs a passive Guard
+        let catchTD = FighterPlay(fighter: SampleData.wrestler, card: SampleData.catchKickTakedown, side: .a)
+        let oppKick = FighterPlay(fighter: SampleData.striker, card: SampleData.lowKick, side: .b)
+        let oppGuard = FighterPlay(fighter: SampleData.striker, card: SampleData.guardUp, side: .b)
+        #expect(Odds.resolveOdds(my: catchTD, opp: oppKick, state: freshState) > Odds.resolveOdds(my: catchTD, opp: oppGuard, state: freshState))
+
+        // 4. Back Take from HalfGuard against Shell jumps directly to BackControl
+        let halfGuardState = FightState(ground: GroundState(topSide: .a, position: .halfGuard))
+        let playBackTake = FighterPlay(fighter: SampleData.bjjFighter, card: SampleData.backTake, side: .a)
+        let playShell = FighterPlay(fighter: SampleData.striker, card: SampleData.shellUp, side: .b)
+        var jumpedBack = false
+        for seed in UInt64(1)...300 {
+            var rng = SeededRNG(seed: seed)
+            let res = resolveExchange(a: playBackTake, b: playShell, state: halfGuardState, rng: &rng)
+            if res.log.a.positionAdvancedTo == .backControl {
+                jumpedBack = true
+                #expect(res.state.ground?.position == .backControl)
+                break
+            }
+        }
+        #expect(jumpedBack)
+    }
 }

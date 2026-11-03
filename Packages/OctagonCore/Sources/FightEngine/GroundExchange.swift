@@ -248,6 +248,30 @@ public enum GroundOdds {
         return mod
     }
 
+    /// True when the submission defender chose an optimal posture/frame/escape card for their ground role.
+    public static func isStrongSubmissionDefense(defenderCard: Card, defenderRole: GroundRole) -> Bool {
+        switch defenderRole {
+        case .bottom:
+            let intent = effectiveBottomIntent(for: defenderCard)
+            return intent == .frame || intent == .escape
+        case .top:
+            // Top fighter defending a bottom Triangle / Armbar: stacking (.advance) or heavy base (.smother)
+            let intent = effectiveTopIntent(for: defenderCard)
+            return intent == .smother || intent == .advance
+        }
+    }
+
+    /// True when the submission defender chose a card that leaves their neck/limbs exposed.
+    public static func isVulnerableSubmissionDefense(defenderCard: Card, defenderRole: GroundRole) -> Bool {
+        switch defenderRole {
+        case .bottom:
+            return effectiveBottomIntent(for: defenderCard) == .shell
+        case .top:
+            // Top fighter reaching to punch (.gnp) while caught in a bottom submission leaves the arm/neck extended
+            return effectiveTopIntent(for: defenderCard) == .gnp
+        }
+    }
+
     private static func submissionChainBreakdown(
         my: FighterPlay,
         opp: FighterPlay,
@@ -257,21 +281,26 @@ public enum GroundOdds {
         readModifier: Double
     ) -> OddsBreakdown {
         let isAttacker = (my.side == hold.attackerSide)
-        let defIntent = effectiveBottomIntent(for: isAttacker ? opp.card : my.card)
+        let defSide = hold.attackerSide.opposite
+        let defRole = ground.role(for: defSide)
+        let defCard = isAttacker ? opp.card : my.card
+        let strongDef = isStrongSubmissionDefense(defenderCard: defCard, defenderRole: defRole)
+        let vulnDef = isVulnerableSubmissionDefense(defenderCard: defCard, defenderRole: defRole)
+
         let base: Double
         if isAttacker {
             switch hold.stage {
             case .setup:
-                base = (defIntent == .shell) ? 0.68 : 0.56
+                base = vulnDef ? 0.68 : (strongDef ? 0.50 : 0.56)
             case .lockedIn:
-                base = (defIntent == .shell) ? 0.72 : 0.60
+                base = vulnDef ? 0.72 : (strongDef ? 0.54 : 0.60)
             }
         } else {
             switch hold.stage {
             case .setup:
-                base = (defIntent == .frame || defIntent == .escape) ? 0.56 : 0.45
+                base = strongDef ? 0.58 : 0.45
             case .lockedIn:
-                base = (defIntent == .frame || defIntent == .escape) ? 0.42 : 0.32
+                base = strongDef ? 0.44 : 0.32
             }
         }
 
@@ -377,10 +406,12 @@ public enum GroundExchangeEngine {
         if let hold = ground.activeSubmission {
             let attSide = hold.attackerSide
             let defSide = attSide.opposite
+            let defRole = ground.role(for: defSide)
             var attLog = logs[attSide]!
             var defLog = logs[defSide]!
             let defPlay = plays[defSide]!
-            let defIntent = GroundOdds.effectiveBottomIntent(for: defPlay.card)
+            let fullBreakoutIntent = (defRole == .bottom && GroundOdds.effectiveBottomIntent(for: defPlay.card) == .escape)
+                || (defRole == .top && GroundOdds.effectiveTopIntent(for: defPlay.card) == .advance)
 
             let attMargin = attLog.odds.finalOdds - attLog.roll
             let defMargin = defLog.odds.finalOdds - defLog.roll
@@ -406,7 +437,7 @@ public enum GroundExchangeEngine {
             } else {
                 // Defender wins the submission step
                 defLog.submissionEscaped = true
-                if hold.stage == .lockedIn && defIntent != .escape {
+                if hold.stage == .lockedIn && !fullBreakoutIntent {
                     // Miraculous defense in Stage 2 drops back to Stage 1 Setup (`S2 -> S1`)
                     var nextHold = hold
                     nextHold.stage = .setup
@@ -440,8 +471,7 @@ public enum GroundExchangeEngine {
             // --- Row 1: Top Advance ---
             case (.advance, .frame):
                 if topLog.succeeded && !bottomLog.succeeded {
-                    ground.advance()
-                    topLog.positionAdvancedTo = ground.position
+                    applyTopAdvance(card: topPlay.card, bottomIntent: bottomIntent, ground: &ground, topLog: &topLog)
                     ExchangeEngine.adjustMomentum(&state[topSide], by: 10.0)
                 } else {
                     stalled = true
@@ -450,16 +480,16 @@ public enum GroundExchangeEngine {
 
             case (.advance, .escape):
                 if topLog.succeeded {
-                    ground.advance()
-                    topLog.positionAdvancedTo = ground.position
+                    applyTopAdvance(card: topPlay.card, bottomIntent: bottomIntent, ground: &ground, topLog: &topLog)
                     ExchangeEngine.adjustStamina(&state[bottomSide], by: -4.0)
                     ExchangeEngine.adjustMomentum(&state[topSide], by: 12.0)
                     ExchangeEngine.adjustMomentum(&state[bottomSide], by: -8.0)
                 } else if bottomLog.succeeded {
                     applyBottomEscape(
-                        ground: &ground, state: &state,
+                        ground: &ground, state: &state, rng: &rng,
                         topSide: topSide, bottomSide: bottomSide,
-                        bottomLog: &bottomLog
+                        topPlay: topPlay, bottomPlay: bottomPlay,
+                        bottomLog: &bottomLog, finish: &finish
                     )
                 } else {
                     stalled = true
@@ -467,8 +497,7 @@ public enum GroundExchangeEngine {
 
             case (.advance, .sweepOrSub):
                 if topLog.succeeded {
-                    ground.advance()
-                    topLog.positionAdvancedTo = ground.position
+                    applyTopAdvance(card: topPlay.card, bottomIntent: bottomIntent, ground: &ground, topLog: &topLog)
                     ExchangeEngine.adjustStamina(&state[bottomSide], by: -5.0)
                     ExchangeEngine.adjustMomentum(&state[topSide], by: 10.0)
                 } else if bottomLog.succeeded {
@@ -483,8 +512,7 @@ public enum GroundExchangeEngine {
 
             case (.advance, .shell):
                 if topLog.succeeded {
-                    ground.advance()
-                    topLog.positionAdvancedTo = ground.position
+                    applyTopAdvance(card: topPlay.card, bottomIntent: bottomIntent, ground: &ground, topLog: &topLog)
                     ExchangeEngine.adjustMomentum(&state[topSide], by: 14.0)
                     ExchangeEngine.adjustMomentum(&state[bottomSide], by: -8.0)
                 } else {
@@ -551,9 +579,10 @@ public enum GroundExchangeEngine {
                     ExchangeEngine.adjustStamina(&state[bottomSide], by: stamDrain)
                 } else if bottomIntent == .escape && bottomLog.succeeded {
                     applyBottomEscape(
-                        ground: &ground, state: &state,
+                        ground: &ground, state: &state, rng: &rng,
                         topSide: topSide, bottomSide: bottomSide,
-                        bottomLog: &bottomLog
+                        topPlay: topPlay, bottomPlay: bottomPlay,
+                        bottomLog: &bottomLog, finish: &finish
                     )
                 } else {
                     stalled = true
@@ -564,9 +593,10 @@ public enum GroundExchangeEngine {
                 // Bottom punishes Top's submission reach by slipping out and standing up!
                 if bottomLog.succeeded {
                     applyBottomEscape(
-                        ground: &ground, state: &state,
+                        ground: &ground, state: &state, rng: &rng,
                         topSide: topSide, bottomSide: bottomSide,
-                        bottomLog: &bottomLog
+                        topPlay: topPlay, bottomPlay: bottomPlay,
+                        bottomLog: &bottomLog, finish: &finish
                     )
                     ExchangeEngine.adjustStamina(&state[topSide], by: -4.0)
                     ExchangeEngine.adjustMomentum(&state[topSide], by: -10.0)
@@ -631,9 +661,10 @@ public enum GroundExchangeEngine {
                     ExchangeEngine.adjustMomentum(&state[bottomSide], by: -12.0)
                 } else if bottomLog.succeeded {
                     applyBottomEscape(
-                        ground: &ground, state: &state,
+                        ground: &ground, state: &state, rng: &rng,
                         topSide: topSide, bottomSide: bottomSide,
-                        bottomLog: &bottomLog
+                        topPlay: topPlay, bottomPlay: bottomPlay,
+                        bottomLog: &bottomLog, finish: &finish
                     )
                 } else {
                     stalled = true
@@ -693,15 +724,59 @@ public enum GroundExchangeEngine {
 
     // MARK: - Private Ground Resolution Helpers
 
+    private static func applyTopAdvance(
+        card: Card,
+        bottomIntent: BottomIntent,
+        ground: inout GroundState,
+        topLog: inout ExchangeSideLog
+    ) {
+        if card.id == "back-take" && ground.position >= .halfGuard
+            && (bottomIntent == .escape || bottomIntent == .shell || ground.position >= .sideControl)
+        {
+            // Agile Back Take (`GROUND_GAME_DESIGN.md` §2: HalfGuard / SideControl -> BackControl)
+            ground.position = .backControl
+            ground.stallCount = 0
+            ground.activeSubmission = nil
+        } else {
+            ground.advance()
+        }
+        topLog.positionAdvancedTo = ground.position
+    }
+
     private static func applyBottomEscape(
         ground: inout GroundState,
         state: inout FightState,
+        rng: inout SeededRNG,
         topSide: Side,
         bottomSide: Side,
-        bottomLog: inout ExchangeSideLog
+        topPlay: FighterPlay,
+        bottomPlay: FighterPlay,
+        bottomLog: inout ExchangeSideLog,
+        finish: inout ExchangeFinish?
     ) {
+        let canKickOff = ground.position.canStandUpDirectly && bottomPlay.card.power > 0
         let stoodUp = ground.escapeOrStandUp()
         if stoodUp {
+            if canKickOff {
+                let raw = ExchangeEngine.baseDamage(
+                    attacker: bottomPlay.fighter,
+                    card: bottomPlay.card,
+                    staminaBefore: state[bottomSide].stamina
+                )
+                ExchangeEngine.applyDamage(
+                    raw * 0.55,
+                    to: bottomPlay.card.target ?? .head,
+                    attackerSide: bottomSide,
+                    defenderSide: topSide,
+                    attacker: bottomPlay.fighter,
+                    defender: topPlay.fighter,
+                    canRock: false,
+                    state: &state,
+                    rng: &rng,
+                    myLog: &bottomLog,
+                    finish: &finish
+                )
+            }
             state.ground = nil
             state.distance = .mid
             bottomLog.stoodUpToStanding = true

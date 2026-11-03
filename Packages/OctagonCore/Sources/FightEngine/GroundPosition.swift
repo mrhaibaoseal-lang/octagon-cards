@@ -197,7 +197,16 @@ public enum TakedownEngine {
         readModifier: Double = 0.0
     ) -> OddsBreakdown {
         let base: Double
-        if opp.card.type == .block && opp.card.tags.contains(.wrestling) {
+        if my.card.type == .counter {
+            // Counter-takedown (e.g. Catch Kick Takedown): high odds vs kicks, medium vs punches, low vs passive
+            if opp.card.type == .strike && opp.card.tags.contains(.kick) {
+                base = 0.68
+            } else if opp.card.type == .strike {
+                base = 0.50
+            } else {
+                base = 0.18
+            }
+        } else if opp.card.type == .block && opp.card.tags.contains(.wrestling) {
             // Dedicated Sprawl defense
             base = 0.30
         } else if opp.card.type == .counter {

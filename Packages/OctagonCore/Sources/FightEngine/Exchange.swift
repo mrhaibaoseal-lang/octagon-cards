@@ -540,12 +540,12 @@ public enum ExchangeEngine {
             case .legs:
                 // STRIKING_AND_DECK §4: Heavy leg kick on already-compromised legs can buckle the base for a Leg TKO.
                 let legsAfter = state[defenderSide].health.legs
-                if clampedDamage >= 11.0 && legsAfter < 48.0 {
+                if clampedDamage >= 10.5 && legsAfter < 54.0 {
                     let pBuckle = Odds.resolve(
-                        base: 0.08,
+                        base: 0.09,
                         modifiers: [
-                            (clampedDamage - 11.0) * 0.012,
-                            (48.0 - legsAfter) * 0.004,
+                            (clampedDamage - 10.5) * 0.012,
+                            (54.0 - legsAfter) * 0.004,
                         ]
                     )
                     if rng.roll(probability: pBuckle) {
