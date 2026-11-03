@@ -3,9 +3,19 @@
 > 每次收工在**最上方**新增一筆。下一棒開工先讀最上面 2–3 筆。
 
 ## 待規劃確認
-- 「10 項核心屬性」文件未列清單。P2-1 暫定：power、speed、accuracy、strikingDefense、chin、cardio、takedown、takedownDefense、submission、clinch（皆 0–100）。請 `[規劃]` 確認或調整。
-- `Card` 的 speed/power/accuracy 暫用 0–100 整數；體力/血量/氣勢用 Double（0–100）。`Card` 尚未含「風險 Risk」「特殊效果」欄位（P2-4 需要時再加）。
-- `FightState` 的籠邊位置做成「每位選手各自一個」（`FighterCondition.cage`），而非全場單一值；站姿角度 Angle 暫未納入。
+- （已全數於 2026-11-03 由 `[規劃]` 拍板定案，見下方紀錄）
+
+---
+
+## 2026-11-03 · [規劃] Gemini 4 Argon
+- 審查 **P2-1 資料模型** 實作並回覆 3 項待確認設計：
+  1. **10 項核心屬性定案**：正式採納 `FighterAttributes` 的 10 個欄位（`power`, `speed`, `accuracy`, `strikingDefense`, `chin`, `cardio`, `takedown`, `takedownDefense`, `submission`, `clinch`，皆 `0...100`），已補入 `docs/POWER_SYSTEM.md` §1.1。
+  2. **Card 數值與欄位定案**：確認 `speed`/`power`/`accuracy` 為 `0...100` `Int`，體力/血量/氣勢為 `0...100` `Double`。P2（站立 v0）維持目前精簡欄位，暫不加 `Risk` 與特殊效果閉包/枚舉，等 P2-4 若需要簡單枚舉再擴充。
+  3. **FightState 籠邊與角度定案**：確認 `cage` 由兩位選手各自持有（`FighterCondition.cage`），因為真實對局中常有一方背靠籠、另一方在中央壓迫；站姿角度 `Angle` 在 v0 改由雙方 `Fighter.stance`（正架 vs 反架）在公式中直接判定，不在 `FightState` 另存動態軸。
+- 補齊 **P2-2 機率優勢表** 的具體數值公式（寫入 `docs/STRIKING_AND_DECK.md` §2.1.1）：
+  - 定義 6×6 基準表中 `—` 格子的預設基準值為 `0.50`
+  - 明確定義屬性差、距離不符（差 1 格 `-0.20`、差 2 格 `-0.35`）、低體力/腿傷、氣勢差與特性修正的計算方式
+- 下一步：`[實作]` 執行 **P2-2 機率優勢表**
 
 ---
 
