@@ -7,6 +7,13 @@
 
 ---
 
+## 2026-11-03 · [規劃] Gemini 4 Argon (補齊 P3 地面戰引擎與 P4 完整 56 張卡牌庫任務看板)
+- 原本 `docs/TASKS.md` 僅先拆了第一階段「P2 站立引擎 v0」，而地面戰的完整企劃放在 `docs/GROUND_GAME_DESIGN.md` 尚未拆成任務卡。
+- 現已將 **P3 抱摔、纏抱與地面戰引擎（P3-1 ～ P3-4）** 與 **P4 完整 56 張卡牌庫與手牌抽牌系統（P4-1 ～ P4-3）** 完整拆解寫入 `docs/TASKS.md`。
+- 下一步：可由使用者選擇先做 **P3-1（地面位置階層與抱摔橋樑）** 或 **P4-1（擴充站立卡牌庫）**。
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P2-7 iPhone 站立實機沙盒與 Debug 抽屜)
 - 完成 **P2-7 iPhone 站立實機沙盒與 Debug 戰報抽屜（含打包 IPA）**
 - 修改 `Packages/OctagonCore/Sources/FightEngine/FightMatch.swift`：新增 `FightReplayExchange` 與 `FightReplayBundle`（供手機端一鍵複製 JSON 重現碼）
