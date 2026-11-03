@@ -7,6 +7,27 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P4 後全面機制審查修正 + 三大 UFC 擬真系統擴充 v0.4.0)
+- **第一階段：嚴格代碼與遊戲機制審查（抓出並修復 4 個隱藏機制錯位，commit `1be3e0b`）**：
+  1. **修復「下位發動三角絞/十字固時，上位防守方意圖判定錯位」**：原本 `GroundOdds.submissionChainBreakdown` 一律用 `effectiveBottomIntent` 判斷防守方，導致上位選手出 `.block`（如 `dagestaniHandcuff` 重壓）被誤判為抱頭龜縮 `.shell` 反而更容易被絞。已改為依 `defenderRole`（`.top` vs `.bottom`）分開判定強防禦（上位疊壓過腿 `.advance` / 下位防禦撐架 `.frame` 與蝦行逃脫 `.escape`）與破綻意圖（上位撐高砸拳 `.gnp` / 下位抱頭龜縮 `.shell`）。
+  2. **補齊「出拳/抱摔者自身腿部重傷 (`health.legs < 50`) 時抱摔推進 `-10%` 懲罰」**：讓低掃/卡夫踢砍腿戰術真正能削弱摔角手的抱摔推進力。
+  3. **修正「接踢反摔 (`catchKickTakedown`) 對非踢擊卡基礎機率過高」**：對手出 `.kick` 時基礎成功率 `68%`、出拳 `50%`、不出招僅 `18%`。
+  4. **實裝「靈巧搶背 (`backTake`) 跳階直接搶入 `backControl`」與「蹬踏踢開起身 (`upkickStandup`) 脫身附帶下位蹬擊傷害」**。
+- **第二階段：實裝三大進階 UFC 擬真系統（commit `4e9b597` + 醫務暫停門檻校準）**：
+  1. **🩸 肘擊割傷與流血系統 (`cutSeverity 0...3` + Cutman 止血 + 醫務暫停 `.tkoDoctor`)**：
+     - 站立貼身橫肘（`closeElbow`）、迎擊短肘與地面剃刀砸肘（`groundElbows`）命中頭部具備 `25%` 高割傷率（一般重擊 `>= 16` 傷具備 `6%` 割傷率）。
+     - 每級 `cutSeverity` 因鮮血遮蔽視線對站立 `.strike` / `.counter` / `.evade` 造成 `-3%` 命中/閃避懲罰；回合間角落 Cutman 自動止血降 `1` 級；當割傷擴大至 `Lv.2` / `Lv.3` 或 `Lv.3` 再遭頭部重擊時，有機率觸發場邊醫務官叫停（`FinishReason.tkoDoctor`）。
+  2. **⚡ 籠邊纏抱與泰拳箍頸獨立子狀態 (`FightState.isClinch`)**：
+     - 近距離（`.close`）下由箍頸膝撞、貼身肘擊、內圍髒拳或高纏抱/壓籠特質推進進入 `isClinch = true`（若帶 `.cagePinner` 特質同步將對手往籠邊推退一格）。
+     - 纏抱狀態下：膝撞（`.knee`）、肘擊（`.elbow`）、內圍髒拳、籠邊推開（`pushOff`）享 `+8% + 纏抱屬性差` 加成；近身絆摔/抱摔享 `+6% + 纏抱差` 加成；長距離踢擊（`.kick`）受空間狹窄 `-8%` 懲罰。
+     - 脫離途徑完整且嚴格守恆：`pushOff`、`stepBack`、成功閃避（`.evade`）、進入地面、防摔 Sprawl 成功、被打暈 `isRocked` 或回合結束皆自動解除 `isClinch = false`（`validateInvariants()` 全程嚴格檢查）。
+  3. **⚖️ 三位偏好不同的裁判與分歧/多數判定 (`JudgeBias` / `DecisionType` / `JudgeScorecard`)**：
+     - 每場比賽由三位偏好不同的場邊裁判獨立以 `10-Point Must` 評分：`Judge 1 (.striking)` 偏重有效打擊傷害/擊暈/割傷（`1.30x` 打擊、`0.60x` 摔柔）、`Judge 2 (.grappling)` 偏重抱摔/過腿/降伏威脅與上位控制（`0.75x` 打擊、`1.45x` 摔柔）、`Judge 3 (.balanced)` 均衡評分（`1.00x`）。
+     - 打滿三回合自動結算三張計分卡，真實呈現 **一致判定 (`Unanimous Decision 3-0`)**、**分歧判定 (`Split Decision 2-1`)** 與 **多數判定 (`Majority Decision 2-0-1`)**！
+  4. 新增專屬測試套件 `RealismFeaturesTests.swift`（總測試數達 **59 項測試 / 10 大測試套件**），並更新 iPhone 沙盒 UI（`v0.4.0 (4)`）顯示 `🩸 流血 Lv.X`、`🤼 籠邊纏抱 Clinch` 與三裁判計分卡。
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (P4-3 20 張牌組、5 張手牌自動翻面與 v0.3.0 完整 MMA 實機沙盒打包)
 - 完成 **P4-3 20 張牌組、5 張手牌抽補與進地面自動翻面切換 + iPhone 實機沙盒更新**：
   - 新增 `Packages/OctagonCore/Sources/FightEngine/DeckHand.swift` 與 `DeckHandTests.swift`（共 55 項測試 / 9 大測試套件全過，run `41634265166`）：

@@ -557,12 +557,12 @@ public enum ExchangeEngine {
                 }
                 // Cut / Bleeding & Doctor Stoppage check (`STRIKING_AND_DECK.md` / UFC Elbow Cut rules)
                 let isElbow = card?.tags.contains(.elbow) == true
-                if state[defenderSide].cutSeverity >= FighterCondition.maxCutSeverity && clampedDamage >= 12.0 {
+                if state[defenderSide].cutSeverity >= FighterCondition.maxCutSeverity && clampedDamage >= 10.0 {
                     let pDoctor = Odds.resolve(
-                        base: 0.14,
+                        base: 0.35,
                         modifiers: [
                             isElbow ? 0.10 : 0.0,
-                            (clampedDamage - 12.0) * 0.01,
+                            (clampedDamage - 10.0) * 0.01,
                         ]
                     )
                     if rng.roll(probability: pDoctor) {
@@ -572,19 +572,32 @@ public enum ExchangeEngine {
                 } else if state[defenderSide].cutSeverity < FighterCondition.maxCutSeverity {
                     let canOpenCut = (isElbow && clampedDamage >= 8.0)
                         || clampedDamage >= 16.0
-                        || (state[defenderSide].isBleeding && clampedDamage >= 11.5)
+                        || (state[defenderSide].isBleeding && clampedDamage >= 11.0)
                     if canOpenCut {
-                        let baseCut = isElbow ? 0.25 : (state[defenderSide].isBleeding ? 0.10 : 0.06)
+                        let baseCut = isElbow ? 0.25 : (state[defenderSide].isBleeding ? 0.12 : 0.06)
                         let pCut = Odds.resolve(
                             base: baseCut,
                             modifiers: [(clampedDamage - 10.0) * 0.01]
                         )
                         if rng.roll(probability: pCut) {
-                            state[defenderSide].cutSeverity = min(
+                            let newSev = min(
                                 FighterCondition.maxCutSeverity,
                                 state[defenderSide].cutSeverity + 1
                             )
+                            state[defenderSide].cutSeverity = newSev
                             myLog.inflictedCut = true
+                            // When an existing cut is split open further to Lv.2 or Lv.3,
+                            // the ringside doctor may stop the bout (`tkoDoctor`).
+                            if newSev >= 2 {
+                                let pDoc = Odds.resolve(
+                                    base: newSev >= 3 ? 0.35 : 0.12,
+                                    modifiers: [isElbow ? 0.08 : 0.0]
+                                )
+                                if rng.roll(probability: pDoc) {
+                                    finish = ExchangeFinish(winner: attackerSide, reason: .tkoDoctor)
+                                    return
+                                }
+                            }
                         }
                     }
                 }
