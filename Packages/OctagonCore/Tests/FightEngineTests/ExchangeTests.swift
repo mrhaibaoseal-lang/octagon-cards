@@ -132,8 +132,9 @@ struct ExchangeTests {
     @Test func heavyHeadStrikeTriggersRockedAndRecoversNextExchange() {
         var state = FightState(distance: .mid)
         state.b.health.head = 55.0
-        let playA = FighterPlay(fighter: SampleData.striker, card: SampleData.headKick, side: .a)
-        let playB = FighterPlay(fighter: SampleData.wrestler, card: SampleData.feintStep, side: .b)
+        // Striker's cross (speed 65) is faster than Wrestler's headKick (speed 35), so A acts first.
+        let playA = FighterPlay(fighter: SampleData.striker, card: SampleData.cross, side: .a)
+        let playB = FighterPlay(fighter: SampleData.wrestler, card: SampleData.headKick, side: .b)
 
         // Find a seed where A hits and the Chin Check triggers Rocked on B
         var rockedResult: ExchangeResult? = nil
@@ -149,6 +150,7 @@ struct ExchangeTests {
             Issue.record("Expected to find a seed that triggers Rocked")
             return
         }
+        #expect(rocked.log.firstSide == .a)
         #expect(rocked.state.b.isRocked)
         #expect(rocked.log.b.wasInterrupted)
 
