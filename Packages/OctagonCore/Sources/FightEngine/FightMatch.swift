@@ -124,6 +124,70 @@ public struct MatchResult: Sendable, Codable, Hashable {
     }
 }
 
+/// Compact per-exchange record included in `FightReplayBundle` when copying a bug report from iPhone.
+public struct FightReplayExchange: Sendable, Codable, Hashable {
+    public var round: Int
+    public var exchange: Int
+    public var cardIdA: String
+    public var cardIdB: String
+    public var oddsA: Double
+    public var oddsB: Double
+    public var rollA: Double
+    public var rollB: Double
+    public var damageByA: Double
+    public var damageByB: Double
+
+    public init(
+        round: Int,
+        exchange: Int,
+        cardIdA: String,
+        cardIdB: String,
+        oddsA: Double,
+        oddsB: Double,
+        rollA: Double,
+        rollB: Double,
+        damageByA: Double,
+        damageByB: Double
+    ) {
+        self.round = round
+        self.exchange = exchange
+        self.cardIdA = cardIdA
+        self.cardIdB = cardIdB
+        self.oddsA = oddsA
+        self.oddsB = oddsB
+        self.rollA = rollA
+        self.rollB = rollB
+        self.damageByA = damageByA
+        self.damageByB = damageByB
+    }
+}
+
+/// Shareable JSON snapshot produced by the in-app `[📋 複製重現碼]` button (STRIKING_AND_DECK §12.4).
+public struct FightReplayBundle: Sendable, Codable, Hashable {
+    public var seed: UInt64
+    public var fighterAId: String
+    public var fighterBId: String
+    public var exchanges: [FightReplayExchange]
+    public var currentState: FightState
+    public var invariantViolations: [String]
+
+    public init(
+        seed: UInt64,
+        fighterAId: String,
+        fighterBId: String,
+        exchanges: [FightReplayExchange],
+        currentState: FightState,
+        invariantViolations: [String]
+    ) {
+        self.seed = seed
+        self.fighterAId = fighterAId
+        self.fighterBId = fighterBId
+        self.exchanges = exchanges
+        self.currentState = currentState
+        self.invariantViolations = invariantViolations
+    }
+}
+
 // MARK: - AI Card Selection
 
 public protocol FighterAI: Sendable {

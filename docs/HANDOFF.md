@@ -7,6 +7,19 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P2-7 iPhone 站立實機沙盒與 Debug 抽屜)
+- 完成 **P2-7 iPhone 站立實機沙盒與 Debug 戰報抽屜（含打包 IPA）**
+- 修改 `Packages/OctagonCore/Sources/FightEngine/FightMatch.swift`：新增 `FightReplayExchange` 與 `FightReplayBundle`（供手機端一鍵複製 JSON 重現碼）
+- 修改 `App/Sources/LungeDemoScene.swift`：依 `Distance`（遠/中/近）動態調整雙方站位間距、Rocked 狀態變色警示、KO 擊倒旋轉動畫，並移除閉包確保 Swift 6 嚴格並行相容
+- 修改 `App/Sources/ContentView.swift`：
+  - 完整 3 回合 × 8 次交手站立對戰沙盒（玩家 `Sample Striker` vs `StyleAI` `Sample Wrestler`）
+  - 雙人三部位血量（頭/身/腿）、體力、氣勢即時進度條與各回合 `10-9` / `10-8` 計分板
+  - 10 張卡牌選牌面板（標示適用距離、消耗體力，並在 `isRocked` 時自動鎖定進攻卡）
+  - 內建 `🔍 即時算式戰報` 抽屜（顯示先手、雙方 `OddsBreakdown` 完整加減成算式、RNG 擲骰值、傷害與 `validateInvariants()` 自檢結果）與 `📋 重現碼` 一鍵複製按鈕
+- 提升 `project.yml` 版本號至 `0.2.0 (2)`，並觸發 `build-unsigned-ipa.yml` 打包未簽名 IPA
+
+---
+
 ## 2026-11-03 · [實作] Gemini 4 Argon (擬真參數校準 — 經 20,000 場模擬器 A/B 驗證)
 - 在不改變任何核心規則與單元測試的前提下，透過 `Simulate --games 10000` 進行兩輪參數校準（CI run `41626624573`，438,356 次交手 `Invariant Violations: 0`）：
   - **基礎傷害係數**：`0.28 -> 0.265`

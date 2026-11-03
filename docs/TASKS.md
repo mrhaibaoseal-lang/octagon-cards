@@ -33,7 +33,7 @@
 - [x] **P2-6 平衡模擬器（命令列）＋ 20 萬次不變量壓力測試**（CI 通過：run 41624691714，432,401 次交手 0 違規）
   - 內容：`swift run Simulate --games 10000`，每手執行 `validateInvariants()` 驗證無破圖/越界數值，輸出各卡類型使用率/勝率、KO 率、判定率
   - 完成條件：CI 可跑；10,000 場零不變量錯誤；輸出寫進 HANDOFF 供 `[規劃]` 調表
-- [ ] **P2-7 iPhone 站立實機沙盒與 Debug 戰報抽屜（含打包 IPA）**
+- [x] **P2-7 iPhone 站立實機沙盒與 Debug 戰報抽屜（含打包 IPA）**（已實作，雲端打包 IPA 中）
   - 內容：在 `App/Sources` 接上 `FightEngine`，讓玩家能在手機上選牌打完 3 回合站立賽，內建 `[Debug]` 即時算式明細抽屜與「📋 一鍵複製 Seed 重現碼」按鈕，並觸發雲端打包未簽名 IPA
   - 完成條件：CI 編譯打包成功、下載 `.ipa` 至 `dist/` 供 FlareStore 安裝實測
 
