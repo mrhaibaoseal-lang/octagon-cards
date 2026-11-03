@@ -1,0 +1,56 @@
+name: Build unsigned IPA
+
+# Free standard macOS runner on a public repo. Runs only on version tags (or manually),
+# so it never burns minutes on ordinary pushes. Sign the downloaded IPA with FlareStore.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test OctagonCore
+        working-directory: Packages/OctagonCore
+        run: swift test
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (no code signing)
+        run: |
+          xcodebuild build \
+            -project OctagonCards.xcodeproj \
+            -scheme OctagonCards \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/OctagonCards.app Payload/
+          zip -qry OctagonCards-unsigned.ipa Payload
+          ls -lh OctagonCards-unsigned.ipa
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: OctagonCards-unsigned-ipa
+          path: OctagonCards-unsigned.ipa
+          retention-days: 14

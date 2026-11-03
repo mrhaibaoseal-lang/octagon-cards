@@ -1,0 +1,19 @@
+name: CI
+
+# Free for public repos. Runs only the pure-Swift package tests (fast, no signing).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-core:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Swift version
+        run: swift --version
+      - name: Test OctagonCore
+        working-directory: Packages/OctagonCore
+        run: swift test
