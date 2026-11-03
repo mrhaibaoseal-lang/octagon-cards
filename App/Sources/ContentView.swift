@@ -15,11 +15,12 @@ struct ContentView: View {
     @State private var replayExchanges: [FightReplayExchange] = []
     @State private var matchOutcome: MatchOutcome? = nil
     @State private var showDebugDrawer: Bool = true
+    @State private var filterEffectiveOnly: Bool = false
     @State private var copiedToast: Bool = false
 
     private let fighterA = SampleData.striker
     private let fighterB = SampleData.wrestler
-    private let deck = SampleData.cards
+    private let deck = SampleData.standingCards
     private let ai = StyleAI()
     private let totalRounds = 3
     private let exchangesPerRound = 8
@@ -169,20 +170,31 @@ struct ContentView: View {
 
     private var cardSelectionSection: some View {
         let legalIds = Set(FightMatchEngine.legalCards(from: deck, isRocked: state.a.isRocked).map(\.id))
+        let displayedCards = filterEffectiveOnly
+            ? deck.filter { $0.isEffective(at: state.distance) }
+            : deck
 
         return VStack(alignment: .leading, spacing: 6) {
-            if state.a.isRocked {
-                Text("⚠️ 你目前被打暈 (Rocked)！本手只能選擇 格擋 / 閃避 / 移動 保命")
-                    .font(.system(.caption, design: .monospaced, weight: .bold))
-                    .foregroundStyle(.orange)
-            } else {
-                Text("選擇本手出牌（共 10 張範例卡）：")
-                    .font(.system(.caption, design: .monospaced, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            HStack {
+                if state.a.isRocked {
+                    Text("⚠️ 被打暈 (Rocked)！僅能選 格擋/閃避/移動")
+                        .font(.system(.caption, design: .monospaced, weight: .bold))
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("站立牌庫（\(displayedCards.count)/\(deck.count) 張）：")
+                        .font(.system(.caption, design: .monospaced, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(filterEffectiveOnly ? "顯示全部 (28)" : "只看適用距離") {
+                    filterEffectiveOnly.toggle()
+                }
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .buttonStyle(.bordered)
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach(deck) { card in
+                ForEach(displayedCards) { card in
                     let isLegal = legalIds.contains(card.id)
                     let inRange = card.isEffective(at: state.distance)
                     Button {

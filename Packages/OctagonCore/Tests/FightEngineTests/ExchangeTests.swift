@@ -127,6 +127,17 @@ struct ExchangeTests {
         #expect(result.state.distance == .mid)
         #expect(result.log.a.movedDistanceTo == .mid)
         #expect(result.state.a.cage == .againstCage)
+
+        // From .mid, stepIn advances to .close, whereas stepBack retreats to .long
+        let midState = FightState(distance: .mid)
+        var rngAdvance = SeededRNG(seed: findSeed(a: playA, b: playB, state: midState, wantA: true, wantB: false))
+        let resAdvance = resolveExchange(a: playA, b: playB, state: midState, rng: &rngAdvance)
+        #expect(resAdvance.state.distance == .close)
+
+        let retreatA = FighterPlay(fighter: SampleData.striker, card: SampleData.stepBack, side: .a)
+        var rngRetreat = SeededRNG(seed: findSeed(a: retreatA, b: playB, state: midState, wantA: true, wantB: false))
+        let resRetreat = resolveExchange(a: retreatA, b: playB, state: midState, rng: &rngRetreat)
+        #expect(resRetreat.state.distance == .long)
     }
 
     @Test func heavyHeadStrikeTriggersRockedAndRecoversNextExchange() {

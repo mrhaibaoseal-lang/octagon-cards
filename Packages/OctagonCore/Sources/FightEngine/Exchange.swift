@@ -462,6 +462,15 @@ public enum ExchangeEngine {
     }
 
     private static func nextDistance(from current: Distance, card: Card) -> Distance {
+        if let goal = card.preferredDistance {
+            if goal.rawValue > current.rawValue {
+                return Distance(rawValue: current.rawValue + 1) ?? current
+            } else if goal.rawValue < current.rawValue {
+                return Distance(rawValue: current.rawValue - 1) ?? current
+            } else {
+                return current
+            }
+        }
         switch current {
         case .long:
             return .mid

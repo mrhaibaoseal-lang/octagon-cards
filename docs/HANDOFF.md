@@ -7,6 +7,20 @@
 
 ---
 
+## 2026-11-03 · [實作] Gemini 4 Argon (P4-1 站立核心卡牌庫擴充 28 張)
+- 完成 **P4-1 站立核心卡牌庫擴充（共 28 張，`SampleData.standingCards`）**：
+  - 進攻 `strike`（16 張）：刺拳、前踢、小腿卡夫踢、低掃、側踹、超人拳、高踢、直拳、左鉤拳、上鉤拳、過肩重拳、肝臟鉤拳、中段掃踢、貼身橫肘、箍頸膝撞、內圍髒拳
+  - 格擋 `block`（2 張）：抱頭格擋（中/近）、提脛擋踢（遠/中）
+  - 閃避 `evade`（2 張）：側閃（遠/中）、搖閃潛避（中/近）
+  - 反擊 `counter`（3 張）：接踢反擊直拳（遠/中）、反擊鉤拳（中）、迎擊短肘（近）
+  - 佯攻 `feint`（2 張）：假動作（遠/中）、虛晃換位（中/近）
+  - 移動 `move`（3 張）：前進逼近（`preferredDistance: .close`）、滑步後撤（`preferredDistance: .long`）、推開脫離（`preferredDistance: .mid`）
+- 修改 `Card.swift` 與 `Exchange.swift`：新增 `preferredDistance` 讓前進卡與後撤卡能精準往目標距離推進/拉開
+- 修改 `Simulation.swift` 與 `App/Sources/ContentView.swift`：預設使用完整 28 張站立牌庫，並在 iPhone UI 加入「只看適用距離 / 顯示全部 (28)」快速篩選鈕
+- 測試結果：已推送至 GitHub Actions CI 執行單元測試與 10,000 場模擬器驗證
+
+---
+
 ## 2026-11-03 · [規劃] Gemini 4 Argon (補齊 P3 地面戰引擎與 P4 完整 56 張卡牌庫任務看板)
 - 原本 `docs/TASKS.md` 僅先拆了第一階段「P2 站立引擎 v0」，而地面戰的完整企劃放在 `docs/GROUND_GAME_DESIGN.md` 尚未拆成任務卡。
 - 現已將 **P3 抱摔、纏抱與地面戰引擎（P3-1 ～ P3-4）** 與 **P4 完整 56 張卡牌庫與手牌抽牌系統（P4-1 ～ P4-3）** 完整拆解寫入 `docs/TASKS.md`。

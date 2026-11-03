@@ -41,6 +41,23 @@ struct ModelTests {
         #expect(Set(cards.map(\.type)) == Set(CardType.allCases))
     }
 
+    @Test func standingCatalogCoversAllDistancesAndTypes() {
+        let catalog = SampleData.standingCards
+        #expect(catalog.count == 28)
+        #expect(Set(catalog.map(\.id)).count == 28)
+
+        // Every distance (.long, .mid, .close) must have all 6 card types available
+        for dist in Distance.allCases {
+            let effectiveAtDist = catalog.filter { $0.isEffective(at: dist) }
+            let typesAtDist = Set(effectiveAtDist.map(\.type))
+            #expect(typesAtDist == Set(CardType.allCases))
+            // And strikes at every distance must cover head and body/legs
+            let strikeTargets = Set(effectiveAtDist.filter { $0.type == .strike }.compactMap(\.target))
+            #expect(strikeTargets.contains(.head))
+            #expect(strikeTargets.count >= 2)
+        }
+    }
+
     @Test func cardsCodableRoundTrip() throws {
         let data = try JSONEncoder().encode(SampleData.cards)
         let decoded = try JSONDecoder().decode([Card].self, from: data)

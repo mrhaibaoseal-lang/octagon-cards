@@ -126,8 +126,8 @@ public enum BalanceSimulator {
         baseSeed: UInt64 = 1,
         fighterA: Fighter = SampleData.striker,
         fighterB: Fighter = SampleData.wrestler,
-        deckA: [Card] = SampleData.cards,
-        deckB: [Card] = SampleData.cards,
+        deckA: [Card] = SampleData.standingCards,
+        deckB: [Card] = SampleData.standingCards,
         aiA: some FighterAI = RandomAI(),
         aiB: some FighterAI = RandomAI()
     ) -> SimulationReport {

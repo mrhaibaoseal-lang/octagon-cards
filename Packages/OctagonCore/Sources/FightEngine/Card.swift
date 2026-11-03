@@ -58,6 +58,8 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
     /// Deck-building budget cost.
     public var deckCost: Int
     public var tags: [CardTag]
+    /// For `.move` cards: the target distance this movement seeks (`.close` = advance, `.long` = retreat, `.mid` = reset).
+    public var preferredDistance: Distance?
 
     /// `speed` / `power` / `accuracy` are clamped into `0...100`; costs are floored at 0.
     public init(
@@ -71,7 +73,8 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
         accuracy: Int,
         staminaCost: Int,
         deckCost: Int,
-        tags: [CardTag] = []
+        tags: [CardTag] = [],
+        preferredDistance: Distance? = nil
     ) {
         func c(_ v: Int) -> Int { min(max(v, Self.statRange.lowerBound), Self.statRange.upperBound) }
         self.id = id
@@ -85,6 +88,7 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
         self.staminaCost = max(staminaCost, 0)
         self.deckCost = max(deckCost, 0)
         self.tags = tags
+        self.preferredDistance = preferredDistance
     }
 
     /// True if the card is at full effect at `distance`.
