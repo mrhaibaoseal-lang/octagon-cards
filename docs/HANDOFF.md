@@ -16,7 +16,8 @@
   - 雙人三部位血量（頭/身/腿）、體力、氣勢即時進度條與各回合 `10-9` / `10-8` 計分板
   - 10 張卡牌選牌面板（標示適用距離、消耗體力，並在 `isRocked` 時自動鎖定進攻卡）
   - 內建 `🔍 即時算式戰報` 抽屜（顯示先手、雙方 `OddsBreakdown` 完整加減成算式、RNG 擲骰值、傷害與 `validateInvariants()` 自檢結果）與 `📋 重現碼` 一鍵複製按鈕
-- 提升 `project.yml` 版本號至 `0.2.0 (2)`，並觸發 `build-unsigned-ipa.yml` 打包未簽名 IPA
+- 提升 `project.yml` 版本號至 `0.2.0 (2)`，觸發 `build-unsigned-ipa.yml` 雲端打包成功（run `41627668313`，1m28s），已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`
+- **P2 戰鬥引擎 v0（P2-1 ～ P2-7）全數完成！** 下一步可進入 **P1 資料管線（ufcstats 爬蟲＋真實賽事動態升降系統＋本機像素化）** 或 **地面戰引擎 / 美術素材**。
 
 ---
 
