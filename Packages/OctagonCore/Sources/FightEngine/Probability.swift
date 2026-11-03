@@ -173,7 +173,32 @@ public enum Odds {
                 mod -= 0.10
             }
         }
+        if condition.cutSeverity > 0 {
+            // Blood in the eyes impairs vision on strikes, counters, and evades (-3% per cut level)
+            if card.type == .strike || card.type == .counter || card.type == .evade {
+                mod -= Double(condition.cutSeverity) * 0.03
+            }
+        }
         return mod
+    }
+
+    /// Clinch / Dirty Boxing modifier when `state.isClinch == true` (`STRIKING_AND_DECK.md` §7.2).
+    public static func clinchModifier(
+        myFighter: Fighter,
+        myCard: Card,
+        oppFighter: Fighter,
+        state: FightState
+    ) -> Double {
+        guard state.isClinch && state.ground == nil else { return 0.0 }
+        let clinchDiff = Double(myFighter.attributes.clinch - oppFighter.attributes.clinch) * 0.002
+        if myCard.tags.contains(.knee) || myCard.tags.contains(.elbow)
+            || myCard.id == "dirty-boxing" || myCard.id == "push-off"
+        {
+            return 0.08 + clinchDiff
+        } else if myCard.tags.contains(.kick) {
+            return -0.08
+        }
+        return clinchDiff * 0.5
     }
 
     /// Momentum differential modifier (STRIKING_AND_DECK §2.1.1 #5).
@@ -240,6 +265,7 @@ public enum Odds {
             )
         }
         let distMod = distanceModifier(for: my.card, at: state.distance)
+            + clinchModifier(myFighter: my.fighter, myCard: my.card, oppFighter: opp.fighter, state: state)
         let condMod = conditionModifier(condition: myCondition, card: my.card)
         let momMod = momentumModifier(myCondition: myCondition, oppCondition: oppCondition)
         let traitMod = traitModifier(myFighter: my.fighter, myCard: my.card, oppFighter: opp.fighter)

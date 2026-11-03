@@ -57,6 +57,7 @@ public struct BodyHealth: Sendable, Codable, Hashable {
 public struct FighterCondition: Sendable, Codable, Hashable {
     public static let maxStamina = 100.0
     public static let maxMomentum = 100.0
+    public static let maxCutSeverity = 3
 
     public var health: BodyHealth
     public var stamina: Double
@@ -64,19 +65,25 @@ public struct FighterCondition: Sendable, Codable, Hashable {
     public var cage: CagePosition
     /// Stunned: can only block / clinch / move (§4.1).
     public var isRocked: Bool
+    /// Facial cut / bleeding severity (`0` = none, `1` = minor cut, `2` = bleeding into eyes, `3` = severe cut risking Doctor Stoppage).
+    public var cutSeverity: Int
+
+    public var isBleeding: Bool { cutSeverity > 0 }
 
     public init(
         health: BodyHealth = .full,
         stamina: Double = FighterCondition.maxStamina,
         momentum: Double = 0,
         cage: CagePosition = .center,
-        isRocked: Bool = false
+        isRocked: Bool = false,
+        cutSeverity: Int = 0
     ) {
         self.health = health
         self.stamina = Swift.min(Swift.max(stamina, 0), Self.maxStamina)
         self.momentum = Swift.min(Swift.max(momentum, 0), Self.maxMomentum)
         self.cage = cage
         self.isRocked = isRocked
+        self.cutSeverity = Swift.min(Swift.max(cutSeverity, 0), Self.maxCutSeverity)
     }
 }
 
@@ -88,6 +95,8 @@ public struct FightState: Sendable, Codable, Hashable {
     public var ground: GroundState?
     /// Current round number (1-indexed; used for round sweat/grip modifiers in `GROUND_GAME_DESIGN.md` §4).
     public var round: Int
+    /// True when standing at `.close` range and locked in a Clinch / Dirty Boxing tie-up (`STRIKING_AND_DECK.md` §7.2).
+    public var isClinch: Bool
 
     public var isGrounded: Bool { ground != nil }
 
@@ -96,13 +105,15 @@ public struct FightState: Sendable, Codable, Hashable {
         a: FighterCondition = FighterCondition(),
         b: FighterCondition = FighterCondition(),
         ground: GroundState? = nil,
-        round: Int = 1
+        round: Int = 1,
+        isClinch: Bool = false
     ) {
         self.distance = distance
         self.a = a
         self.b = b
         self.ground = ground
         self.round = Swift.max(round, 1)
+        self.isClinch = (ground == nil && distance == .close) ? isClinch : false
     }
 
     public subscript(side: Side) -> FighterCondition {
@@ -134,12 +145,18 @@ public struct FightState: Sendable, Codable, Hashable {
             if cond.momentum.isNaN || cond.momentum.isInfinite || cond.momentum < 0.0 || cond.momentum > FighterCondition.maxMomentum {
                 violations.append("\(prefix).momentum out of range: \(cond.momentum)")
             }
+            if cond.cutSeverity < 0 || cond.cutSeverity > FighterCondition.maxCutSeverity {
+                violations.append("\(prefix).cutSeverity out of range: \(cond.cutSeverity)")
+            }
         }
         if round < 1 {
             violations.append("round out of range: \(round)")
         }
         if let g = ground, g.stallCount < 0 {
             violations.append("ground.stallCount out of range: \(g.stallCount)")
+        }
+        if isClinch && (ground != nil || distance != .close) {
+            violations.append("isClinch cannot be true when grounded or distance != .close")
         }
         return violations
     }

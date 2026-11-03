@@ -1,5 +1,73 @@
-/// Round & full-match loop, corner recovery, 10-Point Must simplified judging,
+/// Round & full-match loop, corner recovery, 3-judge 10-Point Must panel (Unanimous / Split / Majority),
 /// and AI card selection (see docs/STRIKING_AND_DECK.md §4.1, §5, §9, §10, §12 and docs/TASKS.md P2-5).
+
+/// Judging style bias of each ringside judge on the 3-judge panel.
+public enum JudgeBias: String, CaseIterable, Sendable, Codable, Hashable {
+    /// Judge 1: Weights striking damage, knockdowns, and visible cuts higher (`1.30x` striking, `0.60x` grappling).
+    case striking
+    /// Judge 2: Weights takedowns, positional advances, submission threats, and top control higher (`0.75x` striking, `1.45x` grappling).
+    case grappling
+    /// Judge 3: Balanced evaluation across striking and grappling (`1.00x` striking, `1.00x` grappling).
+    case balanced
+
+    public var displayName: String {
+        switch self {
+        case .striking: "Judge 1 (站立偏好)"
+        case .grappling: "Judge 2 (摔柔偏好)"
+        case .balanced: "Judge 3 (均衡裁判)"
+        }
+    }
+}
+
+/// Single judge's 10-Point Must card for one round.
+public struct JudgeRoundCard: Sendable, Codable, Hashable {
+    public var bias: JudgeBias
+    public var pointsA: Int
+    public var pointsB: Int
+
+    public init(bias: JudgeBias, pointsA: Int, pointsB: Int) {
+        self.bias = bias
+        self.pointsA = pointsA
+        self.pointsB = pointsB
+    }
+}
+
+/// Official UFC 3-judge decision classification when a match goes the distance.
+public enum DecisionType: String, Sendable, Codable, Hashable {
+    /// All 3 judges score the bout for the winner (`3-0`).
+    case unanimous
+    /// 2 judges score for the winner and 1 judge scores for the opponent (`2-1`).
+    case split
+    /// 2 judges score for the winner and 1 judge scores a draw (`2-0-1`).
+    case majority
+
+    public var displayName: String {
+        switch self {
+        case .unanimous: "一致判定 (Unanimous Decision)"
+        case .split: "分歧判定 (Split Decision)"
+        case .majority: "多數判定 (Majority Decision)"
+        }
+    }
+}
+
+/// Full-match total scorecard from one ringside judge.
+public struct JudgeScorecard: Sendable, Codable, Hashable {
+    public var bias: JudgeBias
+    public var pointsA: Int
+    public var pointsB: Int
+
+    public init(bias: JudgeBias, pointsA: Int, pointsB: Int) {
+        self.bias = bias
+        self.pointsA = pointsA
+        self.pointsB = pointsB
+    }
+
+    public var winner: Side? {
+        if pointsA > pointsB { return .a }
+        if pointsB > pointsA { return .b }
+        return nil
+    }
+}
 
 /// Score awarded for a completed round under the 10-Point Must system.
 public struct RoundScore: Sendable, Codable, Hashable {
@@ -10,6 +78,7 @@ public struct RoundScore: Sendable, Codable, Hashable {
     public var damageByB: Double
     public var rockedByA: Int
     public var rockedByB: Int
+    public var judgeCards: [JudgeRoundCard]
 
     public init(
         round: Int,
@@ -18,7 +87,8 @@ public struct RoundScore: Sendable, Codable, Hashable {
         damageByA: Double,
         damageByB: Double,
         rockedByA: Int,
-        rockedByB: Int
+        rockedByB: Int,
+        judgeCards: [JudgeRoundCard] = []
     ) {
         self.round = round
         self.pointsA = pointsA
@@ -27,6 +97,7 @@ public struct RoundScore: Sendable, Codable, Hashable {
         self.damageByB = damageByB
         self.rockedByA = rockedByA
         self.rockedByB = rockedByB
+        self.judgeCards = judgeCards
     }
 }
 
@@ -106,6 +177,8 @@ public struct MatchResult: Sendable, Codable, Hashable {
     public var rounds: [RoundLog]
     public var outcome: MatchOutcome
     public var finalState: FightState
+    public var decisionType: DecisionType?
+    public var judgeScorecards: [JudgeScorecard]
 
     public var allExchanges: [ExchangeLog] {
         rounds.flatMap(\.exchanges)
@@ -115,12 +188,16 @@ public struct MatchResult: Sendable, Codable, Hashable {
         config: FightMatchConfig,
         rounds: [RoundLog],
         outcome: MatchOutcome,
-        finalState: FightState
+        finalState: FightState,
+        decisionType: DecisionType? = nil,
+        judgeScorecards: [JudgeScorecard] = []
     ) {
         self.config = config
         self.rounds = rounds
         self.outcome = outcome
         self.finalState = finalState
+        self.decisionType = decisionType
+        self.judgeScorecards = judgeScorecards
     }
 }
 
@@ -419,7 +496,7 @@ public enum FightMatchEngine {
         return min(bonus, 0.10)
     }
 
-    /// Corner stamina recovery and positional reset between rounds (STRIKING_AND_DECK §5).
+    /// Corner stamina recovery, Cutman bleeding treatment, and positional reset between rounds (STRIKING_AND_DECK §5).
     public static func applyCornerRecovery(
         state: inout FightState,
         fighterA: Fighter,
@@ -427,6 +504,7 @@ public enum FightMatchEngine {
     ) {
         state.distance = .long
         state.ground = nil
+        state.isClinch = false
         recoverFighter(&state.a, fighter: fighterA)
         recoverFighter(&state.b, fighter: fighterB)
     }
@@ -439,9 +517,11 @@ public enum FightMatchEngine {
         cond.stamina = min(FighterCondition.maxStamina, cond.stamina + recovered)
         cond.isRocked = false
         cond.cage = .center
+        // Cutman corner work: reduces cut severity by 1 level between rounds
+        cond.cutSeverity = max(0, cond.cutSeverity - 1)
     }
 
-    /// Simplified 10-Point Must judging for a completed round (STRIKING_AND_DECK §9).
+    /// 3-Judge 10-Point Must panel scoring for a completed round (STRIKING_AND_DECK §9).
     public static func scoreRound(
         round: Int,
         exchanges: [ExchangeLog],
@@ -451,6 +531,8 @@ public enum FightMatchEngine {
         var damageByB = 0.0
         var rockedByA = 0
         var rockedByB = 0
+        var cutsByA = 0
+        var cutsByB = 0
         var strikesLandedA = 0
         var strikesLandedB = 0
         var tacticsA = 0
@@ -463,6 +545,8 @@ public enum FightMatchEngine {
             damageByB += ex.b.damageDealt
             if ex.a.inflictedRocked { rockedByA += 1 }
             if ex.b.inflictedRocked { rockedByB += 1 }
+            if ex.a.inflictedCut { cutsByA += 1 }
+            if ex.b.inflictedCut { cutsByB += 1 }
             if ex.a.damageDealt > 0 { strikesLandedA += 1 }
             if ex.b.damageDealt > 0 { strikesLandedB += 1 }
             if ex.a.feintSucceeded || ex.a.movedDistanceTo != nil { tacticsA += 1 }
@@ -489,47 +573,112 @@ public enum FightMatchEngine {
             }
         }
 
-        let perfA = damageByA
+        let strikingPerfA = damageByA
             + Double(rockedByA) * 12.0
             + Double(strikesLandedA) * 3.0
+            + Double(cutsByA) * 4.0
             + Double(tacticsA) * 1.5
-            + grapplingA
-            + endState.a.momentum * 0.05
-        let perfB = damageByB
+        let strikingPerfB = damageByB
             + Double(rockedByB) * 12.0
             + Double(strikesLandedB) * 3.0
+            + Double(cutsByB) * 4.0
             + Double(tacticsB) * 1.5
-            + grapplingB
-            + endState.b.momentum * 0.05
+        let momA = endState.a.momentum * 0.05
+        let momB = endState.b.momentum * 0.05
 
-        let diff = perfA - perfB
         let rockedDiffA = rockedByA - rockedByB
         let rockedDiffB = rockedByB - rockedByA
-        let pointsA: Int
-        let pointsB: Int
-        if abs(diff) < 0.01 && rockedByA == rockedByB && damageByA == damageByB {
-            pointsA = 10
-            pointsB = 10
-        } else if diff >= 0 {
-            pointsA = 10
-            let dominantA = diff >= 68.0 || (rockedDiffA >= 2 && diff >= 46.0)
-            pointsB = dominantA ? 8 : 9
-        } else {
-            pointsB = 10
-            let absDiff = -diff
-            let dominantB = absDiff >= 68.0 || (rockedDiffB >= 2 && absDiff >= 46.0)
-            pointsA = dominantB ? 8 : 9
+
+        func computeTenPointMust(strikeWeight: Double, grappleWeight: Double) -> (Int, Int) {
+            let perfA = strikingPerfA * strikeWeight + grapplingA * grappleWeight + momA
+            let perfB = strikingPerfB * strikeWeight + grapplingB * grappleWeight + momB
+            let diff = perfA - perfB
+            if abs(diff) < 0.01 && rockedByA == rockedByB && damageByA == damageByB {
+                return (10, 10)
+            } else if diff >= 0 {
+                let dominantA = diff >= 68.0 || (rockedDiffA >= 2 && diff >= 46.0)
+                return (10, dominantA ? 8 : 9)
+            } else {
+                let absDiff = -diff
+                let dominantB = absDiff >= 68.0 || (rockedDiffB >= 2 && absDiff >= 46.0)
+                return (dominantB ? 8 : 9, 10)
+            }
         }
+
+        let (strikeA, strikeB) = computeTenPointMust(strikeWeight: 1.30, grappleWeight: 0.60)
+        let (grappleA, grappleB) = computeTenPointMust(strikeWeight: 0.75, grappleWeight: 1.45)
+        let (balancedA, balancedB) = computeTenPointMust(strikeWeight: 1.00, grappleWeight: 1.00)
+
+        let judgeCards: [JudgeRoundCard] = [
+            JudgeRoundCard(bias: .striking, pointsA: strikeA, pointsB: strikeB),
+            JudgeRoundCard(bias: .grappling, pointsA: grappleA, pointsB: grappleB),
+            JudgeRoundCard(bias: .balanced, pointsA: balancedA, pointsB: balancedB),
+        ]
 
         return RoundScore(
             round: round,
-            pointsA: pointsA,
-            pointsB: pointsB,
+            pointsA: balancedA,
+            pointsB: balancedB,
             damageByA: damageByA,
             damageByB: damageByB,
             rockedByA: rockedByA,
-            rockedByB: rockedByB
+            rockedByB: rockedByB,
+            judgeCards: judgeCards
         )
+    }
+
+    /// Tallies the 3 ringside judges' full-match scorecards from completed `RoundLog`s.
+    public static func tallyJudgeScorecards(
+        from roundLogs: [RoundLog]
+    ) -> (outcome: MatchOutcome, decisionType: DecisionType?, scorecards: [JudgeScorecard]) {
+        let scorecards: [JudgeScorecard] = JudgeBias.allCases.map { bias in
+            var sumA = 0
+            var sumB = 0
+            for rLog in roundLogs {
+                guard let score = rLog.score else { continue }
+                if let card = score.judgeCards.first(where: { $0.bias == bias }) {
+                    sumA += card.pointsA
+                    sumB += card.pointsB
+                } else {
+                    sumA += score.pointsA
+                    sumB += score.pointsB
+                }
+            }
+            return JudgeScorecard(bias: bias, pointsA: sumA, pointsB: sumB)
+        }
+
+        let votesA = scorecards.filter { $0.winner == .a }.count
+        let votesB = scorecards.filter { $0.winner == .b }.count
+        let draws = scorecards.filter { $0.winner == nil }.count
+        let balancedCard = scorecards.first(where: { $0.bias == .balanced }) ?? scorecards[0]
+
+        if votesA >= 2 && votesA > votesB {
+            let decType: DecisionType = (votesA == 3) ? .unanimous : (draws >= 1 ? .majority : .split)
+            let repCard = (balancedCard.winner == .a)
+                ? balancedCard
+                : (scorecards.first(where: { $0.winner == .a }) ?? balancedCard)
+            return (
+                outcome: .decision(winner: .a, scoreA: repCard.pointsA, scoreB: repCard.pointsB),
+                decisionType: decType,
+                scorecards: scorecards
+            )
+        } else if votesB >= 2 && votesB > votesA {
+            let decType: DecisionType = (votesB == 3) ? .unanimous : (draws >= 1 ? .majority : .split)
+            let repCard = (balancedCard.winner == .b)
+                ? balancedCard
+                : (scorecards.first(where: { $0.winner == .b }) ?? balancedCard)
+            return (
+                outcome: .decision(winner: .b, scoreA: repCard.pointsA, scoreB: repCard.pointsB),
+                decisionType: decType,
+                scorecards: scorecards
+            )
+        } else {
+            return (
+                outcome: .draw(scoreA: balancedCard.pointsA, scoreB: balancedCard.pointsB),
+                decisionType: nil,
+                scorecards: scorecards
+            )
+        }
     }
 
     /// Runs a single round of up to `exchangesPerRound` exchanges.
@@ -648,22 +797,14 @@ public enum FightMatchEngine {
             }
         }
 
-        let totalA = roundLogs.compactMap(\.score?.pointsA).reduce(0, +)
-        let totalB = roundLogs.compactMap(\.score?.pointsB).reduce(0, +)
-        let outcome: MatchOutcome
-        if totalA > totalB {
-            outcome = .decision(winner: .a, scoreA: totalA, scoreB: totalB)
-        } else if totalB > totalA {
-            outcome = .decision(winner: .b, scoreA: totalA, scoreB: totalB)
-        } else {
-            outcome = .draw(scoreA: totalA, scoreB: totalB)
-        }
-
+        let tallied = tallyJudgeScorecards(from: roundLogs)
         return MatchResult(
             config: config,
             rounds: roundLogs,
-            outcome: outcome,
-            finalState: state
+            outcome: tallied.outcome,
+            finalState: state,
+            decisionType: tallied.decisionType,
+            judgeScorecards: tallied.scorecards
         )
     }
 }

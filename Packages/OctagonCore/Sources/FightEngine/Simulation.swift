@@ -50,9 +50,13 @@ public struct SimulationReport: Sendable, Codable, Hashable {
     public var koCount: Int = 0
     public var tkoBodyCount: Int = 0
     public var tkoLegsCount: Int = 0
+    public var tkoDoctorCount: Int = 0
     public var submissionCount: Int = 0
     public var decisionCount: Int = 0
+    public var splitDecisions: Int = 0
     public var rockedOccurrences: Int = 0
+    public var cutsInflicted: Int = 0
+    public var clinchExchanges: Int = 0
 
     public var cardTypeStats: [CardType: CardTypeStats]
 
@@ -74,7 +78,7 @@ public struct SimulationReport: Sendable, Codable, Hashable {
     }
 
     public var totalFinishes: Int {
-        koCount + tkoBodyCount + tkoLegsCount + submissionCount
+        koCount + tkoBodyCount + tkoLegsCount + tkoDoctorCount + submissionCount
     }
 
     public var finishRate: Double {
@@ -115,8 +119,8 @@ public struct SimulationReport: Sendable, Codable, Hashable {
         lines.append("=== \(title) ===")
         lines.append("Games: \(games) | Total Exchanges: \(totalExchanges) (avg \(String(format: "%.1f", avgExchanges))/game, Ground \(pct(groundShare))) | Invariant Violations: \(invariantViolations)")
         lines.append("Fighter Win Rate: Side A (\(fighterAName)) \(pct(Double(winsA) / Double(max(games, 1)))) (\(winsA)) | Side B (\(fighterBName)) \(pct(Double(winsB) / Double(max(games, 1)))) (\(winsB)) | Draw \(pct(Double(draws) / Double(max(games, 1)))) (\(draws))")
-        lines.append("Outcomes: Total Finish \(pct(finishRate)) [Head KO \(pct(koRate)) (\(koCount)), Body TKO \(pct(tkoBodyRate)) (\(tkoBodyCount)), Legs TKO \(pct(tkoLegsRate)) (\(tkoLegsCount)), Submission \(pct(submissionRate)) (\(submissionCount))] | Decision \(pct(decisionRate)) (\(decisionCount + draws))")
-        lines.append("Drama & Grappling: Rocked \(rockedOccurrences) (avg \(String(format: "%.2f", avgRocked))/game) | Takedowns \(takedownsLanded) | Sweeps \(sweepsExecuted) | Ref StandUps \(refereeStandUps)")
+        lines.append("Outcomes: Total Finish \(pct(finishRate)) [Head KO \(pct(koRate)) (\(koCount)), Body TKO \(pct(tkoBodyRate)) (\(tkoBodyCount)), Legs TKO \(pct(tkoLegsRate)) (\(tkoLegsCount)), Doc TKO \(tkoDoctorCount), Submission \(pct(submissionRate)) (\(submissionCount))] | Decision \(pct(decisionRate)) (\(decisionCount + draws), Split \(splitDecisions))")
+        lines.append("Drama & Grappling: Rocked \(rockedOccurrences) (avg \(String(format: "%.2f", avgRocked))/game) | Cuts \(cutsInflicted) | Clinch Ex \(clinchExchanges) | Takedowns \(takedownsLanded) | Sweeps \(sweepsExecuted) | Ref StandUps \(refereeStandUps)")
         lines.append("")
         lines.append("| CardType | Played | Usage % | Effect Success % | Match Win % (when played) | Avg Dmg/Play |")
         lines.append("|---|---:|---:|---:|---:|---:|")
@@ -179,11 +183,15 @@ public enum BalanceSimulator {
                 case .ko: report.koCount += 1
                 case .tkoBody: report.tkoBodyCount += 1
                 case .tkoLegs: report.tkoLegsCount += 1
+                case .tkoDoctor: report.tkoDoctorCount += 1
                 case .submission: report.submissionCount += 1
                 }
             case let .decision(winner, _, _):
                 if winner == .a { report.winsA += 1 } else { report.winsB += 1 }
                 report.decisionCount += 1
+                if result.decisionType == .split {
+                    report.splitDecisions += 1
+                }
             case .draw:
                 report.draws += 1
             }
@@ -198,11 +206,16 @@ public enum BalanceSimulator {
                     if ex.stateBefore.isGrounded {
                         report.groundExchanges += 1
                     }
+                    if ex.stateBefore.isClinch {
+                        report.clinchExchanges += 1
+                    }
                     if !ex.stateAfter.isValid {
                         report.invariantViolations += 1
                     }
                     if ex.a.inflictedRocked { report.rockedOccurrences += 1 }
                     if ex.b.inflictedRocked { report.rockedOccurrences += 1 }
+                    if ex.a.inflictedCut { report.cutsInflicted += 1 }
+                    if ex.b.inflictedCut { report.cutsInflicted += 1 }
                     if ex.a.takedownLanded != nil { report.takedownsLanded += 1 }
                     if ex.b.takedownLanded != nil { report.takedownsLanded += 1 }
                     if ex.a.sweptToPosition != nil { report.sweepsExecuted += 1 }

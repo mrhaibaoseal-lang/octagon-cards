@@ -56,6 +56,8 @@ struct ContentView: View {
     @State private var completedRounds: [RoundLog] = []
     @State private var replayExchanges: [FightReplayExchange] = []
     @State private var matchOutcome: MatchOutcome? = nil
+    @State private var decisionType: DecisionType? = nil
+    @State private var judgeScorecards: [JudgeScorecard] = []
     @State private var showDebugDrawer: Bool = true
     @State private var copiedToast: Bool = false
 
@@ -246,6 +248,15 @@ struct ContentView: View {
                     .font(.system(.caption, design: .monospaced, weight: .bold))
                     .lineLimit(1)
                 Spacer()
+                if cond.isBleeding {
+                    Text("🩸 流血 Lv.\(cond.cutSeverity)")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.red)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                }
                 if cond.isRocked {
                     Text("💥 ROCKED")
                         .font(.system(size: 10, weight: .heavy, design: .monospaced))
@@ -474,6 +485,7 @@ struct ContentView: View {
 
         var extraTags: [String] = []
         if log.inflictedRocked { extraTags.append("💥打暈!") }
+        if log.inflictedCut { extraTags.append("🩸割傷!") }
         if let td = log.takedownLanded { extraTags.append("🤼摔進\(shortPositionName(td))") }
         if let adv = log.positionAdvancedTo { extraTags.append("📍位置→\(shortPositionName(adv))") }
         if let swp = log.sweptToPosition { extraTags.append("🔄掃技翻轉→\(shortPositionName(swp))!") }
@@ -518,6 +530,8 @@ struct ContentView: View {
         completedRounds = []
         replayExchanges = []
         matchOutcome = nil
+        decisionType = nil
+        judgeScorecards = []
         copiedToast = false
         playerHand = HandManager(side: .a, fighter: fighterA, state: state, rng: &rng)
         aiHand = HandManager(side: .b, fighter: fighterB, state: state, rng: &rng)
@@ -620,15 +634,10 @@ struct ContentView: View {
                     stateAfterCorner: state
                 )
                 completedRounds.append(rLog)
-                let totalA = completedRounds.compactMap(\.score?.pointsA).reduce(0, +)
-                let totalB = completedRounds.compactMap(\.score?.pointsB).reduce(0, +)
-                if totalA > totalB {
-                    matchOutcome = .decision(winner: .a, scoreA: totalA, scoreB: totalB)
-                } else if totalB > totalA {
-                    matchOutcome = .decision(winner: .b, scoreA: totalA, scoreB: totalB)
-                } else {
-                    matchOutcome = .draw(scoreA: totalA, scoreB: totalB)
-                }
+                let tallied = FightMatchEngine.tallyJudgeScorecards(from: completedRounds)
+                matchOutcome = tallied.outcome
+                decisionType = tallied.decisionType
+                judgeScorecards = tallied.scorecards
             }
         }
     }
@@ -655,6 +664,9 @@ struct ContentView: View {
         if let g = state.ground {
             return "地面·\(shortPositionName(g.position))"
         }
+        if state.isClinch {
+            return "🤼 籠邊纏抱 Clinch"
+        }
         return distanceLabel(state.distance)
     }
 
@@ -662,6 +674,9 @@ struct ContentView: View {
         if let g = log.stateAfter.ground {
             let top = g.topSide == .a ? "玩家上位" : "AI上位"
             return "地面 \(shortPositionName(g.position)) (\(top))"
+        }
+        if log.stateAfter.isClinch {
+            return "🤼 籠邊纏抱 Clinch"
         }
         return distanceLabel(log.stateAfter.distance)
     }
@@ -757,6 +772,7 @@ struct ContentView: View {
         case .ko: "頭部 KO"
         case .tkoBody: "肝擊/身體 TKO"
         case .tkoLegs: "低掃/腿部 TKO"
+        case .tkoDoctor: "醫務暫停 TKO (Doctor Stoppage)"
         case .submission: "降伏 Tap Out (Submission)"
         }
     }
@@ -768,9 +784,10 @@ struct ContentView: View {
                 ? "🏆 玩家獲勝！（\(finishReasonText(reason))）"
                 : "💀 AI 獲勝！（\(finishReasonText(reason))）"
         case let .decision(winner, scoreA, scoreB):
+            let typeLabel = decisionType?.displayName ?? "判定"
             return winner == .a
-                ? "🏆 玩家判定獲勝！（\(scoreA)-\(scoreB)）"
-                : "💀 AI 判定獲勝！（\(scoreB)-\(scoreA)）"
+                ? "🏆 玩家獲勝！\(typeLabel)（\(scoreA)-\(scoreB)）"
+                : "💀 AI 獲勝！\(typeLabel)（\(scoreB)-\(scoreA)）"
         case let .draw(scoreA, scoreB):
             return "🤝 雙方平手（\(scoreA)-\(scoreB)）"
         }
@@ -781,11 +798,15 @@ struct ContentView: View {
         case let .finish(_, _, round, exchange):
             return "第 \(round) 回合 · 第 \(exchange) 次交手終結 | Seed #\(seed)"
         case .decision, .draw:
-            let roundsText = completedRounds.compactMap { r -> String? in
-                guard let s = r.score else { return nil }
-                return "R\(s.round)(\(s.pointsA)-\(s.pointsB))"
+            let judgesText = judgeScorecards.map { c in
+                let shortBias: String = switch c.bias {
+                case .striking: "J1(站立)"
+                case .grappling: "J2(摔柔)"
+                case .balanced: "J3(均衡)"
+                }
+                return "\(shortBias) \(c.pointsA)-\(c.pointsB)"
             }.joined(separator: " · ")
-            return "\(roundsText) | Seed #\(seed)"
+            return "\(judgesText) | Seed #\(seed)"
         }
     }
 }

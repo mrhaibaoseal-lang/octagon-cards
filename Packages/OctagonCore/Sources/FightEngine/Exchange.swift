@@ -6,6 +6,7 @@ public enum FinishReason: String, Sendable, Codable, Hashable, CaseIterable {
     case ko
     case tkoBody
     case tkoLegs
+    case tkoDoctor
     case submission
 
     public static func from(depletedTarget: HitTarget) -> FinishReason {
@@ -50,6 +51,7 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
     public var stoodUpToStanding: Bool
     public var submissionStageReached: SubmissionStage?
     public var submissionEscaped: Bool
+    public var inflictedCut: Bool
 
     public init(
         side: Side,
@@ -68,7 +70,8 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
         sweptToPosition: GroundPosition? = nil,
         stoodUpToStanding: Bool = false,
         submissionStageReached: SubmissionStage? = nil,
-        submissionEscaped: Bool = false
+        submissionEscaped: Bool = false,
+        inflictedCut: Bool = false
     ) {
         self.side = side
         self.card = card
@@ -87,6 +90,7 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
         self.stoodUpToStanding = stoodUpToStanding
         self.submissionStageReached = submissionStageReached
         self.submissionEscaped = submissionEscaped
+        self.inflictedCut = inflictedCut
     }
 }
 
@@ -267,15 +271,18 @@ public enum ExchangeEngine {
                     // Intercepted by opponent's counter (e.g. intercepting knee or jump guillotine)
                 } else if oppPlay.card.type == .block && oppPlay.card.tags.contains(.wrestling) && oppLog.succeeded {
                     // Stuffed by dedicated Sprawl
+                    state.isClinch = false
                     adjustStamina(&state[activeSide], by: -4.0)
                     adjustMomentum(&state[activeSide], by: -8.0)
                     adjustMomentum(&state[oppSide], by: 10.0)
                 } else if (oppPlay.card.type == .evade || oppPlay.card.type == .move) && oppLog.succeeded && !myLog.succeeded {
+                    state.isClinch = false
                     adjustStamina(&state[activeSide], by: -3.0)
                     adjustMomentum(&state[activeSide], by: -6.0)
                     adjustMomentum(&state[oppSide], by: 6.0)
                 } else if myLog.succeeded {
                     state.ground = GroundState(topSide: activeSide, position: landingPos)
+                    state.isClinch = false
                     myLog.takedownLanded = landingPos
                     adjustMomentum(&state[activeSide], by: 14.0)
                     adjustMomentum(&state[oppSide], by: -10.0)
@@ -290,6 +297,7 @@ public enum ExchangeEngine {
                             defenderSide: oppSide,
                             attacker: myPlay.fighter,
                             defender: oppPlay.fighter,
+                            card: myPlay.card,
                             canRock: false,
                             state: &state,
                             rng: &rng,
@@ -312,7 +320,8 @@ public enum ExchangeEngine {
                     // Intercepted by opponent's successful counter-attack.
                     break
                 } else if oppPlay.card.type == .evade && oppLog.succeeded {
-                    // Opponent evaded completely: attacker whiffs and loses extra stamina/momentum.
+                    // Opponent evaded completely: slips the tie-up, attacker whiffs and loses extra stamina/momentum.
+                    state.isClinch = false
                     adjustStamina(&state[activeSide], by: -2.0)
                     adjustMomentum(&state[activeSide], by: -5.0)
                     adjustMomentum(&state[oppSide], by: 8.0)
@@ -328,6 +337,7 @@ public enum ExchangeEngine {
                         defenderSide: oppSide,
                         attacker: myPlay.fighter,
                         defender: oppPlay.fighter,
+                        card: myPlay.card,
                         canRock: false,
                         state: &state,
                         rng: &rng,
@@ -345,6 +355,7 @@ public enum ExchangeEngine {
                             defenderSide: oppSide,
                             attacker: myPlay.fighter,
                             defender: oppPlay.fighter,
+                            card: myPlay.card,
                             canRock: true,
                             state: &state,
                             rng: &rng,
@@ -353,6 +364,16 @@ public enum ExchangeEngine {
                         )
                         adjustMomentum(&state[activeSide], by: 10.0)
                         adjustMomentum(&state[oppSide], by: -6.0)
+                        if finish == nil && state.ground == nil && state.distance == .close
+                            && (myPlay.card.tags.contains(.knee) || myPlay.card.tags.contains(.elbow) || myPlay.card.id == "dirty-boxing")
+                        {
+                            if !myLog.inflictedRocked {
+                                state.isClinch = true
+                            }
+                            if myPlay.fighter.has(.cagePinner) {
+                                state[oppSide].cage = pushedBackCagePosition(from: state[oppSide].cage)
+                            }
+                        }
                     } else {
                         adjustMomentum(&state[activeSide], by: -3.0)
                     }
@@ -371,6 +392,7 @@ public enum ExchangeEngine {
                             stage: .setup
                         )
                         state.ground = GroundState(topSide: oppSide, position: landPos, activeSubmission: hold)
+                        state.isClinch = false
                         myLog.submissionStageReached = .setup
                         adjustMomentum(&state[activeSide], by: 16.0)
                         adjustMomentum(&state[oppSide], by: -12.0)
@@ -393,6 +415,7 @@ public enum ExchangeEngine {
                             defenderSide: oppSide,
                             attacker: myPlay.fighter,
                             defender: oppPlay.fighter,
+                            card: myPlay.card,
                             canRock: true,
                             state: &state,
                             rng: &rng,
@@ -418,6 +441,13 @@ public enum ExchangeEngine {
                 if myLog.succeeded {
                     state.distance = nextDistance(from: state.distance, card: myPlay.card)
                     state[activeSide].cage = improvedCagePosition(from: state[activeSide].cage)
+                    if state.distance != .close || myPlay.card.id == "push-off" {
+                        state.isClinch = false
+                    } else if state.distance == .close && state.ground == nil
+                        && (myPlay.fighter.has(.cagePinner) || myPlay.fighter.attributes.clinch >= 75)
+                    {
+                        state.isClinch = true
+                    }
                     myLog.movedDistanceTo = state.distance
                     adjustMomentum(&state[activeSide], by: 6.0)
                 }
@@ -429,8 +459,11 @@ public enum ExchangeEngine {
                 }
 
             case .evade:
-                if oppPlay.card.type != .strike && myLog.succeeded {
-                    adjustMomentum(&state[activeSide], by: 2.0)
+                if myLog.succeeded {
+                    state.isClinch = false
+                    if oppPlay.card.type != .strike {
+                        adjustMomentum(&state[activeSide], by: 2.0)
+                    }
                 }
             }
 
@@ -441,6 +474,9 @@ public enum ExchangeEngine {
         // newly Rocked this exchange, they recover their footing.
         let finalLogA = logs[.a]!
         let finalLogB = logs[.b]!
+        if finalLogA.inflictedRocked || finalLogB.inflictedRocked || state.ground != nil || state.distance != .close {
+            state.isClinch = false
+        }
         if finish == nil {
             if wasRockedA && !finalLogB.inflictedRocked {
                 state.a.isRocked = false
@@ -490,6 +526,7 @@ public enum ExchangeEngine {
         defenderSide: Side,
         attacker: Fighter,
         defender: Fighter,
+        card: Card? = nil,
         canRock: Bool,
         state: inout FightState,
         rng: inout SeededRNG,
@@ -516,6 +553,39 @@ public enum ExchangeEngine {
                         state[defenderSide].isRocked = true
                         adjustMomentum(&state[defenderSide], by: -10.0)
                         myLog.inflictedRocked = true
+                    }
+                }
+                // Cut / Bleeding & Doctor Stoppage check (`STRIKING_AND_DECK.md` / UFC Elbow Cut rules)
+                let isElbow = card?.tags.contains(.elbow) == true
+                if state[defenderSide].cutSeverity >= FighterCondition.maxCutSeverity && clampedDamage >= 12.0 {
+                    let pDoctor = Odds.resolve(
+                        base: 0.14,
+                        modifiers: [
+                            isElbow ? 0.10 : 0.0,
+                            (clampedDamage - 12.0) * 0.01,
+                        ]
+                    )
+                    if rng.roll(probability: pDoctor) {
+                        finish = ExchangeFinish(winner: attackerSide, reason: .tkoDoctor)
+                        return
+                    }
+                } else if state[defenderSide].cutSeverity < FighterCondition.maxCutSeverity {
+                    let canOpenCut = (isElbow && clampedDamage >= 8.0)
+                        || clampedDamage >= 16.0
+                        || (state[defenderSide].isBleeding && clampedDamage >= 11.5)
+                    if canOpenCut {
+                        let baseCut = isElbow ? 0.25 : (state[defenderSide].isBleeding ? 0.10 : 0.06)
+                        let pCut = Odds.resolve(
+                            base: baseCut,
+                            modifiers: [(clampedDamage - 10.0) * 0.01]
+                        )
+                        if rng.roll(probability: pCut) {
+                            state[defenderSide].cutSeverity = min(
+                                FighterCondition.maxCutSeverity,
+                                state[defenderSide].cutSeverity + 1
+                            )
+                            myLog.inflictedCut = true
+                        }
                     }
                 }
             case .body:
@@ -581,6 +651,13 @@ public enum ExchangeEngine {
         switch current {
         case .cornered: .againstCage
         case .againstCage, .center: .center
+        }
+    }
+
+    private static func pushedBackCagePosition(from current: CagePosition) -> CagePosition {
+        switch current {
+        case .center: .againstCage
+        case .againstCage, .cornered: .cornered
         }
     }
 

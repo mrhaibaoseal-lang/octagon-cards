@@ -364,6 +364,7 @@ public enum GroundExchangeEngine {
         var playB = b
         playB.side = .b
 
+        state.isClinch = false
         let stateBefore = state
         let wasRockedA = stateBefore.a.isRocked
         let wasRockedB = stateBefore.b.isRocked
@@ -766,6 +767,7 @@ public enum GroundExchangeEngine {
                 ExchangeEngine.applyDamage(
                     raw * 0.55,
                     to: bottomPlay.card.target ?? .head,
+                    card: bottomPlay.card,
                     attackerSide: bottomSide,
                     defenderSide: topSide,
                     attacker: bottomPlay.fighter,
@@ -778,6 +780,7 @@ public enum GroundExchangeEngine {
                 )
             }
             state.ground = nil
+            state.isClinch = false
             state.distance = .mid
             bottomLog.stoodUpToStanding = true
             ExchangeEngine.adjustMomentum(&state[bottomSide], by: 14.0)
@@ -872,6 +875,7 @@ public enum GroundExchangeEngine {
         ExchangeEngine.applyDamage(
             dmg,
             to: target,
+            card: topPlay.card,
             attackerSide: topSide,
             defenderSide: bottomSide,
             attacker: topPlay.fighter,

@@ -228,6 +228,9 @@ public enum TakedownEngine {
         if state.distance == .close && my.card.isEffective(at: .close) {
             distMod += 0.10
         }
+        if state.isClinch {
+            distMod += 0.06 + Double(myAttr.clinch - oppAttr.clinch) * 0.002
+        }
 
         // Condition modifier: attacker stamina penalty + defender leg-damage bonus (+0.10 when legs < 50)
         let myCond = state[my.side]

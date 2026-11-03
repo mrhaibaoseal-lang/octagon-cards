@@ -12,6 +12,7 @@ final class LungeDemoScene: SKScene {
     private let statusLabel = SKLabelNode(fontNamed: "Menlo-Bold")
     private var currentDistance: Distance = .long
     private var currentGround: GroundState? = nil
+    private var currentClinch: Bool = false
     private var leftHome = CGPoint.zero
     private var rightHome = CGPoint.zero
 
@@ -81,7 +82,9 @@ final class LungeDemoScene: SKScene {
             case .mid:
                 statusLabel.text = "🥊 站立 · 中距離 MID RANGE"
             case .close:
-                statusLabel.text = "🥊 站立 · 近距離 / 籠邊 CLOSE RANGE"
+                statusLabel.text = currentClinch
+                    ? "🤼 站立 · 籠邊纏抱 / 泰拳箍頸 CLINCH"
+                    : "🥊 站立 · 近距離 / 籠邊 CLOSE RANGE"
             }
             statusLabel.fontColor = SKColor(white: 0.85, alpha: 1.0)
         }
@@ -150,6 +153,7 @@ final class LungeDemoScene: SKScene {
     func resetPositions(distance: Distance = .long) {
         currentDistance = distance
         currentGround = nil
+        currentClinch = false
         leftFighter.removeAllActions()
         rightFighter.removeAllActions()
         leftFighter.color = .systemGreen
@@ -161,6 +165,7 @@ final class LungeDemoScene: SKScene {
     func playExchange(log: ExchangeLog) {
         currentDistance = log.stateAfter.distance
         currentGround = log.stateAfter.ground
+        currentClinch = log.stateAfter.isClinch
         let (lh, rh) = homes(for: currentDistance)
         leftHome = lh
         rightHome = rh
