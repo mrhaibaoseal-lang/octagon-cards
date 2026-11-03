@@ -517,6 +517,7 @@ struct ContentView: View {
         case .ko: "頭部 KO"
         case .tkoBody: "肝擊/身體 TKO"
         case .tkoLegs: "低掃/腿部 TKO"
+        case .submission: "降伏 Tap Out (Submission)"
         }
     }
 

@@ -210,16 +210,28 @@ public enum Odds {
         state: FightState,
         readModifier: Double = 0.0
     ) -> OddsBreakdown {
+        if state.ground != nil {
+            return GroundOdds.breakdown(my: my, opp: opp, state: state, readModifier: readModifier)
+        }
         if my.card.isTakedown {
             return TakedownEngine.breakdown(my: my, opp: opp, state: state, readModifier: readModifier)
         }
-        let base = baseProbability(my: my.card.type, against: opp.card.type)
+        let base: Double
+        if my.card.type == .counter && my.card.tags.contains(.submission) && opp.card.isTakedown {
+            base = 0.62
+        } else {
+            base = baseProbability(my: my.card.type, against: opp.card.type)
+        }
         let myCondition = state[my.side]
         let oppCondition = state[opp.side]
         let attrMod: Double
         if opp.card.isTakedown && my.card.type == .block && my.card.tags.contains(.wrestling) {
             // Sprawl defense vs opponent's takedown
             let diff = Double(my.fighter.attributes.takedownDefense) - (Double(opp.fighter.attributes.takedown + opp.card.accuracy) / 2.0)
+            attrMod = diff * 0.003
+        } else if opp.card.isTakedown && my.card.type == .counter && my.card.tags.contains(.submission) {
+            // Jump Guillotine counter vs opponent's takedown
+            let diff = (Double(my.fighter.attributes.submission + my.card.accuracy) / 2.0) - Double(opp.fighter.attributes.takedown)
             attrMod = diff * 0.003
         } else {
             attrMod = attributeModifier(

@@ -201,7 +201,7 @@ public protocol FighterAI: Sendable {
     ) -> Card
 }
 
-/// Purely uniform random AI (respects the Rocked restriction when defensive/move cards exist).
+/// Purely uniform random AI (respects Rocked and Ground role/position restrictions).
 public struct RandomAI: FighterAI {
     public init() {}
 
@@ -213,13 +213,13 @@ public struct RandomAI: FighterAI {
         history: [ExchangeLog],
         rng: inout SeededRNG
     ) -> Card {
-        let legal = FightMatchEngine.legalCards(from: availableCards, isRocked: state[side].isRocked)
+        let legal = FightMatchEngine.legalCards(from: availableCards, for: side, in: state)
         let idx = Int(rng.next() % UInt64(legal.count))
         return legal[idx]
     }
 }
 
-/// Style-aware heuristic AI that prefers distance-appropriate cards and conserves stamina when tired.
+/// Style-aware heuristic AI that adapts to Striker, Wrestler, and BJJ archetypes across standing and ground phases.
 public struct StyleAI: FighterAI {
     public init() {}
 
@@ -232,33 +232,121 @@ public struct StyleAI: FighterAI {
         rng: inout SeededRNG
     ) -> Card {
         let cond = state[side]
-        let legal = FightMatchEngine.legalCards(from: availableCards, isRocked: cond.isRocked)
+        let legal = FightMatchEngine.legalCards(from: availableCards, for: side, in: state)
         guard legal.count > 1 else { return legal[0] }
 
-        // Weight each legal card by distance fit, stamina state, and fighter tendencies.
         var weights: [Double] = []
         weights.reserveCapacity(legal.count)
-        for card in legal {
-            var w = 1.0
-            if card.isEffective(at: state.distance) {
-                w += 1.5
-            } else {
-                w *= 0.35
-            }
-            if cond.stamina < 35.0 {
-                if card.type == .block || card.type == .move {
-                    w += 1.0
-                } else if card.staminaCost >= 3 {
-                    w *= 0.4
+
+        if let ground = state.ground {
+            let role = ground.role(for: side)
+            for card in legal {
+                var w = 1.0
+                if let hold = ground.activeSubmission {
+                    if hold.attackerSide == side {
+                        if card.tags.contains(.submission) || card.topIntent == .submission {
+                            w += 2.2
+                        }
+                    } else {
+                        if card.bottomIntent == .frame || card.bottomIntent == .escape {
+                            w += 2.0
+                        }
+                    }
+                } else if role == .top {
+                    switch card.topIntent {
+                    case .advance:
+                        w += (ground.position < .fullMount) ? 1.6 : 0.6
+                    case .gnp:
+                        w += (ground.position >= .sideControl) ? 1.8 : 1.1
+                        if fighter.attributes.power >= 70 { w += 0.6 }
+                    case .submission:
+                        if fighter.attributes.submission >= 75 || fighter.has(.blackBeltBJJ) {
+                            w += (ground.position >= .halfGuard) ? 2.2 : 1.4
+                        } else if fighter.attributes.submission >= 55 && ground.position >= .sideControl {
+                            w += 1.3
+                        } else {
+                            w *= 0.35
+                        }
+                    case .smother:
+                        if ground.stallCount >= 2 {
+                            w *= 0.20
+                        } else if fighter.has(.smother) || fighter.attributes.clinch >= 75 {
+                            w += 1.4
+                        } else {
+                            w += 0.4
+                        }
+                    case .none:
+                        break
+                    }
+                } else {
+                    switch card.bottomIntent {
+                    case .frame:
+                        w += 1.2
+                    case .escape:
+                        if fighter.attributes.submission < 70 {
+                            w += 1.8
+                        } else {
+                            w += 1.1
+                        }
+                    case .sweepOrSub:
+                        if fighter.attributes.submission >= 75 || fighter.has(.blackBeltBJJ) {
+                            w += card.tags.contains(.submission) ? 2.4 : 1.8
+                        } else if card.tags.contains(.submission) {
+                            w *= 0.25
+                        } else {
+                            w += 0.9
+                        }
+                    case .shell:
+                        w += (ground.position >= .fullMount) ? 1.3 : 0.7
+                    case .none:
+                        break
+                    }
                 }
+                if cond.stamina < 35.0 && card.staminaCost >= 3 {
+                    w *= 0.5
+                }
+                weights.append(max(w, 0.05))
             }
-            if fighter.has(.counterPuncher) && card.type == .counter {
-                w += 0.8
+        } else {
+            // Standing phase weights
+            for card in legal {
+                var w = 1.0
+                if card.isEffective(at: state.distance) {
+                    w += 1.5
+                } else {
+                    w *= 0.35
+                }
+                if card.isTakedown {
+                    if fighter.attributes.takedown >= 75 {
+                        w += card.isEffective(at: state.distance) ? 2.2 : 0.4
+                    } else if fighter.attributes.takedown >= 65 {
+                        w += card.isEffective(at: state.distance) ? 1.4 : 0.3
+                    } else {
+                        w *= 0.12
+                    }
+                } else if card.tags.contains(.submission) && card.type == .counter {
+                    w *= (fighter.attributes.submission >= 75) ? 1.1 : 0.2
+                } else if card.id == "sprawl" {
+                    w *= (fighter.attributes.takedownDefense >= 60) ? 0.9 : 0.5
+                }
+                if fighter.attributes.takedown >= 70 && state.distance == .long && card.preferredDistance == .close {
+                    w += 1.6
+                }
+                if cond.stamina < 35.0 {
+                    if card.type == .block || card.type == .move {
+                        w += 1.0
+                    } else if card.staminaCost >= 3 {
+                        w *= 0.4
+                    }
+                }
+                if fighter.has(.counterPuncher) && card.type == .counter && !card.tags.contains(.submission) {
+                    w += 0.8
+                }
+                if state[side.opposite].isRocked && card.type == .strike && !card.isTakedown {
+                    w += 1.8
+                }
+                weights.append(max(w, 0.05))
             }
-            if state[side.opposite].isRocked && card.type == .strike {
-                w += 1.8
-            }
-            weights.append(max(w, 0.05))
         }
 
         let total = weights.reduce(0.0, +)
@@ -279,10 +367,28 @@ public enum FightMatchEngine {
     /// Enforces STRIKING_AND_DECK §4.1: a Rocked fighter can only choose Block / Evade / Move
     /// (falls back to all cards only if the pool has none of those types).
     public static func legalCards(from cards: [Card], isRocked: Bool) -> [Card] {
-        let pool = cards.isEmpty ? SampleData.cards : cards
+        let standingPool = cards.filter { !$0.isGroundCard }
+        let pool = standingPool.isEmpty ? (cards.isEmpty ? SampleData.cards : cards) : standingPool
         guard isRocked else { return pool }
         let defensive = pool.filter { $0.type == .block || $0.type == .evade || $0.type == .move }
         return defensive.isEmpty ? pool : defensive
+    }
+
+    /// Context-aware legal card pool:
+    /// - When standing (`state.ground == nil`): returns standing + takedown cards (restricted if `isRocked`).
+    /// - When grounded (`state.ground != nil`): automatically flips to legal Top or Bottom ground cards
+    ///   for `side` at `ground.position` (falling back to `SampleData.groundCards` if `cards` had no ground cards).
+    public static func legalCards(from cards: [Card], for side: Side, in state: FightState) -> [Card] {
+        if let ground = state.ground {
+            let role = ground.role(for: side)
+            let legalInDeck = cards.filter { $0.isLegalOnGround(as: role, at: ground.position) }
+            if !legalInDeck.isEmpty {
+                return legalInDeck
+            }
+            let fallback = SampleData.groundCards.filter { $0.isLegalOnGround(as: role, at: ground.position) }
+            return fallback.isEmpty ? SampleData.groundCards : fallback
+        }
+        return legalCards(from: cards, isRocked: state[side].isRocked)
     }
 
     /// Computes the read bonus (`0.0 ... 0.10`) for `mySide` based on recent exchanges:
@@ -349,6 +455,8 @@ public enum FightMatchEngine {
         var strikesLandedB = 0
         var tacticsA = 0
         var tacticsB = 0
+        var grapplingA = 0.0
+        var grapplingB = 0.0
 
         for ex in exchanges {
             damageByA += ex.a.damageDealt
@@ -359,17 +467,39 @@ public enum FightMatchEngine {
             if ex.b.damageDealt > 0 { strikesLandedB += 1 }
             if ex.a.feintSucceeded || ex.a.movedDistanceTo != nil { tacticsA += 1 }
             if ex.b.feintSucceeded || ex.b.movedDistanceTo != nil { tacticsB += 1 }
+
+            // Grappling & positional control scoring (STRIKING_AND_DECK §9: 25% grappling weight)
+            if ex.a.takedownLanded != nil { grapplingA += 8.0 }
+            if ex.b.takedownLanded != nil { grapplingB += 8.0 }
+            if ex.a.positionAdvancedTo != nil || ex.a.sweptToPosition != nil { grapplingA += 6.0 }
+            if ex.b.positionAdvancedTo != nil || ex.b.sweptToPosition != nil { grapplingB += 6.0 }
+            if let stageA = ex.a.submissionStageReached {
+                grapplingA += (stageA == .lockedIn) ? 14.0 : 9.0
+            }
+            if let stageB = ex.b.submissionStageReached {
+                grapplingB += (stageB == .lockedIn) ? 14.0 : 9.0
+            }
+            if let g = ex.stateAfter.ground {
+                let posControlBonus = Double(g.position.rawValue) * 0.8
+                if g.topSide == .a {
+                    grapplingA += 2.0 + posControlBonus
+                } else {
+                    grapplingB += 2.0 + posControlBonus
+                }
+            }
         }
 
         let perfA = damageByA
             + Double(rockedByA) * 12.0
             + Double(strikesLandedA) * 3.0
             + Double(tacticsA) * 1.5
+            + grapplingA
             + endState.a.momentum * 0.05
         let perfB = damageByB
             + Double(rockedByB) * 12.0
             + Double(strikesLandedB) * 3.0
             + Double(tacticsB) * 1.5
+            + grapplingB
             + endState.b.momentum * 0.05
 
         let diff = perfA - perfB
@@ -416,6 +546,7 @@ public enum FightMatchEngine {
         rng: inout SeededRNG,
         applyCornerAtEnd: Bool = true
     ) -> (log: RoundLog, finish: (finish: ExchangeFinish, exchangeIndex: Int)?) {
+        state.round = max(roundNumber, 1)
         var roundExchanges: [ExchangeLog] = []
         roundExchanges.reserveCapacity(exchangesPerRound)
 

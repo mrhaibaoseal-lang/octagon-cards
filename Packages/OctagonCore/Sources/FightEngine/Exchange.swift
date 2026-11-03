@@ -1,11 +1,12 @@
 /// Single standing exchange resolution and structured combat log
 /// (see docs/STRIKING_AND_DECK.md §12.1–12.4 and docs/TASKS.md P2-4).
 
-/// How a standing exchange finished the fight.
+/// How an exchange finished the fight.
 public enum FinishReason: String, Sendable, Codable, Hashable, CaseIterable {
     case ko
     case tkoBody
     case tkoLegs
+    case submission
 
     public static func from(depletedTarget: HitTarget) -> FinishReason {
         switch depletedTarget {
@@ -44,6 +45,11 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
     public var feintSucceeded: Bool
     public var movedDistanceTo: Distance?
     public var takedownLanded: GroundPosition?
+    public var positionAdvancedTo: GroundPosition?
+    public var sweptToPosition: GroundPosition?
+    public var stoodUpToStanding: Bool
+    public var submissionStageReached: SubmissionStage?
+    public var submissionEscaped: Bool
 
     public init(
         side: Side,
@@ -57,7 +63,12 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
         inflictedRocked: Bool = false,
         feintSucceeded: Bool = false,
         movedDistanceTo: Distance? = nil,
-        takedownLanded: GroundPosition? = nil
+        takedownLanded: GroundPosition? = nil,
+        positionAdvancedTo: GroundPosition? = nil,
+        sweptToPosition: GroundPosition? = nil,
+        stoodUpToStanding: Bool = false,
+        submissionStageReached: SubmissionStage? = nil,
+        submissionEscaped: Bool = false
     ) {
         self.side = side
         self.card = card
@@ -71,6 +82,11 @@ public struct ExchangeSideLog: Sendable, Codable, Hashable {
         self.feintSucceeded = feintSucceeded
         self.movedDistanceTo = movedDistanceTo
         self.takedownLanded = takedownLanded
+        self.positionAdvancedTo = positionAdvancedTo
+        self.sweptToPosition = sweptToPosition
+        self.stoodUpToStanding = stoodUpToStanding
+        self.submissionStageReached = submissionStageReached
+        self.submissionEscaped = submissionEscaped
     }
 }
 
@@ -82,6 +98,8 @@ public struct ExchangeLog: Sendable, Codable, Hashable {
     public var a: ExchangeSideLog
     public var b: ExchangeSideLog
     public var finish: ExchangeFinish?
+    /// True if 3 consecutive stalling exchanges on the ground prompted a Referee Stand Up (`GROUND_GAME_DESIGN.md` §5).
+    public var refereeStandUp: Bool
 
     public init(
         firstSide: Side,
@@ -89,7 +107,8 @@ public struct ExchangeLog: Sendable, Codable, Hashable {
         stateAfter: FightState,
         a: ExchangeSideLog,
         b: ExchangeSideLog,
-        finish: ExchangeFinish? = nil
+        finish: ExchangeFinish? = nil,
+        refereeStandUp: Bool = false
     ) {
         self.firstSide = firstSide
         self.stateBefore = stateBefore
@@ -97,6 +116,7 @@ public struct ExchangeLog: Sendable, Codable, Hashable {
         self.a = a
         self.b = b
         self.finish = finish
+        self.refereeStandUp = refereeStandUp
     }
 
     public subscript(side: Side) -> ExchangeSideLog {
@@ -183,6 +203,17 @@ public enum ExchangeEngine {
         var playB = b
         playB.side = .b
 
+        if state.ground != nil {
+            return GroundExchangeEngine.resolve(
+                a: playA,
+                b: playB,
+                state: &state,
+                rng: &rng,
+                readModifierA: readModifierA,
+                readModifierB: readModifierB
+            )
+        }
+
         let stateBefore = state
         let wasRockedA = stateBefore.a.isRocked
         let wasRockedB = stateBefore.b.isRocked
@@ -218,7 +249,7 @@ public enum ExchangeEngine {
                   let myPlay = plays[activeSide], let oppPlay = plays[oppSide]
             else { continue }
 
-            if finish != nil || oppLog.inflictedRocked || oppLog.takedownLanded != nil {
+            if finish != nil || oppLog.inflictedRocked || oppLog.takedownLanded != nil || oppLog.submissionStageReached != nil {
                 myLog.wasInterrupted = true
                 logs[activeSide] = myLog
                 continue
@@ -329,29 +360,46 @@ public enum ExchangeEngine {
 
             case .counter:
                 if myLog.succeeded {
-                    let mult: Double
-                    if oppPlay.card.type == .strike {
-                        mult = myPlay.fighter.has(.counterPuncher) ? 1.80 : 1.60
+                    if myPlay.card.tags.contains(.submission) && oppPlay.card.isTakedown {
+                        // Standing submission counter (e.g. Jump Guillotine on a takedown shot)
+                        let landPos = myPlay.card.landingPosition ?? .fullGuard
+                        let hold = SubmissionHold(
+                            cardId: myPlay.card.id,
+                            name: myPlay.card.name,
+                            category: myPlay.card.submissionCategory ?? .choke,
+                            attackerSide: activeSide,
+                            stage: .setup
+                        )
+                        state.ground = GroundState(topSide: oppSide, position: landPos, activeSubmission: hold)
+                        myLog.submissionStageReached = .setup
                         adjustMomentum(&state[activeSide], by: 16.0)
-                        adjustMomentum(&state[oppSide], by: -10.0)
+                        adjustMomentum(&state[oppSide], by: -12.0)
+                        adjustStamina(&state[oppSide], by: -5.0)
                     } else {
-                        mult = 0.80
-                        adjustMomentum(&state[activeSide], by: 8.0)
+                        let mult: Double
+                        if oppPlay.card.type == .strike {
+                            mult = myPlay.fighter.has(.counterPuncher) ? 1.80 : 1.60
+                            adjustMomentum(&state[activeSide], by: 16.0)
+                            adjustMomentum(&state[oppSide], by: -10.0)
+                        } else {
+                            mult = 0.80
+                            adjustMomentum(&state[activeSide], by: 8.0)
+                        }
+                        let target = myPlay.card.target ?? .head
+                        applyDamage(
+                            raw * mult,
+                            to: target,
+                            attackerSide: activeSide,
+                            defenderSide: oppSide,
+                            attacker: myPlay.fighter,
+                            defender: oppPlay.fighter,
+                            canRock: true,
+                            state: &state,
+                            rng: &rng,
+                            myLog: &myLog,
+                            finish: &finish
+                        )
                     }
-                    let target = myPlay.card.target ?? .head
-                    applyDamage(
-                        raw * mult,
-                        to: target,
-                        attackerSide: activeSide,
-                        defenderSide: oppSide,
-                        attacker: myPlay.fighter,
-                        defender: oppPlay.fighter,
-                        canRock: true,
-                        state: &state,
-                        rng: &rng,
-                        myLog: &myLog,
-                        finish: &finish
-                    )
                 } else {
                     adjustStamina(&state[activeSide], by: -1.0)
                     adjustMomentum(&state[activeSide], by: -4.0)
@@ -433,9 +481,9 @@ public enum ExchangeEngine {
         return ExchangeResult(state: nextState, log: log)
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Internal Helpers
 
-    private static func applyDamage(
+    static func applyDamage(
         _ damage: Double,
         to target: HitTarget,
         attackerSide: Side,
@@ -536,11 +584,11 @@ public enum ExchangeEngine {
         }
     }
 
-    private static func adjustStamina(_ condition: inout FighterCondition, by delta: Double) {
+    static func adjustStamina(_ condition: inout FighterCondition, by delta: Double) {
         condition.stamina = min(max(condition.stamina + delta, 0.0), FighterCondition.maxStamina)
     }
 
-    private static func adjustMomentum(_ condition: inout FighterCondition, by delta: Double) {
+    static func adjustMomentum(_ condition: inout FighterCondition, by delta: Double) {
         condition.momentum = min(max(condition.momentum + delta, 0.0), FighterCondition.maxMomentum)
     }
 }

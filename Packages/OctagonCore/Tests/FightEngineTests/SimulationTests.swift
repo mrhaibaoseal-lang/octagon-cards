@@ -20,4 +20,21 @@ struct SimulationTests {
             #expect((stats?.played ?? 0) > 0)
         }
     }
+
+    @Test func fullMMASimulatorExercisesTakedownsGroundAndSubmissionsWithZeroViolations() {
+        let rep = BalanceSimulator.run(
+            games: 300,
+            baseSeed: 777,
+            fighterA: SampleData.wrestler,
+            fighterB: SampleData.bjjFighter,
+            deckA: SampleData.allCards,
+            deckB: SampleData.allCards,
+            aiA: StyleAI(),
+            aiB: StyleAI()
+        )
+        #expect(rep.invariantViolations == 0)
+        #expect(rep.takedownsLanded > 0)
+        #expect(rep.groundExchanges > 0)
+        #expect(rep.submissionCount > 0)
+    }
 }

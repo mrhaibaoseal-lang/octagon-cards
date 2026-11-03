@@ -62,6 +62,14 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
     public var preferredDistance: Distance?
     /// For takedown cards (`.wrestling` tag): the starting `GroundPosition` entered when the takedown succeeds.
     public var landingPosition: GroundPosition?
+    /// For Top ground cards (`GROUND_GAME_DESIGN.md` §3.1): the Top tactical intent.
+    public var topIntent: TopIntent?
+    /// For Bottom ground cards (`GROUND_GAME_DESIGN.md` §3.2): the Bottom tactical intent.
+    public var bottomIntent: BottomIntent?
+    /// For submission cards (`GROUND_GAME_DESIGN.md` §4): choke vs joint-lock classification.
+    public var submissionCategory: SubmissionCategory?
+    /// Ground positions where this ground card can be played at full effectiveness (`nil` = all ground positions).
+    public var allowedGroundPositions: [GroundPosition]?
 
     /// `speed` / `power` / `accuracy` are clamped into `0...100`; costs are floored at 0.
     public init(
@@ -77,7 +85,11 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
         deckCost: Int,
         tags: [CardTag] = [],
         preferredDistance: Distance? = nil,
-        landingPosition: GroundPosition? = nil
+        landingPosition: GroundPosition? = nil,
+        topIntent: TopIntent? = nil,
+        bottomIntent: BottomIntent? = nil,
+        submissionCategory: SubmissionCategory? = nil,
+        allowedGroundPositions: [GroundPosition]? = nil
     ) {
         func c(_ v: Int) -> Int { min(max(v, Self.statRange.lowerBound), Self.statRange.upperBound) }
         self.id = id
@@ -93,11 +105,44 @@ public struct Card: Sendable, Codable, Hashable, Identifiable {
         self.tags = tags
         self.preferredDistance = preferredDistance
         self.landingPosition = landingPosition
+        self.topIntent = topIntent
+        self.bottomIntent = bottomIntent
+        self.submissionCategory = submissionCategory
+        self.allowedGroundPositions = allowedGroundPositions
     }
 
     /// True if this card is a standing takedown attempt.
     public var isTakedown: Bool {
-        landingPosition != nil
+        landingPosition != nil && tags.contains(.wrestling)
+    }
+
+    /// True if this card is a dedicated ground grappling card (Top or Bottom).
+    public var isGroundCard: Bool {
+        topIntent != nil || bottomIntent != nil
+    }
+
+    /// True if this card is a Top ground card.
+    public var isTopGroundCard: Bool {
+        topIntent != nil
+    }
+
+    /// True if this card is a Bottom ground card.
+    public var isBottomGroundCard: Bool {
+        bottomIntent != nil
+    }
+
+    /// True if this ground card is legal and effective for `role` at `position`.
+    public func isLegalOnGround(as role: GroundRole, at position: GroundPosition) -> Bool {
+        switch role {
+        case .top:
+            guard topIntent != nil else { return false }
+        case .bottom:
+            guard bottomIntent != nil else { return false }
+        }
+        if let allowed = allowedGroundPositions, !allowed.isEmpty {
+            return allowed.contains(position)
+        }
+        return true
     }
 
     /// True if the card is at full effect at `distance`.

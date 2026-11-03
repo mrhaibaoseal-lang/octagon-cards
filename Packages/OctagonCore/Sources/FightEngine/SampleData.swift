@@ -149,13 +149,151 @@ public enum SampleData {
     public static let jumpGuillotine = Card(
         id: "jump-guillotine", name: "順勢拉斷頭台", type: .counter, distances: [.mid, .close], target: .head,
         speed: 72, power: 20, accuracy: 52, staminaCost: 3, deckCost: 3,
-        tags: [.submission], landingPosition: .fullGuard)
+        tags: [.submission], landingPosition: .fullGuard, submissionCategory: .choke)
 
     /// All 8 standing-to-ground takedown & anti-takedown bridge cards (P3-1).
     public static let takedownBridgeCards: [Card] = [
         doubleLeg, singleLeg, cageTrip, highCrotchSlam, catchKickTakedown,
         sprawl, interceptKnee, jumpGuillotine,
     ]
+
+    // MARK: - Ground Top Cards (P3-2 / P4-2: 10 cards — Advance, Smother, GnP)
+
+    public static let kneeSlicePass = Card(
+        id: "knee-slice-pass", name: "膝切過腿", type: .move, distances: [.close],
+        speed: 68, power: 0, accuracy: 68, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], topIntent: .advance,
+        allowedGroundPositions: [.fullGuard, .halfGuard])
+    public static let stackPass = Card(
+        id: "stack-pass", name: "疊壓過腿", type: .move, distances: [.close],
+        speed: 60, power: 0, accuracy: 66, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], topIntent: .advance,
+        allowedGroundPositions: [.fullGuard, .halfGuard])
+    public static let mountTransition = Card(
+        id: "mount-transition", name: "跨騎上馬", type: .move, distances: [.close],
+        speed: 64, power: 0, accuracy: 65, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], topIntent: .advance,
+        allowedGroundPositions: [.halfGuard, .sideControl])
+    public static let backTake = Card(
+        id: "back-take", name: "靈巧搶背", type: .move, distances: [.close],
+        speed: 66, power: 0, accuracy: 62, staminaCost: 2, deckCost: 3,
+        tags: [.wrestling], topIntent: .advance,
+        allowedGroundPositions: [.halfGuard, .sideControl, .fullMount, .backControl])
+
+    public static let dagestaniHandcuff = Card(
+        id: "dagestani-handcuff", name: "達吉斯坦鎖腕重壓", type: .block, distances: [.close],
+        speed: 66, power: 0, accuracy: 74, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], topIntent: .smother)
+    public static let legRide = Card(
+        id: "leg-ride", name: "雙腿纏繞騎乘壓制", type: .block, distances: [.close],
+        speed: 64, power: 0, accuracy: 72, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], topIntent: .smother)
+
+    public static let shortGnP = Card(
+        id: "short-gnp", name: "地面短拳連擊", type: .strike, distances: [.close], target: .head,
+        speed: 74, power: 46, accuracy: 72, staminaCost: 2, deckCost: 1,
+        tags: [.punch], topIntent: .gnp)
+    public static let posturedHammerfist = Card(
+        id: "postured-hammerfist", name: "撐高鐵鎚重擊", type: .strike, distances: [.close], target: .head,
+        speed: 60, power: 72, accuracy: 60, staminaCost: 3, deckCost: 2,
+        tags: [.punch], topIntent: .gnp)
+    public static let groundElbows = Card(
+        id: "ground-elbows", name: "地面剃刀砸肘", type: .strike, distances: [.close], target: .head,
+        speed: 66, power: 68, accuracy: 65, staminaCost: 2, deckCost: 2,
+        tags: [.elbow], topIntent: .gnp,
+        allowedGroundPositions: [.halfGuard, .sideControl, .fullMount])
+    public static let mountedBarrage = Card(
+        id: "mounted-barrage", name: "騎乘暴雨重拳", type: .strike, distances: [.close], target: .head,
+        speed: 62, power: 84, accuracy: 62, staminaCost: 3, deckCost: 3,
+        tags: [.punch], topIntent: .gnp,
+        allowedGroundPositions: [.fullMount, .backControl])
+
+    // MARK: - Core Submission Cards (P3-3 / P4-2: 6 cards — 4 Top + 2 Bottom)
+
+    public static let rnc = Card(
+        id: "rnc", name: "背後裸絞 RNC", type: .strike, distances: [.close], target: .head,
+        speed: 68, power: 30, accuracy: 72, staminaCost: 3, deckCost: 3,
+        tags: [.submission], topIntent: .submission, submissionCategory: .choke,
+        allowedGroundPositions: [.backControl, .fullMount])
+    public static let guillotine = Card(
+        id: "guillotine", name: "斷頭台絞技", type: .strike, distances: [.close], target: .head,
+        speed: 66, power: 25, accuracy: 64, staminaCost: 3, deckCost: 2,
+        tags: [.submission], topIntent: .submission, submissionCategory: .choke,
+        allowedGroundPositions: [.fullGuard, .halfGuard, .sideControl, .fullMount])
+    public static let armTriangle = Card(
+        id: "arm-triangle", name: "肩固/達斯絞", type: .strike, distances: [.close], target: .head,
+        speed: 64, power: 25, accuracy: 68, staminaCost: 3, deckCost: 2,
+        tags: [.submission], topIntent: .submission, submissionCategory: .choke,
+        allowedGroundPositions: [.halfGuard, .sideControl, .fullMount])
+    public static let kimura = Card(
+        id: "kimura", name: "木村鎖關節技", type: .strike, distances: [.close], target: .body,
+        speed: 62, power: 30, accuracy: 65, staminaCost: 3, deckCost: 2,
+        tags: [.submission], topIntent: .submission, submissionCategory: .jointLock,
+        allowedGroundPositions: [.halfGuard, .sideControl, .fullMount])
+
+    public static let triangleChoke = Card(
+        id: "triangle-choke", name: "下位三角絞", type: .counter, distances: [.close], target: .head,
+        speed: 68, power: 25, accuracy: 66, staminaCost: 3, deckCost: 3,
+        tags: [.submission], bottomIntent: .sweepOrSub, submissionCategory: .choke,
+        allowedGroundPositions: [.fullGuard, .halfGuard])
+    public static let armbar = Card(
+        id: "armbar", name: "下位飛身十字固", type: .counter, distances: [.close], target: .body,
+        speed: 66, power: 30, accuracy: 64, staminaCost: 3, deckCost: 3,
+        tags: [.submission], bottomIntent: .sweepOrSub, submissionCategory: .jointLock,
+        allowedGroundPositions: [.fullGuard, .halfGuard, .fullMount])
+
+    // MARK: - Ground Bottom Defense, Escape & Sweep Cards (P3-2 / P4-2: 6 cards)
+
+    public static let frameLockdown = Card(
+        id: "frame-lockdown", name: "撐架鎖腿防過腿", type: .block, distances: [.close],
+        speed: 72, power: 0, accuracy: 72, staminaCost: 1, deckCost: 1,
+        tags: [.wrestling], bottomIntent: .frame)
+    public static let shellUp = Card(
+        id: "shell-up", name: "雙手抱頭防砸拳", type: .block, distances: [.close],
+        speed: 74, power: 0, accuracy: 74, staminaCost: 1, deckCost: 1,
+        bottomIntent: .shell)
+    public static let shrimpEscape = Card(
+        id: "shrimp-escape", name: "蝦行退位恢復防守", type: .evade, distances: [.close],
+        speed: 68, power: 0, accuracy: 66, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], bottomIntent: .escape)
+    public static let wallWalkStandup = Card(
+        id: "wall-walk-standup", name: "扶籠穿手起身", type: .move, distances: [.close],
+        speed: 64, power: 0, accuracy: 64, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], bottomIntent: .escape,
+        allowedGroundPositions: [.fullGuard, .halfGuard, .sideControl])
+    public static let upkickStandup = Card(
+        id: "upkick-standup", name: "蹬踏踢開起身", type: .move, distances: [.close], target: .head,
+        speed: 66, power: 30, accuracy: 62, staminaCost: 2, deckCost: 2,
+        tags: [.kick], bottomIntent: .escape,
+        allowedGroundPositions: [.fullGuard, .halfGuard])
+    public static let butterflySweep = Card(
+        id: "butterfly-sweep", name: "蝴蝶勾掃技翻轉", type: .counter, distances: [.close],
+        speed: 68, power: 0, accuracy: 66, staminaCost: 2, deckCost: 2,
+        tags: [.wrestling], bottomIntent: .sweepOrSub)
+
+    /// 14 Top ground cards covering Advance, Smother, GnP, and Top Submissions.
+    public static let topGroundCards: [Card] = [
+        kneeSlicePass, stackPass, mountTransition, backTake,
+        dagestaniHandcuff, legRide,
+        shortGnP, posturedHammerfist, groundElbows, mountedBarrage,
+        rnc, guillotine, armTriangle, kimura,
+    ]
+
+    /// 8 Bottom ground cards covering Frame, Shell, Escape, Sweep, and Bottom Submissions.
+    public static let bottomGroundCards: [Card] = [
+        frameLockdown, shellUp,
+        shrimpEscape, wallWalkStandup, upkickStandup,
+        butterflySweep, triangleChoke, armbar,
+    ]
+
+    /// 22 dedicated ground cards (14 Top + 8 Bottom).
+    public static let groundCards: [Card] = topGroundCards + bottomGroundCards
+
+    /// Complete 30-card grappling & ground catalog (8 takedown bridge + 22 ground cards, P4-2).
+    public static let grapplingAndGroundCards: [Card] = takedownBridgeCards + groundCards
+
+    /// Complete 58-card MMA catalog (28 standing + 30 grappling/ground cards, P4-1 & P4-2).
+    public static let allCards: [Card] = standingCards + grapplingAndGroundCards
 
     /// A well-rounded striker.
     public static let striker = Fighter(
@@ -172,4 +310,12 @@ public enum SampleData {
             power: 55, speed: 58, accuracy: 55, strikingDefense: 50, chin: 55,
             cardio: 85, takedown: 88, takedownDefense: 80, submission: 60, clinch: 82),
         traits: [.gasTank, .smother, .cagePinner])
+
+    /// A Brazilian Jiu-Jitsu submission specialist (Charles Oliveira / Damian Maia archetype).
+    public static let bjjFighter = Fighter(
+        id: "sample-bjj", name: "Sample BJJ Specialist", stance: .orthodox,
+        attributes: FighterAttributes(
+            power: 62, speed: 65, accuracy: 66, strikingDefense: 58, chin: 62,
+            cardio: 76, takedown: 70, takedownDefense: 65, submission: 92, clinch: 78),
+        traits: [.blackBeltBJJ, .unorthodox])
 }

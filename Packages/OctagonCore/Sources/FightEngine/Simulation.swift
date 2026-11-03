@@ -29,12 +29,18 @@ public struct CardTypeStats: Sendable, Codable, Hashable {
     }
 }
 
-/// Complete telemetry report from running `N` simulated matches (see docs/TASKS.md P2-6).
+/// Complete telemetry report from running `N` simulated matches (see docs/TASKS.md P2-6 & P3-4).
 public struct SimulationReport: Sendable, Codable, Hashable {
     public var games: Int
     public var baseSeed: UInt64
+    public var fighterAName: String
+    public var fighterBName: String
     public var totalRounds: Int = 0
     public var totalExchanges: Int = 0
+    public var groundExchanges: Int = 0
+    public var takedownsLanded: Int = 0
+    public var sweepsExecuted: Int = 0
+    public var refereeStandUps: Int = 0
     public var invariantViolations: Int = 0
 
     public var winsA: Int = 0
@@ -44,14 +50,22 @@ public struct SimulationReport: Sendable, Codable, Hashable {
     public var koCount: Int = 0
     public var tkoBodyCount: Int = 0
     public var tkoLegsCount: Int = 0
+    public var submissionCount: Int = 0
     public var decisionCount: Int = 0
     public var rockedOccurrences: Int = 0
 
     public var cardTypeStats: [CardType: CardTypeStats]
 
-    public init(games: Int, baseSeed: UInt64) {
+    public init(
+        games: Int,
+        baseSeed: UInt64,
+        fighterAName: String = SampleData.striker.name,
+        fighterBName: String = SampleData.wrestler.name
+    ) {
         self.games = games
         self.baseSeed = baseSeed
+        self.fighterAName = fighterAName
+        self.fighterBName = fighterBName
         var map: [CardType: CardTypeStats] = [:]
         for t in CardType.allCases {
             map[t] = CardTypeStats(type: t)
@@ -60,7 +74,7 @@ public struct SimulationReport: Sendable, Codable, Hashable {
     }
 
     public var totalFinishes: Int {
-        koCount + tkoBodyCount + tkoLegsCount
+        koCount + tkoBodyCount + tkoLegsCount + submissionCount
     }
 
     public var finishRate: Double {
@@ -79,6 +93,10 @@ public struct SimulationReport: Sendable, Codable, Hashable {
         games > 0 ? Double(tkoLegsCount) / Double(games) : 0.0
     }
 
+    public var submissionRate: Double {
+        games > 0 ? Double(submissionCount) / Double(games) : 0.0
+    }
+
     public var decisionRate: Double {
         games > 0 ? Double(decisionCount + draws) / Double(games) : 0.0
     }
@@ -91,13 +109,14 @@ public struct SimulationReport: Sendable, Codable, Hashable {
         let totalPlays = totalExchanges * 2
         let avgExchanges = games > 0 ? Double(totalExchanges) / Double(games) : 0.0
         let avgRocked = games > 0 ? Double(rockedOccurrences) / Double(games) : 0.0
+        let groundShare = totalExchanges > 0 ? Double(groundExchanges) / Double(totalExchanges) : 0.0
 
         var lines: [String] = []
         lines.append("=== \(title) ===")
-        lines.append("Games: \(games) | Total Exchanges: \(totalExchanges) (avg \(String(format: "%.1f", avgExchanges))/game) | Invariant Violations: \(invariantViolations)")
-        lines.append("Fighter Win Rate: Side A (\(SampleData.striker.name)) \(pct(Double(winsA) / Double(max(games, 1)))) (\(winsA)) | Side B (\(SampleData.wrestler.name)) \(pct(Double(winsB) / Double(max(games, 1)))) (\(winsB)) | Draw \(pct(Double(draws) / Double(max(games, 1)))) (\(draws))")
-        lines.append("Outcomes: Total Finish \(pct(finishRate)) [Head KO \(pct(koRate)) (\(koCount)), Body TKO \(pct(tkoBodyRate)) (\(tkoBodyCount)), Legs TKO \(pct(tkoLegsRate)) (\(tkoLegsCount))] | Decision \(pct(decisionRate)) (\(decisionCount + draws))")
-        lines.append("Drama: Total Rocked \(rockedOccurrences) (avg \(String(format: "%.2f", avgRocked))/game)")
+        lines.append("Games: \(games) | Total Exchanges: \(totalExchanges) (avg \(String(format: "%.1f", avgExchanges))/game, Ground \(pct(groundShare))) | Invariant Violations: \(invariantViolations)")
+        lines.append("Fighter Win Rate: Side A (\(fighterAName)) \(pct(Double(winsA) / Double(max(games, 1)))) (\(winsA)) | Side B (\(fighterBName)) \(pct(Double(winsB) / Double(max(games, 1)))) (\(winsB)) | Draw \(pct(Double(draws) / Double(max(games, 1)))) (\(draws))")
+        lines.append("Outcomes: Total Finish \(pct(finishRate)) [Head KO \(pct(koRate)) (\(koCount)), Body TKO \(pct(tkoBodyRate)) (\(tkoBodyCount)), Legs TKO \(pct(tkoLegsRate)) (\(tkoLegsCount)), Submission \(pct(submissionRate)) (\(submissionCount))] | Decision \(pct(decisionRate)) (\(decisionCount + draws))")
+        lines.append("Drama & Grappling: Rocked \(rockedOccurrences) (avg \(String(format: "%.2f", avgRocked))/game) | Takedowns \(takedownsLanded) | Sweeps \(sweepsExecuted) | Ref StandUps \(refereeStandUps)")
         lines.append("")
         lines.append("| CardType | Played | Usage % | Effect Success % | Match Win % (when played) | Avg Dmg/Play |")
         lines.append("|---|---:|---:|---:|---:|---:|")
@@ -119,19 +138,22 @@ public struct SimulationReport: Sendable, Codable, Hashable {
 
 public enum BalanceSimulator {
     /// Runs `games` full 3-round matches, checking `validateInvariants()` on every single exchange.
-    /// Alternates which fighter is in Corner A vs Corner B on odd games if `alternateSides` is true,
-    /// or keeps `fighterA` in Corner A and `fighterB` in Corner B by default.
     public static func run(
         games: Int,
         baseSeed: UInt64 = 1,
         fighterA: Fighter = SampleData.striker,
         fighterB: Fighter = SampleData.wrestler,
-        deckA: [Card] = SampleData.standingCards,
-        deckB: [Card] = SampleData.standingCards,
+        deckA: [Card] = SampleData.allCards,
+        deckB: [Card] = SampleData.allCards,
         aiA: some FighterAI = RandomAI(),
         aiB: some FighterAI = RandomAI()
     ) -> SimulationReport {
-        var report = SimulationReport(games: games, baseSeed: baseSeed)
+        var report = SimulationReport(
+            games: games,
+            baseSeed: baseSeed,
+            fighterAName: fighterA.name,
+            fighterBName: fighterB.name
+        )
         guard games > 0 else { return report }
 
         for i in 0..<games {
@@ -157,6 +179,7 @@ public enum BalanceSimulator {
                 case .ko: report.koCount += 1
                 case .tkoBody: report.tkoBodyCount += 1
                 case .tkoLegs: report.tkoLegsCount += 1
+                case .submission: report.submissionCount += 1
                 }
             case let .decision(winner, _, _):
                 if winner == .a { report.winsA += 1 } else { report.winsB += 1 }
@@ -172,11 +195,19 @@ public enum BalanceSimulator {
                 }
                 for ex in roundLog.exchanges {
                     report.totalExchanges += 1
+                    if ex.stateBefore.isGrounded {
+                        report.groundExchanges += 1
+                    }
                     if !ex.stateAfter.isValid {
                         report.invariantViolations += 1
                     }
                     if ex.a.inflictedRocked { report.rockedOccurrences += 1 }
                     if ex.b.inflictedRocked { report.rockedOccurrences += 1 }
+                    if ex.a.takedownLanded != nil { report.takedownsLanded += 1 }
+                    if ex.b.takedownLanded != nil { report.takedownsLanded += 1 }
+                    if ex.a.sweptToPosition != nil { report.sweepsExecuted += 1 }
+                    if ex.b.sweptToPosition != nil { report.sweepsExecuted += 1 }
+                    if ex.refereeStandUp { report.refereeStandUps += 1 }
 
                     recordSide(ex.a, matchWinner: matchWinner, into: &report.cardTypeStats)
                     recordSide(ex.b, matchWinner: matchWinner, into: &report.cardTypeStats)
