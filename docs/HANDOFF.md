@@ -7,6 +7,17 @@
 
 ---
 
+## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-4 局勢顯示 v0.5.5)
+- **`OctagonCore`（新 `RoundTrend.swift`，純 Swift）**：`RoundTrend.estimate(exchanges:state:)` 直接呼叫 `FightMatchEngine.scoreRound`（**沒有改動、也沒抽出內部函式**，計分結果不可能變），取 `damageByA/B`、`rockedByA/B`、`judgeCards`：`edge = 0.6 × 傷害差 + 0.5 × 裁判差`，再乘信心係數 `min(交手數, 4)/4`（避免第一拳就顯示壓制）。傷害差 = `(壓力A − 壓力B)/(壓力A + 壓力B + 24)`，壓力 = 傷害 + 12×Rocked；裁判差 = 三張卡 `(A−B)` 平均 ÷ 2。輸出 `value`（0–1，0.5 勢均力敵，越大越偏玩家 A）、`leader: Side?`、`level`（`even / slight / clear` → 勢均力敵／小幅領先／明顯領先，門檻 |edge| 0.12、0.40）、`exchangeCount`。空回合 = `RoundTrend.even`。另有 `RoundTrend.exchangeWinner(_:)`（單次交手誰佔上風，用於進度格；權重同 `scoreRound`）。不碰 `SeededRNG`、不輸出精確分數。
+- **測試 `RoundTrendTests.swift`（12 個）**：空回合、完全對稱互換仍 0.5、第一拳不算壓制、A／B 單方壓制（>0.85／<0.15 且 clear）、鏡像相加為 1、純摔技控制、領先隨優勢單調上升、40 個 seed 實戰每個回合前綴都在 0–1 且 leader／level 一致、重複呼叫相同且 `scoreRound` 前後相同、單次交手勝者、中文等級名稱。
+- **App 層**：新增 `BattleTrendViews.swift`。(1) `RoundStatusStrip`：頂列下方一條，左 8 格回合進度（綠＝玩家佔上風、紅＝AI、灰＝平，黃框＝目前這手）＋右 `TrendBar`（綠紅拔河條，中線＝均勢，下方文字「🟢 玩家 小幅領先」之類，**不顯示分數**）。(2) `HealthBarRow` 取代 `FighterStatusCard` 的 `statRow`：頭／身／腿損血時留下白色殘影再縮短、顯示紅色 `-N`、短暫白框，血量 ≤25 轉紅；體力與勢能沿用一般條。(3) `BattleAlertOverlay`：蓋在整個對戰區（手牌收起時也看得到，不攔截點擊），Rocked（橘）與深鎖（紅）有脈動邊框＋橫幅，流血只有橫幅（Lv 不為 0 時一直在）；文字依 `displayState`，所以與動畫同步。`BattleSession` 新增 `shownTrend`、`shownExchangeWinners`，只在 `syncDisplayToEngine`（播完／跳過／開新局）更新，所以播放中不會提早洩漏本手結果；`startPlayback` 與 `rng` 順序未動。版本 `0.5.5 (10)`。
+- **測試結果**：CI run `42213207910` ✅（push `51be1b1`，103 tests / 13 suites，先前 91）；IPA run `42213230336` ✅，App 層無新編譯警告；IPA 已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`。本機無 Swift 工具鏈，**尚未實機看過畫面**。
+- **設計取捨（請規劃確認）**：(1) 局勢條只在每手播完後更新，不隨 beat 動（避免洩漏）；回合最後一手播完後局勢直接歸零（新回合），回合結果留給 P5-5 結算。(2) 流血是持續狀態，所以橫幅會一直在到 `cutSeverity` 歸零；若太吵可改成只顯示 Lv≥2。(3) 局勢門檻與權重集中在 `RoundTrend` 的 static 常數，實機覺得「太容易明顯領先／太難」直接調。
+- **請使用者實機檢查**：① 局勢條與進度格在每手結束後是否看得懂、方向（綠左＝玩家）是否直覺；② 頭／身／腿損血的殘影與 `-N` 在狀態卡上是否清楚、數字有沒有被擠到；③ Rocked／深鎖的脈動邊框與橫幅是否夠明顯又不遮擋八角籠與牌（直式、橫式、矮螢幕）；④ 流血橫幅常駐是否太吵；⑤ 「勢均力敵／小幅領先／明顯領先」的出現頻率是否合理（打 1–2 手不應該就明顯領先）；⑥ 開新局、換回合、KO／降伏結束後進度格與警示是否正確清除。
+- **下一棒**：`[實作]` 開新 session 做 P5-5（回合結算與賽後畫面）。
+
+---
+
 ## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-3b 翻牌對決 v0.5.4)
 - **回饋與決定**：P5-3 實機節奏不錯，但旁白太快、看字就看不到上方動畫。使用者選了方案 C「翻牌對決」：播放時不再讀句子，改看牌。
 - **`LungeDemoScene.swift`**：新增 `ExchangeCardNode`（牌背＋淺色牌面＋結果章）。`reveal` beat 才建牌（八角籠已放大）並翻開（`scaleX` ＋ `hide/unhide`，不用 `SKAction.run`）；`action` 彈出該方的牌（x 0.33w／0.67w、1.25 倍、z 13）、另一張縮回並 alpha 0.6；`hit/blocked/dodged/missed/feint/interrupted` 蓋章（`dodged` 蓋在揮空方；結果 beat 若該牌非焦點會先 focus；`interrupted` 牌面 alpha 0.4）。子節點 z 明確設定（框 0、字 0.2、章框 0.6、章字 0.8；根 12／13；飄字 20，字 0.1 高於陰影）因為 SpriteView 用 `.ignoresSiblingOrder`。`stageScale = clamp(h/260, 1…1.6)` 套用在站位高度（地板線 0.16h 起算）、地面位置、`resetPositions/settle/snapToRest/layoutFighters`、`pulse`、飄字偏移與貼圖 `size` 設定（先 `setScale(1)`）。牌尺寸：`cardHeight = min(0.3h, 130)`、`cardWidth = min(0.8 * cardHeight, 0.34w)`，數值集中在 `cardHeight/cardWidth/cardPosition`。`clearEffects` 併清牌。
