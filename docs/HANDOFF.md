@@ -54,18 +54,4 @@
 ---
 
 
-## 2026-11-06 · [實作] Claude Sonnet 5.5 (P6-2 Vision 切割驗證工具)
-- **做了什麼**：新增僅供開發的除錯畫面 `RigCutDebugView.swift`，入口是預備頁左下角半透明的「🔬 Rig」小鈕（加在 `ContentView` 的 overlay，沒碰 `PreFightView`／`BattleView`）。對 `RealUFCRoster.all` 的 32 位，下載官方全身照（原圖快取在 `Caches/RigCutPhotos_v1/`，不進 repo），用 `VNDetectHumanBodyPoseRequest` ＋ `VNDetectFaceRectanglesRequest` 找頸／肩／肘／腕／胯，算出軀幹、上臂、前臂的區域框並疊在照片上。
-- **區域算法**（常數都在 `RigCutAnalyzer`，要調直接改）：軀幹＝肩線上緣外推 0.10 肩寬、兩側各外推 0.08，下緣到胯線；胯偵測不到就用肩寬×1.1 估算，並在照片底邊截斷。手臂寬＝0.34 肩寬（前臂 ×0.85）。手腕偵測不到時，前臂沿上臂方向延伸到照片邊緣（虛線＝估算）。
-- **畫面**：左邊 32 人名單（🟢🔴＝自動判定，✅❌＝人工標記），中間照片＋疊圖，右邊逐人控制（上一位／下一位、✅可用／❌不可用＋失敗原因標籤、關節信心值、警告）。「全部下載並分析」一次跑完 32 人；「複製結果」把逐人結果貼成文字（給你貼回來）。人工標記存在 `UserDefaults`（`rigCutMarks_v1`）。自動判定只是輔助，**最後以人工標記為準**。
-- **改了哪些檔**：`App/Sources/RigCutDebugView.swift`（新）、`App/Sources/ContentView.swift`（+17 行）。`OctagonCore`、`project.yml`、戰鬥數值皆未動；**版本號沒升**，合併 P6-1 時再處理。
-- **測試結果**：IPA run `42224539282` ✅（分支 `claude/charming-elion-751be2`，commit `8451df1`），建置 log 中 App 層無編譯警告。`ci.yml` 只在 push main 時跑，本分支沒跑；`OctagonCore` 未改。IPA：`dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`。**Vision 在真機上的實際結果尚未看過**。
-- **下一棒**：使用者實機逐人標記後，把「複製結果」貼回來，由 `[實作]` 將可用／不可用人數與失敗模式寫進這裡。≥28 位可用 → 解鎖 P6-3；否則回 `[規劃]`。
-- **請使用者實機檢查**：① 預備頁左下角點「🔬 Rig」；② 按「全部下載並分析」（需連網，約 32 張小圖）；③ 逐人看：青框是否蓋住軀幹、黃框是否蓋住上臂、橙框是否蓋住前臂、綠點是否落在關節上；④ 能用就按「✅ 可用」（會自動跳下一位），不行就按「❌ 不可用」並勾失敗原因；⑤ 全部標完按「複製結果」貼回聊天。判斷標準：框能不能直接當貼圖切下來用，邊緣包到背景或切到身體都算不可用；手被裁掉但前臂框合理仍算可用（走延伸估算）。
-
----
-
-
----
-
 > 📦 更早的紀錄已封存至 [HANDOFF_ARCHIVE.md](HANDOFF_ARCHIVE.md)。
