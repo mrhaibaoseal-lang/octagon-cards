@@ -44,7 +44,10 @@ def background_mask(rgb: np.ndarray, reference: np.ndarray, tolerance: float) ->
             if 0 <= ny < height and 0 <= nx < width and candidate[ny, nx] and not seen[ny, nx]:
                 seen[ny, nx] = True
                 queue.append((ny, nx))
-    return seen
+    # Gaps enclosed by the figure (between an arm and the body) never touch the edge. Only near-pure key
+    # green counts there, which leaves darker green shorts alone.
+    enclosed = (rgb[:, :, 1] > 190) & (greenness > 130)
+    return seen | enclosed
 
 
 def find_shapes(solid: np.ndarray, min_area: int) -> list[dict]:
