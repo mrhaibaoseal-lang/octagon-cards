@@ -3,7 +3,20 @@
 > 每次收工在**最上方**新增一筆。下一棒開工先讀最上面 2–3 筆。
 
 ## 待規劃確認
-- （目前無）
+- （P5-3）播放中以旁白面板取代手牌區、回合結算仍瞬間切換，是否接受？見 P5-3 紀錄的「設計取捨」。
+
+---
+
+## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-3 App 播放時間軸 v0.5.3)
+- **疑似問題確認（讀碼，已修）**：舊流程是 `playTurn` 先呼叫 `scene.playExchange(log:)`、同一個 tick 內又呼叫 `scene.resetPositions`（內含 `removeAllActions` 與 `layoutFighters(animated: false)`）→ 回合第 8 次交手（R1、R2）的動畫確實會被立刻取消，連 Rocked 顏色與橫幅都被重設。新流程：`playTurn` 只設 `pendingSceneReset`，**播完（或跳過）後**才 `resetPositions`。
+- **新增 `App/Sources/BattlePlayback.swift`**：`PlaybackSpeed`（快 ×0.55／標準 ×1.0／慢 ×1.5）、每種 beat 的基準秒數、`timeline(for:log:speed:)`、`ExchangeBeatKind.changesPosition`。標準速度下非終結 beat 的總長被夾在 3.0–4.2 秒；重擊 +0.08 秒頓幀；致命一擊以 0.4 倍慢動作播放（秒數 ÷0.4），終結 beat 固定 1.6 秒。
+- **`BattleSession.swift`**：引擎 `state` 與顯示 `displayState` 分開。`playTurn` 照舊立刻結算（`rng` 消耗順序完全沒動，只在結算後多呼叫純函式 `ExchangePresentation.build`）；再由 `startPlayback` 的 Task 逐 beat 更新 `displayState`（血量／Rocked／割傷隨每個 beat，距離／地面在第一個「位置變化」beat 才切到交手後狀態，體力與勢能播完才更新）。新增 `isPlaying`、`narrationLines`、`shownRound/shownExchange/shownCompletedRounds`（讓回合數與計分格不提前洩漏）、`skipPlayback()`、`setPlaybackSpeed`（速度存 UserDefaults `playbackSpeed`）。播放中 `playTurn` 直接 return（鎖手牌）；`startNewMatch` 會取消播放（用 generation 值避免舊 Task 影響新局）。
+- **`LungeDemoScene.swift`（重寫動畫部分）**：舊 `playExchange/attack` 移除，改成 `beginExchange / play(beat:log:duration:) / settle(to:finish:)`。每個 beat 的動畫長度都是 beat 秒數的比例，且每個 beat 開頭先 `snapToRest`，所以不會殘留上一拍的位移。**雙方都命中時各自的 `hit` beat 各播一次**（先手、後手）。有的動作：命中（衝拳＋受擊閃白＋退後＋傷害飄字，重擊再加全畫面閃光與 0.08 秒頓幀）、格擋（青色閃＋「格擋 -N」）、閃避（淡出側閃＋「閃避!」，攻方揮空）、落空、佯攻（雙假動作＋「佯攻!」）、Rocked 晃動、割傷、被打斷、抱摔／翻身／起身／鎖技脈動／裁判分開／纏鬥／貼籠的飄字與重排；地面命中沿用 GnP 抬身下砸；KO/TKO 在致命一擊起進入慢動作，輸家倒地並在 `settle` 後仍倒著，降伏顯示 TAP!。**沒有使用 `SKAction.run` 閉包**（避免 Swift 6 並行檢查在無法本機編譯時出錯）。
+- **`BattleView.swift`**：HUD／地面橫幅改讀 `displayState`；血條寬度加 0.3 秒動畫；播放中手牌區換成「交手進行中」解說面板（最近 4 行旁白，新行較亮；同高度 206pt，版面不動）；播放中點戰鬥區任何位置＝跳過（頂列按鈕仍可用）；計分格旁加 `⏱ 標準` 選單切換快／標準／慢。
+- **測試結果**：本機無 Swift 工具鏈。IPA run `42208467693` ✅（App 層編譯無警告）；CI run `42208454571` ✅（OctagonCore 未改動，91 tests）。IPA 已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`（v0.5.3）。**尚未實機看過動畫。**
+- **設計取捨（請規劃確認）**：(1) 播放中不顯示手牌（改顯示旁白），避免「地面牌／Rocked 限制」提前洩漏交手結果；若想保留可見的暗色手牌再改。(2) 回合最後一個交手播完後，回合結算（體力恢復、站回遠距離）仍是瞬間切換，P5-5 的結算卡再處理。(3) `ExchangePresentation` 沒缺欄位，無「待規劃確認」新項目。
+- **請使用者實機檢查**：① 標準速度每次交手 3–4 秒是否合適（快／慢是否好用）；② 雙方都命中時兩邊動作與飄字是否看得清；③ 頓幀與 KO 慢動作的感覺；④ 回合第 8 次交手（R1、R2 結尾）動畫現在是否完整播出；⑤ 點畫面跳過、播放中換「🔄 重開」「← 選角」是否正常；⑥ 手牌區換成旁白面板是否可接受；⑦ 地面（抱摔、GnP、鎖技）與 Rocked 的呈現。
+- **下一棒**：等使用者確認節奏（可能調 `BattlePlayback.baseDuration` 與 `standardRange`）後，`[實作]` 開新 session 做 P5-4（局勢顯示）。
 
 ---
 

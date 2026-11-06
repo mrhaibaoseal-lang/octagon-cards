@@ -95,9 +95,10 @@
   - 內容：新增 `ExchangePresentation.build(log:)`，只讀 `ExchangeLog`（`firstSide`、`stateBefore`、`stateAfter`、雙方 `ExchangeSideLog`），輸出有序 beat：揭牌、先手動作、傷害或結果、後手動作（被打斷就略過）、位置或狀態變化、終結；每個 beat 附繁中旁白與顯示用血量快照
   - 完成條件：Swift Testing 涵蓋雙方命中、單方命中、被打斷、閃避或格擋、抱摔、掃技、鎖技、裁判分開、KO；同一 log 輸出完全一致；最後一個 beat 的血量等於 `stateAfter`
   - 完成：`ExchangePresentation.build(log:nameA:nameB:)`（`ExchangePresentation.swift`）＋ 測試 `ExchangePresentationTests.swift`；CI run `42206706049` ✅（91 tests）
-- [ ] **P5-3 App 播放時間軸（本階段的實機檢查點）**
+- [x] **P5-3 App 播放時間軸（本階段的實機檢查點）** — 程式完成，**待使用者實機確認節奏後才做 P5-4**
   - 內容：`BattleSession` 分開引擎狀態與顯示狀態，血條依 beat 更新；播放中鎖定手牌，點畫面可跳過；傷害飄字、重擊頓幀 0.08 秒、KO 慢動作；雙方都命中時兩邊都要播；格擋、閃避、佯攻有簡單動作；設定快／標準／慢；修正回合第 8 次交手動畫被 `resetPositions` 取消的疑似問題
   - 完成條件：CI 與 IPA 通過；**使用者實機確認節奏後才做 P5-4**
+  - 完成：v0.5.3 (8)；CI run `42208454571` ✅、IPA run `42208467693` ✅；IPA 已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`。實作見 HANDOFF 2026-11-06 P5-3；**節奏（快／標準／慢）待使用者實機確認**
 - [ ] **P5-4 局勢顯示**
   - 內容：`OctagonCore` 新增 `RoundTrend.estimate(exchanges:state:)`，重用 `FightMatchEngine.scoreRound` 的 `damageByA/B`、`rockedByA/B`、`judgeCards` 算出 0–1 局勢值與「勢均力敵／小幅領先／明顯領先」；App 顯示回合進度格、局勢條、三部位血條變化強調；Rocked、深鎖、流血用全畫面可見的警示
   - 完成條件：單元測試涵蓋空回合、單方壓制與數值範圍；不改變 `scoreRound` 計分結果；CI 與 IPA 通過
