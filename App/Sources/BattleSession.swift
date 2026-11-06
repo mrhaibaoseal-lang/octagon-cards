@@ -48,6 +48,10 @@ final class BattleSession {
     var shownExchange: Int = 1
     var shownCompletedRounds: Int = 0
     var isPlaying: Bool = false
+    /// P5-4: round trend and per-exchange winners for the progress cells. Like `shownRound`, these only move
+    /// when playback finishes (`syncDisplayToEngine`), so the exchange still playing is never spoiled.
+    var shownTrend: RoundTrend = .even
+    var shownExchangeWinners: [Side?] = []
     /// Every exchange so far. The newest entry is written the moment a card is played, so while
     /// `isPlaying` it must not be shown; use `visibleRecaps`.
     var battleLog: [ExchangeRecap] = []
@@ -399,6 +403,9 @@ final class BattleSession {
         shownRound = currentRound
         shownExchange = currentExchange
         shownCompletedRounds = completedRounds.count
+        // Pure functions of finished exchanges: no `rng`, no engine state is changed.
+        shownTrend = RoundTrend.estimate(exchanges: roundHistory, state: state)
+        shownExchangeWinners = roundHistory.map { RoundTrend.exchangeWinner($0) }
     }
 
     // MARK: - Debug / replay

@@ -20,6 +20,12 @@ struct BattleView: View {
             let isLandscape = geo.size.width > geo.size.height
             VStack(spacing: 8) {
                 topBar
+                RoundStatusStrip(
+                    exchangesPerRound: session.exchangesPerRound,
+                    winners: session.shownExchangeWinners,
+                    currentExchange: session.matchOutcome == nil || session.isPlaying ? session.shownExchange : nil,
+                    trend: session.shownTrend
+                )
                 Group {
                     if isLandscape {
                         landscapeBody
@@ -34,6 +40,16 @@ struct BattleView: View {
                             .contentShape(Rectangle())
                             .onTapGesture { session.skipPlayback() }
                     }
+                }
+                .overlay {
+                    // P5-4: Rocked / deep lock / bleeding stay visible over the whole battle area, hand hidden or not.
+                    BattleAlertOverlay(
+                        alerts: BattleAlert.current(
+                            state: session.displayState,
+                            nameA: session.fighterA.name,
+                            nameB: session.fighterB.name
+                        )
+                    )
                 }
             }
             .padding(10)
@@ -540,40 +556,18 @@ struct FighterStatusCard: View {
             }
             .frame(height: 16)
 
-            statRow(label: "🧠 頭", value: cond.health.head, color: .red)
-            statRow(label: "🫁 身", value: cond.health.body, color: .orange)
-            statRow(label: "🦵 腿", value: cond.health.legs, color: .yellow)
-            statRow(label: "⚡ 體", value: cond.stamina, color: .cyan)
-            statRow(label: "🔥 勢", value: cond.momentum, color: .purple)
+            HealthBarRow(label: "🧠 頭", value: cond.health.head, color: .red, tracksLoss: true)
+            HealthBarRow(label: "🫁 身", value: cond.health.body, color: .orange, tracksLoss: true)
+            HealthBarRow(label: "🦵 腿", value: cond.health.legs, color: .yellow, tracksLoss: true)
+            HealthBarRow(label: "⚡ 體", value: cond.stamina, color: .cyan)
+            HealthBarRow(label: "🔥 勢", value: cond.momentum, color: .purple)
         }
         .padding(8)
         .background(tint.opacity(0.10))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(cond.isRocked ? Color.orange : tint.opacity(0.35), lineWidth: 1)
+                .stroke(cond.isRocked ? Color.orange : tint.opacity(0.35), lineWidth: cond.isRocked ? 2 : 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func statRow(label: String, value: Double, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, design: .monospaced))
-                .frame(width: 34, alignment: .leading)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.white.opacity(0.12))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(color)
-                        .frame(width: max(0, geo.size.width * CGFloat(value / 100.0)))
-                        .animation(.easeOut(duration: 0.3), value: value)
-                }
-            }
-            .frame(height: 6)
-            Text("\(Int(value.rounded()))")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .frame(width: 26, alignment: .trailing)
-        }
     }
 }
