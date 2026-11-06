@@ -18,9 +18,18 @@ final class LungeDemoScene: SKScene {
     private var leftHome = CGPoint.zero
     private var rightHome = CGPoint.zero
 
+    private var isSetUp = false
+
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.08, green: 0.09, blue: 0.13, alpha: 1)
         scaleMode = .resizeFill
+        // The battle page can present this same scene more than once (back to pre-fight and in again);
+        // nodes must only be added the first time.
+        guard !isSetUp else {
+            layoutFighters(animated: false)
+            return
+        }
+        isSetUp = true
         cageLine.strokeColor = SKColor(white: 1.0, alpha: 0.14)
         cageLine.lineWidth = 2
         addChild(cageLine)

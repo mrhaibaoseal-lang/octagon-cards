@@ -32,6 +32,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mrhai.octagoncards
         SWIFT_VERSION: "6.0"
-        MARKETING_VERSION: "0.5.1"
-        CURRENT_PROJECT_VERSION: "6"
+        MARKETING_VERSION: "0.5.2"
+        CURRENT_PROJECT_VERSION: "7"
         TARGETED_DEVICE_FAMILY: "1"
