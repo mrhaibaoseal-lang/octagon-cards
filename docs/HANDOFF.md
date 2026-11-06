@@ -18,6 +18,22 @@
 
 ---
 
+## 2026-11-07 · [實作] Claude Sonnet 5.5 (3D 身體轉像素原型，只是原型)
+- **起因**：使用者想用 3D 模型做像素人物，偏好 EA Sports UFC 模型。我們沒有採用 EA 模型（版權、公開 repo 會變成散佈、覆蓋不到 700+ 選手、骨架不統一），改用 CC0 的 Quaternius「Animated Human」（OpenGameArt，含 .blend、Idle／Punch／Death／Walk 等動作、多種膚色貼圖）。
+- **做了什麼**：本機用 winget 安裝 Blender 5.2；`pipeline/prototypes/blender3d/render_clips.py` 無介面渲染側面正交序列（面向右），`pixelate_clips.py` 共用裁切框、BOX 縮到 96px、32 色、1px 描邊並排成對照表。成果：`out/sheet_light.png`、`out/sheet_dark.png`（被打／待機／出拳）。模型與下載檔在暫存資料夾，未進 repo。**未改 App、OctagonCore，未 commit。**
+- **看到的**：四肢與關節清楚、出拳伸展與被打後仰讀得出來，比先前程式畫的身體可讀。**缺點**：臉是空白低多邊形（要貼官方照頭）；服裝是 T 恤加長褲，不是拳擊短褲；Idle 動作太像隨意站著，不像格鬥待機；只有出拳一種攻擊，其餘（踢、摔、地面）要另找動作或自己做。
+- **頭部合成（同日第二輪）**：`render_clips.py --nohead` 刪掉 Head 權重頂點渲無頭身體並輸出每幀 `Head`／`HeadTop_End` 錨點；`composite_head.py` 把官方去背大頭照（Tom Aspinall，只存暫存資料夾、不進 repo；該 URL 是透明 PNG 256×160）裁頭、橢圓遮罩、依骨頭長度縮放、跟著傾斜貼上，再一起像素化。成果 `out/sheet_aspinall_head.png`。踩到的坑：這個 .blend 的 `resolution_percentage` 是 50%，錨點座標差兩倍，腳本已強制 100%。
+- **頭部合成的限制**：正臉貼在側面身體上（像紙娃娃）；頭一律蓋在拳頭前面，防守架式時臉會壓到拳；頭照只用一張，沒做表情；32 色共用調色盤，臉部明暗偏塊狀。頭的大小倍率（`--scale 1.7`）、傾斜跟隨（`--tilt 0.5`）、前偏（`--shift 0.12`）為目測參數，未實機看。
+- **全身照投影貼圖（同日第三輪，使用者追問「能不能整個人變貼圖」）**：`prep_photo_texture.py` 把 UFC `athlete_bio_full_body` 照（**其實只到大腿上方，460×700，沒有腿腳**）去白邊、填滿透明處，並在下方補短褲色（取自照片下緣）與膚色（取自肚子）；`render_clips.py --proj tex.png` 在 Blender 內把手臂從 T 字姿勢放下，依正面位置（髮頂 y=0、下巴 y=200，身高與寬度各自縮放）給每個頂點算 UV，用平光渲染。成果：`out/sheet_projection_only.png`（頭也投影，側面時臉被拉成條紋，**不要用**）、`out/sheet_projection_hybrid.png`（身體投影＋照片頭，**目前最好的一版**）。刺青、黑手套、白短褲都帶進來，認得出是選手。只測 Aspinall 一人。
+- **投影版的限制與風險**：①側面時手臂、軀幹邊緣有拉伸條紋；②腿是單色，沒有肌肉與腿毛；③landmarks（下巴 y=200）是針對這張照片目測，假設所有 bio_full_body 照框法一致，**尚未驗證其他選手**；④短褲顏色取樣遇到深色或有圖案的短褲可能失準；⑤手臂長度、肩寬與照片不一致時，手套位置會跑掉；⑥模型把手臂「放下」靠旋轉骨頭，肩膀 UV 有些扭曲；⑦模型是 Quaternius 的低多邊形，體型單一（沒有量級差異）。
+- **第四輪：改用未裁切原圖並優化頭部連接（使用者指出「之前不是找到全身照了」）**：原圖取得方式見 `prep_orig_texture.py` 檔頭（`fullBodyImageUrl` 去掉 `styles/<樣式>/s3/` 與 `?itok=`，Aspinall 1163×3324、4.1MB，非官方介面）。`render_clips.py` 新增 `--proj-lm "髮頂,下巴,髖,膝,踝,腳底"`（照片 y）做分段對位與 `--proj-size W,H`（貼圖縮小後仍用原圖座標）；貼圖先 BOX 縮到 1/4，否則 Blender 取樣會雜訊化。頭改從原圖裁「頭＋脖子」（`composite_head.py` 新模式：`--chin-y 501 --top-y 9 --crop 340,5,780,640`），脖子底部淡出與身體同一張照片的投影銜接；旋轉中心下移到脖子（`--pivot 0.45`）、前偏降到 0.02、最大傾角 28°。成果 `out/sheet_orig_head_neck.png`，**目前最好的一版**：腿腳也是照片、臉清楚很多。
+- **第四輪的限制**：對位的 6 個 y 值是目測這一張（用紅線疊圖確認過），其他選手需要自動偵測（例如依 Vision 骨架或照片比例）；被打時頭傾斜大，仍略有「浮在脖子上」感；腿內側有黑色塊（照片裡短褲陰影與另一條腿），軀幹/手臂側面有拉伸條紋；身體仍是 Quaternius 單一體型。
+- **第五輪：脖子改逐幀生成（使用者要求再優化連接）**：`composite_head.py --bridge` 把照片脖子透視變形，上端接下巴、下端接 `Neck` 骨頭往 `Spine2` 延伸的點，頭以下巴為軸旋轉；同時修正之前就有的錯：頭超出畫布被切平（改加 120px 上邊）、下巴旁的肩膀皮膚三角形、頭前探（`--chin-pull 0.25`）。參數見下一棒指令：`--scale 1.55 --crop 340,5,780,540 --chin-y 501 --top-y 9 --neck-w 78 --fade 35 --shift 0 --tilt 0.6 --max-tilt 32 --bridge --neck-src 485,635,461,575 --neck-bottom 0.7 --chin-pull 0.25`。成果 `out/sheet_neck_bridge.png`，**目前最好的一版**，取代 `sheet_orig_head_neck.png`。限制：放大看下巴旁仍有很小的尖角（96px 不明顯）；只測 Aspinall，脖子範圍也是目測；頭仍是正臉配側身。`out/` 已加入 gitignore（官方照衍生圖不進公開 repo）。
+- **未做**：與立牌原型並排比較（repo 裡找不到 `pipeline/standee_proto/`，只有 `prototypes/` 下的 chibi3／shared35／shared_body）；手機端播放；Swift 端實作。
+- **待使用者確認**：這個身體風格能否接受？接受的話下一步是頭部合成與體型／短褲變化；Quaternius 另有 CC0 的動作包可補踢擊類，但要再確認授權與下載。
+
+---
+
 ## 2026-11-06 · [實作] Claude Opus 5.5 (P6-1 實機回饋修正 v0.6.1)
 - **使用者回饋**：字體模糊、卡牌擋住距離顯示。截圖另外看出：牌名被下一張蓋住、牌下半部資訊沉到畫面外。
 - **手牌**：v0.6.0 的左右保留區太寬，5 張牌只分到約 320pt（間距約 52）。左下卡改 150 寬、右下改直排，844pt 機型扣掉安全區後約 418pt。牌面文字避開被下一張蓋住的右緣（`coveredWidth`）；距離／目標／地面說明移到牌名正下方，靜止時也看得到；扇形角度由每張 5° 降為 2.5°。
