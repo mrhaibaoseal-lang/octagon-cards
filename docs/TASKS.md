@@ -91,9 +91,10 @@
 - [x] **P5-1 拆分 `ContentView.swift` 並整理版面（`App/Sources`）**
   - 內容：拆成 `PreFightView`（選角）、`BattleView`（對戰）、`DebugDrawerView`、對局狀態物件 `BattleSession`（`@Observable`，承接 `playTurn` 等邏輯）；選角移到賽前頁，對戰頁固定不捲動，八角籠加高，Debug 預設收起，地面資訊改放固定區域，手牌不再因橫幅被推動
   - 完成條件：CI 通過、對戰規則與 Debug 功能不變、`ContentView.swift` 只留導覽；打包 IPA
-- [ ] **P5-2 交手演出時間軸（`OctagonCore` 純 Swift）**
+- [x] **P5-2 交手演出時間軸（`OctagonCore` 純 Swift）**
   - 內容：新增 `ExchangePresentation.build(log:)`，只讀 `ExchangeLog`（`firstSide`、`stateBefore`、`stateAfter`、雙方 `ExchangeSideLog`），輸出有序 beat：揭牌、先手動作、傷害或結果、後手動作（被打斷就略過）、位置或狀態變化、終結；每個 beat 附繁中旁白與顯示用血量快照
   - 完成條件：Swift Testing 涵蓋雙方命中、單方命中、被打斷、閃避或格擋、抱摔、掃技、鎖技、裁判分開、KO；同一 log 輸出完全一致；最後一個 beat 的血量等於 `stateAfter`
+  - 完成：`ExchangePresentation.build(log:nameA:nameB:)`（`ExchangePresentation.swift`）＋ 測試 `ExchangePresentationTests.swift`；CI run `42206706049` ✅（91 tests）
 - [ ] **P5-3 App 播放時間軸（本階段的實機檢查點）**
   - 內容：`BattleSession` 分開引擎狀態與顯示狀態，血條依 beat 更新；播放中鎖定手牌，點畫面可跳過；傷害飄字、重擊頓幀 0.08 秒、KO 慢動作；雙方都命中時兩邊都要播；格擋、閃避、佯攻有簡單動作；設定快／標準／慢；修正回合第 8 次交手動畫被 `resetPositions` 取消的疑似問題
   - 完成條件：CI 與 IPA 通過；**使用者實機確認節奏後才做 P5-4**

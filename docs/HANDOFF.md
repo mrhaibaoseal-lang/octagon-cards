@@ -7,6 +7,19 @@
 
 ---
 
+## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-2 交手演出時間軸)
+- **新增 `Packages/OctagonCore/Sources/FightEngine/ExchangePresentation.swift`**（純 Swift，無 UI import）：`ExchangePresentation.build(log: ExchangeLog, nameA: String = "A 方", nameB: String = "B 方") -> [ExchangeBeat]`。只讀 log，不碰 `SeededRNG`、不改任何引擎檔。
+  - `ExchangeBeat`（`Sendable, Equatable, Hashable`）：`kind`、`actor`、`target`、`cardName`、`amount`（傷害）、`hitTarget`、`isHeavy`（傷害 ≥ 12 或 Rocked，給 P5-3 頓幀／大字用）、`narration`（繁中）、`display`（`ExchangeDisplayState`：雙方三部位血量、`isRocked`、`cutSeverity`）。
+  - `ExchangeBeatKind`：`reveal / action / hit / blocked / dodged / missed / feint / move / takedown / positionAdvance / sweep / standUp / submissionStart / submissionLock / submissionEscape / rocked / cut / interrupted / refereeStandUp / clinch / cagePressure / recover / finish`。
+  - 順序：`reveal` →（先手：`action`、結果、`rocked`／`cut`、位置變化）→（後手同上，或 `interrupted`）→ 純狀態變化（裁判叫起、Rocked 恢復、進入纏鬥、被逼到鐵網）→ `finish`。有終結時最後一個一定是 `finish`，且不再補狀態變化。
+  - 血量快照：從 `stateBefore` 起算，每個 `hit`／`blocked` 扣血；**最後一個 beat 的 `display` 一律直接取自 `stateAfter`**（也修正「軀幹／腿部 TKO 直接歸零」這類引擎不照傷害扣的情況）。
+- **設計決定（請規劃確認）**：(1) 被打斷的一方會有一個短的 `interrupted` beat（旁白寫原因），不是完全沒有；若該次交手已終結則不補，避免與 `finish` 重複。(2) 地面掃技時 log 的 `firstSide` 只是速度比較，故被打斷者在前時，時間軸改成「打斷者先講」（先 sweep，再 interrupted）。(3) 抱摔／掃技／推進／起身／移動屬於「該方出牌的結果」，緊跟在該方 `action` 後，不留到最後；最後的狀態變化只放 log 沒有逐項記錄的（裁判、Rocked 恢復、纏鬥、鐵網）。(4) 降伏鏈進行中不插入 `missed`，由 start／lock／escape beat 交代。(5) 新增 `nameA/nameB` 參數（預設「A 方／B 方」），P5-3 可傳選手名；log 本身沒有選手名。(6) 不輸出秒數，時序由 App 決定。
+- **測試**：新增 `Tests/FightEngineTests/ExchangePresentationTests.swift`（27 個測試）：手工 log 涵蓋雙方命中、單方命中、反擊、被打斷（Rocked）、割傷、閃避、格擋、假動作＋移動、抱摔、防摔失敗、掃技、位置推進／回復、起身、降伏開始／加深／脫困／撐住／認輸、裁判叫起、Rocked 恢復／纏鬥／鐵網、KO、TKO 歸零校正、後手終結、醫生叫停、選手名、同 log 輸出一致；另用真實引擎跑全部站立牌組合、抱摔牌 × 站立牌、地面 5 位置 × 3 種降伏狀態 × 全部上下位牌，檢查不變量（第一個是 reveal、最後血量 = `stateAfter`、血量不回升、被打斷者無 action、有終結則最後是 finish）；並驗證「建立 beat 前後同 seed 的 log 序列相同」。
+- **CI**：run `42206706049` ✅（push `0865363`，91 tests / 12 suites 全過）。沒動 App 層，未打包 IPA。
+- 修改檔案：`ExchangePresentation.swift`（新）、`ExchangePresentationTests.swift`（新）、`docs/TASKS.md`、`docs/HANDOFF.md`。
+- **下一棒**：`[實作]` 開新 session 做 P5-3（App 播放時間軸；完成後要等使用者實機確認節奏才做 P5-4）。
+
+---
 ## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-1 拆分 ContentView 並整理版面 v0.5.2)
 - **拆分（行為不變，只搬移與版面整理）**：`ContentView.swift` 1040 行 → 約 60 行，只留導覽（賽前頁 ⇄ 對戰頁）與首次下載選手圖的覆蓋層。
   - 新增 `BattleSession.swift`（`@MainActor @Observable`）：選手、引擎狀態、手牌、回合記錄、`SeededRNG`、`LungeDemoScene`；承接 `startNewMatch` / `playTurn` / `refreshPixelSprites` / `copyReplayBundle`，邏輯逐行照搬。
