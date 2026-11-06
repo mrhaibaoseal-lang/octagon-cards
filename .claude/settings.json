@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./data/fighters.json)",
+      "Read(./data/raw_ufcstats.json)",
+      "Read(./dist/**)"
+    ]
+  }
+}

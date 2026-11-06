@@ -15,11 +15,13 @@
 
 ## 2. 交接協議（共享記憶 = repo 裡的檔案，不是聊天紀錄）
 
-1. **開工前**：讀 `docs/TASKS.md`（做什麼）、`docs/HANDOFF.md` 最上面幾筆（上一棒做到哪）、相關設計文件。
+1. **開工前**：讀 `docs/TASKS.md`（做什麼）、`docs/HANDOFF.md` 的兩個「待確認」區和最新 1–2 筆（上一棒做到哪）、這張卡相關的設計文件章節。`TASKS_ARCHIVE.md`、`HANDOFF_ARCHIVE.md` 只在需要時查，不要整份讀。
 2. **做事時**：只做被指派的任務；任務卡上的「完成條件」就是驗收標準。
 3. **收工時**：
-   - 在 `docs/TASKS.md` 更新任務狀態（`[ ]` → `[x]`，或標 `BLOCKED` 並寫原因）
-   - 在 `docs/HANDOFF.md` **最上方**新增一筆：日期、角色/模型、做了什麼、改了哪些檔、測試結果、待確認問題
+   - 在 `docs/TASKS.md` 更新任務狀態（`[ ]` → `[x]`，或標 `BLOCKED` 並寫原因）；完成的卡原文移到 `docs/TASKS_ARCHIVE.md`，並更新看板開頭的「已完成」那行
+   - 在 `docs/HANDOFF.md` **最上方**新增一筆：日期、角色/模型、做了什麼、改了哪些檔、測試結果、下一棒。**每筆約 10 行、1,500 字內**，只寫下一棒需要知道的事；實作細節留在程式碼和 commit 訊息
+   - 待決定的事寫進「待規劃確認」，要使用者實機檢查的項目寫進「待使用者實機確認」；確認後就刪掉該項
+   - `HANDOFF.md` 超過 3 筆時，把最舊的原文移到 `docs/HANDOFF_ARCHIVE.md` 最上方，移動前確認它未解決的項目已列在「待確認」區
    - commit 並 push（commit 訊息開頭用 `plan:` / `feat:` / `fix:` / `art:`）
 
 ## 3. 打包與 CI（已授權，免費）
@@ -37,3 +39,4 @@
 - App 層放 `App/Sources`，專案檔由 `project.yml`（XcodeGen）產生，不要提交 `.xcodeproj`
 - 所有機率結果必須經過 `Odds.resolve` / `Odds.clamp`（5%–95%，見 docs/STRIKING_AND_DECK.md §2.1）
 - 本機（Windows）沒有 Swift 工具鏈：編譯與測試以 CI 結果為準
+- `data/*.json` 很大，不要整份讀；要查內容就用小腳本取需要的欄位（Claude Code 已在 `.claude/settings.json` 禁止直接 Read）
