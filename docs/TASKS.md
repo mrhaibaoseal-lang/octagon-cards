@@ -27,7 +27,7 @@
   - 內容：`project.yml` 鎖橫向；依 `VISUAL_DIRECTION.md` §2 重排 `BattleView`／`BattleTrendViews`，移除直式分支；八角籠滿版、不隨播放改變尺寸；上方轉播列；5 張扇形手牌（點選放大、上拖出牌，播放時滑出）；次要功能收進選單；調整 `LungeDemoScene` 的翻牌位置與 `stageScale`，避免和轉播列重疊；`PreFightView` 能在橫向正常使用
   - 完成條件：`OctagonCore` 未改動；CI 與 IPA 通過且 App 層無新警告；Debug 與重現碼功能仍可用；地面戰、KO、換回合的流程不變；請使用者實機確認
 - [x] **P6-2 Vision 切割驗證**：20/32 可用，未達 28 門檻。結論：身體不再切照片，改走 `VISUAL_DIRECTION.md` §3 小型 Q 版
-- [ ] **P6-3 小型 Q 版人物產生器與預覽**（依 `VISUAL_DIRECTION.md` §3；可從 `pipeline/chibi_proto/` 開始）
+- [x] **P6-3 小型 Q 版人物產生器與預覽**（IPA 通過；待使用者實機確認 32 位）（依 `VISUAL_DIRECTION.md` §3；可從 `pipeline/chibi_proto/` 開始）
   - 內容：把原型移植成 App 層 Swift（取頭、身體產生器、姿勢表、快取，不碰 `OctagonCore`）；填 `data/fighter_looks.json` 的 32 位（膚色、體型、6 區刺青）；把 `RigCutDebugView` 改成預覽畫面（逐人逐動作檢視），不再用 Vision 找身體關節
   - 完成條件：CI 與 IPA 通過且 App 層無新警告；使用者實機看過 32 位的預覽，認得出人且膚色、刺青大致正確；**先不接進對戰**
 - [ ] **P6-4 接入對戰動畫** `BLOCKED：等 P6-3`
