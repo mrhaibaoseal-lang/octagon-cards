@@ -80,5 +80,33 @@
 
 ---
 
+## 🚧 P5 對戰體驗：看得懂局勢、感受得到節奏（依序執行）
+> 來源：v0.5.1 實機回饋「介面陽春、無法判斷局勢、感受不到節奏」；診斷見 `docs/HANDOFF.md` 2026-11-06。規格依據：`docs/ANIMATION_ART.md` §5、`docs/MASTER_PLAN.md` §2。
+> 共同限制：一張卡一個 session；不改戰鬥數值與機率；演出層不得消耗 `SeededRNG`，同 seed 結果必須不變；不新增 AI 生圖。
+> 已定預設（使用者可再改）：標準速度每次交手約 3–4 秒，並可跳過；回合中只顯示局勢條，不顯示精確分數；精確預估分在回合結算才出現。
+
+- [ ] **P5-0 精簡交接文件**
+  - 內容：把 `docs/HANDOFF.md` 中 2026-11-04 之前的紀錄原文搬到新檔 `docs/HANDOFF_ARCHIVE.md`；`HANDOFF.md` 保留「待規劃確認」與最近紀錄，並加一行封存連結
+  - 完成條件：沒有遺失任何紀錄；只改文件
+- [ ] **P5-1 拆分 `ContentView.swift` 並整理版面（`App/Sources`）**
+  - 內容：拆成 `PreFightView`（選角）、`BattleView`（對戰）、`DebugDrawerView`、對局狀態物件 `BattleSession`（`@Observable`，承接 `playTurn` 等邏輯）；選角移到賽前頁，對戰頁固定不捲動，八角籠加高，Debug 預設收起，地面資訊改放固定區域，手牌不再因橫幅被推動
+  - 完成條件：CI 通過、對戰規則與 Debug 功能不變、`ContentView.swift` 只留導覽；打包 IPA
+- [ ] **P5-2 交手演出時間軸（`OctagonCore` 純 Swift）**
+  - 內容：新增 `ExchangePresentation.build(log:)`，只讀 `ExchangeLog`（`firstSide`、`stateBefore`、`stateAfter`、雙方 `ExchangeSideLog`），輸出有序 beat：揭牌、先手動作、傷害或結果、後手動作（被打斷就略過）、位置或狀態變化、終結；每個 beat 附繁中旁白與顯示用血量快照
+  - 完成條件：Swift Testing 涵蓋雙方命中、單方命中、被打斷、閃避或格擋、抱摔、掃技、鎖技、裁判分開、KO；同一 log 輸出完全一致；最後一個 beat 的血量等於 `stateAfter`
+- [ ] **P5-3 App 播放時間軸（本階段的實機檢查點）**
+  - 內容：`BattleSession` 分開引擎狀態與顯示狀態，血條依 beat 更新；播放中鎖定手牌，點畫面可跳過；傷害飄字、重擊頓幀 0.08 秒、KO 慢動作；雙方都命中時兩邊都要播；格擋、閃避、佯攻有簡單動作；設定快／標準／慢；修正回合第 8 次交手動畫被 `resetPositions` 取消的疑似問題
+  - 完成條件：CI 與 IPA 通過；**使用者實機確認節奏後才做 P5-4**
+- [ ] **P5-4 局勢顯示**
+  - 內容：`OctagonCore` 新增 `RoundTrend.estimate(exchanges:state:)`，重用 `FightMatchEngine.scoreRound` 的 `damageByA/B`、`rockedByA/B`、`judgeCards` 算出 0–1 局勢值與「勢均力敵／小幅領先／明顯領先」；App 顯示回合進度格、局勢條、三部位血條變化強調；Rocked、深鎖、流血用全畫面可見的警示
+  - 完成條件：單元測試涵蓋空回合、單方壓制與數值範圍；不改變 `scoreRound` 計分結果；CI 與 IPA 通過
+- [ ] **P5-5 回合結算與賽後畫面**
+  - 內容：回合結束顯示結算卡（本回合傷害、Rocked、教練預估分）；賽前對戰卡；賽後顯示勝利方式、三裁判計分與「再打一場」；皆可跳過
+  - 完成條件：KO、降伏、一致／分歧／多數判定、平手都有對應畫面；CI 與 IPA 通過
+- [ ] **P5-6 角落指示** `BLOCKED：等 [規劃] 訂規則`
+  - 原因：`MASTER_PLAN.md` §2 與 `POWER_SYSTEM.md` §5.4 的選項不一致，也沒有效果數值；確定後才能實作引擎與測試
+
+---
+
 ## 🎨 美術任務
 - [ ] ART-1 先寫 `docs/ART_BRIEFS.md`（`[規劃]` 負責）：風格範本、色盤、尺寸、第一批 20 張打擊特效的清單與提示詞
