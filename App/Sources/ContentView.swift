@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var session = BattleSession()
     @State private var prefetch = RosterPrefetchModel()
     @State private var screen: Screen = .preFight
+    @State private var showRigCut = false
 
     var body: some View {
         ZStack {
@@ -30,6 +31,22 @@ struct ContentView: View {
         }
         .overlay(alignment: .top) {
             RosterPrefetchPill(model: prefetch)
+        }
+        .overlay(alignment: .bottomLeading) {
+            // Dev-only entry for the P6-2 Vision cut check; kept out of PreFightView/BattleView on purpose.
+            if screen == .preFight {
+                Button("🔬 Rig") { showRigCut = true }
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .opacity(0.6)
+                    .padding(.leading, 12)
+                    .padding(.bottom, 6)
+            }
+        }
+        .fullScreenCover(isPresented: $showRigCut) {
+            RigCutDebugView { showRigCut = false }
         }
         .overlay {
             if prefetch.showOverlay {
