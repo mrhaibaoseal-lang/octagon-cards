@@ -26,6 +26,7 @@
 - 六個人物**不可互相碰到**，也不要碰到邊。轉換工具靠這點分開姿勢。
 - 全部面向右邊。
 - **短褲不要純綠**，否則會被去背吃掉。
+- **逐姿勢數手腳**。AI 容易多畫肢體：第一版 McGregor 的抱摔就多了一隻背後的手，兩手的手套也不一樣。只有單一姿勢錯時，先請 Gemini 修那一處，比整張重生省額度。
 
 ## 提示詞範本
 把 `{選手}`、`{外觀}`、`{短褲}` 換掉：
@@ -35,8 +36,9 @@ A single pixel art sprite sheet of one MMA fighter, {選手}. {外觀}. Same cha
 same colors in every pose. Six separate full-body poses arranged in a grid of 3 columns and 2 rows,
 all facing right, with wide empty space between poses so that no pose touches another:
 top row: 1) orthodox fighting stance, 2) straight punch with the arm fully extended, 3) high kick with the leg straight;
-bottom row: 4) staggered from a hit with the head thrown back, 5) low takedown shot lunging forward with both hands reaching, 6) knocked out lying flat on his back.
-Wearing {短褲} fight shorts, black open-finger MMA gloves, shirtless. Detailed 16-bit fighting game style, crisp pixels, realistic proportions,
+bottom row: 4) staggered from a hit with the head thrown back, 5) double-leg takedown shot: torso bent far forward and low, head at chest height, both arms stretched forward and low with both hands open, 6) knocked out lying flat on his back.
+Correct anatomy in every pose: exactly two arms and two legs, no extra limbs, nothing behind his back in pose 5.
+Wearing {短褲} fight shorts, the same black open-finger MMA gloves on both hands, shirtless. Detailed 16-bit fighting game style, crisp pixels, realistic proportions,
 strong dark outline. Solid pure green background #00FF00, flat, no shadow, no gradient, no floor, no text, no logos, no brand marks.
 ```
 
