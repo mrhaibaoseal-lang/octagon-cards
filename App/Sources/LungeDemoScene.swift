@@ -24,6 +24,8 @@ final class LungeDemoScene: SKScene {
     private var leftHasTexture: Bool = false
     private var rightHasTexture: Bool = false
     private let cageLine = SKShapeNode()
+    /// Slightly lighter strip below the floor line; stands in for the canvas until the broadcast art arrives.
+    private let floorNode = SKSpriteNode(color: SKColor(white: 1, alpha: 0.05), size: .zero)
     private let statusLabel = SKLabelNode(fontNamed: "Menlo-Bold")
     private let flashOverlay = SKSpriteNode(color: .white, size: .zero)
     private var currentDistance: Distance = .long
@@ -41,10 +43,17 @@ final class LungeDemoScene: SKScene {
 
     private var isSetUp = false
 
-    /// How much fighters are enlarged to match the (possibly enlarged) cage. 1 at the small size, up to 1.6.
+    /// P6-1: the cage is always full screen (landscape, ~390pt tall), so fighters scale with the screen height only.
+    /// 1 on very short screens, about 1.56 at 390pt, capped at 1.6.
     private var stageScale: CGFloat {
-        min(1.6, max(1, size.height / 260))
+        min(1.6, max(1, size.height / 250))
     }
+
+    /// Y of the cage floor line. Raised so the fighters' feet stay above the peeking hand cards.
+    private var floorY: CGFloat { size.height * 0.26 }
+
+    /// Space reserved at the top for the SwiftUI broadcast bar (and its alert banners).
+    private let topBarClearance: CGFloat = 66
 
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.08, green: 0.09, blue: 0.13, alpha: 1)
@@ -56,8 +65,12 @@ final class LungeDemoScene: SKScene {
             return
         }
         isSetUp = true
+        floorNode.anchorPoint = .zero
+        floorNode.zPosition = -2
+        addChild(floorNode)
         cageLine.strokeColor = SKColor(white: 1.0, alpha: 0.14)
         cageLine.lineWidth = 2
+        cageLine.zPosition = -1
         addChild(cageLine)
 
         statusLabel.fontSize = 11
@@ -93,7 +106,7 @@ final class LungeDemoScene: SKScene {
         case .mid: spread = 0.19
         case .close: spread = 0.11
         }
-        let y = size.height * 0.16 + 52 * stageScale
+        let y = floorY + 52 * stageScale
         return (
             CGPoint(x: size.width * (0.5 - spread), y: y),
             CGPoint(x: size.width * (0.5 + spread), y: y)
@@ -113,7 +126,7 @@ final class LungeDemoScene: SKScene {
     private func rest(_ side: EngineSide) -> (pos: CGPoint, rot: CGFloat) {
         if let g = currentGround {
             let centerX = size.width * 0.5
-            let floorY = size.height * 0.16
+            let floorY = self.floorY
             if g.topSide == side {
                 return (CGPoint(x: centerX - 6, y: floorY + 80 * stageScale), .pi / 2)
             }
@@ -133,12 +146,15 @@ final class LungeDemoScene: SKScene {
     }
 
     private func layoutFighters(animated: Bool, duration: TimeInterval = 0.22) {
-        statusLabel.position = CGPoint(x: size.width * 0.5, y: size.height - 8)
+        // The banner sits just under the floor line (the SwiftUI hand covers it while cards are showing).
+        statusLabel.position = CGPoint(x: size.width * 0.5, y: floorY - 8)
         flashOverlay.size = size
         flashOverlay.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+        floorNode.size = CGSize(width: size.width, height: floorY)
+        floorNode.position = .zero
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 16, y: size.height * 0.16))
-        path.addLine(to: CGPoint(x: size.width - 16, y: size.height * 0.16))
+        path.move(to: CGPoint(x: 0, y: floorY))
+        path.addLine(to: CGPoint(x: size.width, y: floorY))
         cageLine.path = path
 
         for side in [EngineSide.a, EngineSide.b] {
@@ -373,7 +389,7 @@ final class LungeDemoScene: SKScene {
 
         container.position = CGPoint(
             x: min(max(point.x, 44), max(44, size.width - 44)),
-            y: min(point.y, size.height - 30)
+            y: min(point.y, size.height - topBarClearance - 10)
         )
         addChild(container)
         container.run(.sequence([
@@ -757,11 +773,12 @@ final class LungeDemoScene: SKScene {
 
     // MARK: - Exchange cards (P5-3b)
 
-    private var cardHeight: CGFloat { min(size.height * 0.3, 130) }
-    private var cardWidth: CGFloat { min(cardHeight * 0.8, size.width * 0.34) }
+    private var cardHeight: CGFloat { min(size.height * 0.26, 104) }
+    private var cardWidth: CGFloat { min(cardHeight * 0.8, size.width * 0.2) }
 
     private func cardPosition(_ side: EngineSide, popped: Bool) -> CGPoint {
-        let y = size.height - 24 - cardHeight / 2
+        // Just under the broadcast bar; the popped card (1.25x) grows about 13pt, still clear of it.
+        let y = size.height - topBarClearance - cardHeight / 2
         let x: CGFloat = popped ? (side == .a ? 0.33 : 0.67) : (side == .a ? 0.27 : 0.73)
         return CGPoint(x: size.width * x, y: y)
     }

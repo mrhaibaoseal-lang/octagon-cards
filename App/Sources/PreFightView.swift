@@ -2,57 +2,66 @@ import SwiftUI
 import UIKit
 import FightEngine
 
-/// Pre-fight page: pick a preset matchup or any two fighters, then start the bout.
+/// Pre-fight page (landscape): matchup pickers on the left, the two fighters and the start button on the right.
 struct PreFightView: View {
     let session: BattleSession
     let onStart: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                presetSection
-                customSection
-                HStack(alignment: .top, spacing: 10) {
-                    FighterPreviewCard(
-                        fighter: session.fighterA,
-                        headData: session.headshotDataA,
-                        roleTag: "🟢 玩家",
-                        tint: .green
-                    )
-                    FighterPreviewCard(
-                        fighter: session.fighterB,
-                        headData: session.headshotDataB,
-                        roleTag: "🔴 AI",
-                        tint: .red
-                    )
+        HStack(alignment: .top, spacing: 14) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
+                    presetSection
+                    customSection
                 }
+                .padding(.vertical, 8)
             }
-            .padding(14)
-        }
-        .safeAreaInset(edge: .bottom) {
-            Button(action: onStart) {
-                Text("🥊 開始對戰")
-                    .font(.system(.headline, design: .monospaced, weight: .heavy))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity)
+
+            VStack(spacing: 8) {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        FighterPreviewCard(
+                            fighter: session.fighterA,
+                            headData: session.headshotDataA,
+                            roleTag: "🟢 玩家",
+                            tint: .green
+                        )
+                        FighterPreviewCard(
+                            fighter: session.fighterB,
+                            headData: session.headshotDataB,
+                            roleTag: "🔴 AI",
+                            tint: .red
+                        )
+                    }
+                    .padding(.vertical, 8)
+                }
+                .scrollIndicators(.hidden)
+
+                Button(action: onStart) {
+                    Text("🥊 開始對戰")
+                        .font(.system(.headline, design: .monospaced, weight: .heavy))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.bottom, 8)
             }
-            .buttonStyle(.borderedProminent)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(.ultraThinMaterial)
+            .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 14)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("OCTAGON CARDS · v0.5 真實UFC名單")
+            Text("OCTAGON CARDS · 真實UFC名單")
                 .font(.system(.subheadline, design: .monospaced, weight: .heavy))
             Text("賽前 · 選擇對戰雙方")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
         }
-        .padding(.top, 14)
     }
 
     private var presetSection: some View {

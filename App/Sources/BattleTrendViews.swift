@@ -1,13 +1,237 @@
 import SwiftUI
+import UIKit
 import FightEngine
 
-// P5-4 局勢顯示：回合進度格、局勢條、血條損失強調、全畫面警示。
+// P5-4 局勢顯示（P6-1 改為橫版轉播列）：回合進度格、局勢條、血條損失強調、全畫面警示。
 // 這裡只讀 `displayState` 與 `RoundTrend`，不碰引擎與 `SeededRNG`。
 
-// MARK: - Round progress cells + trend bar
+// MARK: - Broadcast bar (top, landscape)
 
-/// One thin strip under the top bar: 8 progress cells, then the trend bar. Never shows exact points.
-struct RoundStatusStrip: View {
+/// Top broadcast bar: both fighters mirrored on the sides, round / progress / trend in the middle.
+struct BroadcastBar: View {
+    let session: BattleSession
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            BroadcastFighterPanel(
+                fighter: session.fighterA,
+                headData: session.headshotDataA,
+                roleTag: "🟢 玩家",
+                cond: session.displayState.a,
+                tint: .green,
+                mirrored: false
+            )
+            BroadcastCenter(
+                round: session.shownRound,
+                totalRounds: session.totalRounds,
+                exchange: session.shownExchange,
+                exchangesPerRound: session.exchangesPerRound,
+                winners: session.shownExchangeWinners,
+                currentExchange: session.matchOutcome == nil || session.isPlaying ? session.shownExchange : nil,
+                trend: session.shownTrend
+            )
+            BroadcastFighterPanel(
+                fighter: session.fighterB,
+                headData: session.headshotDataB,
+                roleTag: "🔴 AI",
+                cond: session.displayState.b,
+                tint: .red,
+                mirrored: true
+            )
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background {
+            LinearGradient(
+                colors: [Color.black.opacity(0.88), Color.black.opacity(0.62)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea(edges: [.top, .horizontal])
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.18)).frame(height: 1)
+        }
+    }
+}
+
+/// One side of the broadcast bar: avatar, name, Rocked / bleeding badges and five compact stat bars.
+struct BroadcastFighterPanel: View {
+    let fighter: Fighter
+    let headData: Data?
+    let roleTag: String
+    let cond: FighterCondition
+    let tint: Color
+    /// The right-hand panel is a mirror image: avatar on the outside, text and bars drain toward the middle.
+    let mirrored: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if !mirrored { avatar }
+            VStack(alignment: mirrored ? .trailing : .leading, spacing: 2) {
+                nameRow
+                HStack(spacing: 5) {
+                    BroadcastStatBar(label: "頭", value: cond.health.head, color: .red, tracksLoss: true, mirrored: mirrored)
+                    BroadcastStatBar(label: "身", value: cond.health.body, color: .orange, tracksLoss: true, mirrored: mirrored)
+                    BroadcastStatBar(label: "腿", value: cond.health.legs, color: .yellow, tracksLoss: true, mirrored: mirrored)
+                    BroadcastStatBar(label: "體", value: cond.stamina, color: .cyan, mirrored: mirrored)
+                    BroadcastStatBar(label: "勢", value: cond.momentum, color: .purple, mirrored: mirrored)
+                }
+            }
+            if mirrored { avatar }
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity)
+        .background(tint.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(cond.isRocked ? Color.orange : tint.opacity(0.4), lineWidth: cond.isRocked ? 2 : 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private var avatar: some View {
+        Group {
+            if let data = headData, let uiImg = UIImage(data: data) {
+                Image(uiImage: uiImg)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: 34, height: 34)
+        .background(Color.black.opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
+    private var nameRow: some View {
+        HStack(spacing: 4) {
+            if mirrored { Spacer(minLength: 0) }
+            if mirrored { badges }
+            Text("\(roleTag) \(fighter.name)")
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if !mirrored { badges }
+            if !mirrored { Spacer(minLength: 0) }
+        }
+        .frame(height: 14)
+    }
+
+    @ViewBuilder
+    private var badges: some View {
+        if cond.isRocked {
+            Text("💥ROCKED")
+                .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.orange)
+                .foregroundStyle(.black)
+                .clipShape(Capsule())
+        }
+        if cond.isBleeding {
+            Text("🩸Lv.\(cond.cutSeverity)")
+                .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.red)
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
+        }
+    }
+}
+
+/// Compact stat bar: tiny label and number above a thin bar. Health bars keep a bright "ghost" segment where the
+/// health used to be, then drain it, and flash the loss amount next to the number.
+struct BroadcastStatBar: View {
+    let label: String
+    let value: Double
+    let color: Color
+    var tracksLoss: Bool = false
+    var mirrored: Bool = false
+
+    @State private var ghost: Double = 0
+    @State private var lossText: String? = nil
+    @State private var lossOpacity: Double = 0
+    @State private var flash: Bool = false
+
+    private var isLow: Bool { tracksLoss && value <= 25 }
+
+    var body: some View {
+        VStack(spacing: 1) {
+            HStack(spacing: 2) {
+                Text(label)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if let lossText {
+                    Text(lossText)
+                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .opacity(lossOpacity)
+                }
+                Text("\(Int(value.rounded()))")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(isLow ? Color.red : Color.primary)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: mirrored ? .trailing : .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white.opacity(0.14))
+                    if tracksLoss {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.white.opacity(0.9))
+                            .frame(width: width(of: ghost, in: geo.size.width))
+                    }
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(isLow ? Color.red : color)
+                        .frame(width: width(of: value, in: geo.size.width))
+                        .animation(.easeOut(duration: 0.3), value: value)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 2)
+                        .stroke(Color.white, lineWidth: flash ? 1.5 : 0)
+                )
+            }
+            .frame(height: 5)
+        }
+        .frame(maxWidth: .infinity)
+        .onAppear { ghost = value }
+        .onChange(of: value) { oldValue, newValue in
+            guard tracksLoss else { return }
+            if newValue < oldValue - 0.5 {
+                ghost = max(ghost, oldValue)
+                lossText = "-\(Int((oldValue - newValue).rounded()))"
+                lossOpacity = 1
+                flash = true
+                withAnimation(.easeOut(duration: 0.5).delay(0.45)) { ghost = newValue }
+                withAnimation(.easeIn(duration: 0.9).delay(0.7)) {
+                    lossOpacity = 0
+                    flash = false
+                }
+            } else {
+                ghost = newValue
+                lossText = nil
+                flash = false
+            }
+        }
+    }
+
+    private func width(of v: Double, in total: CGFloat) -> CGFloat {
+        max(0, total * CGFloat(min(max(v, 0), 100) / 100.0))
+    }
+}
+
+// MARK: - Round status (centre of the broadcast bar)
+
+/// Round counter, 8 progress cells, then the trend bar. Never shows exact points.
+struct BroadcastCenter: View {
+    let round: Int
+    let totalRounds: Int
+    let exchange: Int
     let exchangesPerRound: Int
     /// Who came out ahead in each finished exchange of this round (`nil` = a wash).
     let winners: [Side?]
@@ -16,12 +240,15 @@ struct RoundStatusStrip: View {
     let trend: RoundTrend
 
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(spacing: 3) {
+            Text("ROUND \(round)/\(totalRounds) · 交手 \(exchange)/\(exchangesPerRound)")
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             progressCells
-                .frame(width: 112)
             TrendBar(trend: trend)
         }
-        .frame(height: 26)
+        .frame(width: 190)
     }
 
     private var progressCells: some View {
@@ -29,7 +256,7 @@ struct RoundStatusStrip: View {
             ForEach(0..<exchangesPerRound, id: \.self) { index in
                 RoundedRectangle(cornerRadius: 2)
                     .fill(fill(for: index))
-                    .frame(height: 10)
+                    .frame(height: 6)
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
                             .stroke(Color.yellow, lineWidth: index + 1 == currentExchange ? 1.5 : 0)
@@ -54,7 +281,7 @@ struct TrendBar: View {
     let trend: RoundTrend
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     HStack(spacing: 0) {
@@ -70,10 +297,10 @@ struct TrendBar: View {
                 }
                 .animation(.easeInOut(duration: 0.5), value: trend.value)
             }
-            .frame(height: 8)
+            .frame(height: 6)
 
             Text(caption)
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .foregroundStyle(captionColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -94,87 +321,6 @@ struct TrendBar: View {
         case .some(.b): return .red
         case .none: return .secondary
         }
-    }
-}
-
-// MARK: - Health bar with loss emphasis
-
-/// A bar that keeps a bright "ghost" segment where the health used to be, then drains it, and shows the loss amount.
-struct HealthBarRow: View {
-    let label: String
-    let value: Double
-    let color: Color
-    var tracksLoss: Bool = false
-
-    @State private var ghost: Double = 0
-    @State private var lossText: String? = nil
-    @State private var lossOpacity: Double = 0
-    @State private var flash: Bool = false
-
-    private var isLow: Bool { tracksLoss && value <= 25 }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, design: .monospaced))
-                .frame(width: 34, alignment: .leading)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.white.opacity(0.12))
-                    if tracksLoss {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.white.opacity(0.9))
-                            .frame(width: width(of: ghost, in: geo.size.width))
-                    }
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(isLow ? Color.red : color)
-                        .frame(width: width(of: value, in: geo.size.width))
-                        .animation(.easeOut(duration: 0.3), value: value)
-                }
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(Color.white, lineWidth: flash ? 1.5 : 0)
-                )
-            }
-            .frame(height: 6)
-            ZStack(alignment: .trailing) {
-                Text("\(Int(value.rounded()))")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(isLow ? Color.red : Color.primary)
-                if let lossText {
-                    Text(lossText)
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(.red)
-                        .offset(y: -9)
-                        .opacity(lossOpacity)
-                }
-            }
-            .frame(width: 26, alignment: .trailing)
-        }
-        .onAppear { ghost = value }
-        .onChange(of: value) { oldValue, newValue in
-            guard tracksLoss else { return }
-            if newValue < oldValue - 0.5 {
-                ghost = max(ghost, oldValue)
-                lossText = "-\(Int((oldValue - newValue).rounded()))"
-                lossOpacity = 1
-                flash = true
-                withAnimation(.easeOut(duration: 0.5).delay(0.45)) { ghost = newValue }
-                withAnimation(.easeIn(duration: 0.9).delay(0.7)) {
-                    lossOpacity = 0
-                    flash = false
-                }
-            } else {
-                ghost = newValue
-                lossText = nil
-                flash = false
-            }
-        }
-    }
-
-    private func width(of v: Double, in total: CGFloat) -> CGFloat {
-        max(0, total * CGFloat(min(max(v, 0), 100) / 100.0))
     }
 }
 
@@ -230,9 +376,11 @@ struct BattleAlert: Identifiable, Equatable {
     }
 }
 
-/// Non-interactive overlay: a pulsing coloured frame around the whole battle area plus stacked banners at the top.
+/// Non-interactive overlay: a pulsing coloured frame around the whole screen plus stacked banners under the
+/// broadcast bar (`topOffset` keeps them from covering it).
 struct BattleAlertOverlay: View {
     let alerts: [BattleAlert]
+    var topOffset: CGFloat = 8
 
     @State private var pulse = false
 
@@ -262,8 +410,9 @@ struct BattleAlertOverlay: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+            .frame(maxWidth: 480)
             .padding(.horizontal, 8)
-            .padding(.top, 8)
+            .padding(.top, topOffset)
         }
         .animation(.easeInOut(duration: 0.25), value: alerts)
         .allowsHitTesting(false)

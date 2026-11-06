@@ -25,13 +25,12 @@ targets:
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mrhai.octagoncards
         SWIFT_VERSION: "6.0"
-        MARKETING_VERSION: "0.5.5"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "0.6.0"
+        CURRENT_PROJECT_VERSION: "11"
         TARGETED_DEVICE_FAMILY: "1"
