@@ -1,0 +1,423 @@
+{
+ "_readme": "App-side look table for the small chibi body (docs/VISUAL_DIRECTION.md 3.3). Filled by eye from the official photos, first draft; correct via the preview screen. skin=#RRGGBB base tone; build=slim|normal|stocky; ink zone density 0-3 (L/R = left/right side of the official photo); inkTint optional; shorts optional override. Fighters missing here use defaults.",
+ "fighters": {
+  "tom-aspinall": {
+   "skin": "#E2B096",
+   "build": "stocky",
+   "ink": {
+    "chest": 3,
+    "belly": 0,
+    "upperL": 3,
+    "foreL": 3,
+    "upperR": 1,
+    "foreR": 2
+   },
+   "shorts": "#E1E4EB"
+  },
+  "islam-makhachev": {
+   "skin": "#D6A080",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#ECECF0"
+  },
+  "jon-jones": {
+   "skin": "#6E4634",
+   "build": "stocky",
+   "ink": {
+    "chest": 1,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#424852"
+  },
+  "khamzat-chimaev": {
+   "skin": "#DEA886",
+   "build": "stocky",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E1E24"
+  },
+  "shavkat-rakhmonov": {
+   "skin": "#DAA07E",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E1E24"
+  },
+  "merab-dvalishvili": {
+   "skin": "#DCA688",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#BE2828"
+  },
+  "umar-nurmagomedov": {
+   "skin": "#D6A080",
+   "build": "slim",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#E8E8EC"
+  },
+  "arman-tsarukyan": {
+   "skin": "#CE9470",
+   "build": "stocky",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E2030"
+  },
+  "ilia-topuria": {
+   "skin": "#DAA080",
+   "build": "normal",
+   "ink": {
+    "chest": 3,
+    "belly": 0,
+    "upperL": 1,
+    "foreL": 0,
+    "upperR": 2,
+    "foreR": 3
+   },
+   "shorts": "#C83828"
+  },
+  "petr-yan": {
+   "skin": "#E2AA8C",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#28304F"
+  },
+  "sean-omalley": {
+   "skin": "#E2B296",
+   "build": "slim",
+   "ink": {
+    "chest": 3,
+    "belly": 2,
+    "upperL": 1,
+    "foreL": 2,
+    "upperR": 2,
+    "foreR": 3
+   },
+   "inkTint": "#963C46",
+   "shorts": "#283C78"
+  },
+  "charles-oliveira": {
+   "skin": "#C89678",
+   "build": "normal",
+   "ink": {
+    "chest": 2,
+    "belly": 1,
+    "upperL": 3,
+    "foreL": 3,
+    "upperR": 2,
+    "foreR": 3
+   },
+   "shorts": "#1C1C22"
+  },
+  "ciryl-gane": {
+   "skin": "#96644C",
+   "build": "stocky",
+   "ink": {
+    "chest": 1,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E4696"
+  },
+  "magomed-ankalaev": {
+   "skin": "#E2B096",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1C1C22"
+  },
+  "justin-gaethje": {
+   "skin": "#E6B294",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 1,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#BECEE6"
+  },
+  "alexander-volkanovski": {
+   "skin": "#DEAA8C",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 2,
+    "foreL": 2,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E6440"
+  },
+  "max-holloway": {
+   "skin": "#BE8A68",
+   "build": "normal",
+   "ink": {
+    "chest": 3,
+    "belly": 2,
+    "upperL": 3,
+    "foreL": 3,
+    "upperR": 3,
+    "foreR": 2
+   },
+   "shorts": "#24262E"
+  },
+  "dricus-du-plessis": {
+   "skin": "#D8A486",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E6E3C"
+  },
+  "diego-lopes": {
+   "skin": "#C89670",
+   "build": "normal",
+   "ink": {
+    "chest": 3,
+    "belly": 1,
+    "upperL": 0,
+    "foreL": 1,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#324682"
+  },
+  "ian-machado-garry": {
+   "skin": "#E8BEA4",
+   "build": "slim",
+   "ink": {
+    "chest": 1,
+    "belly": 1,
+    "upperL": 0,
+    "foreL": 1,
+    "upperR": 0,
+    "foreR": 1
+   },
+   "shorts": "#4632A0"
+  },
+  "sean-strickland": {
+   "skin": "#D6A082",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1C1E22"
+  },
+  "alexandre-pantoja": {
+   "skin": "#C89270",
+   "build": "normal",
+   "ink": {
+    "chest": 1,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 3,
+    "foreR": 3
+   },
+   "shorts": "#781E28"
+  },
+  "alex-pereira": {
+   "skin": "#BE8464",
+   "build": "stocky",
+   "ink": {
+    "chest": 3,
+    "belly": 3,
+    "upperL": 3,
+    "foreL": 1,
+    "upperR": 2,
+    "foreR": 3
+   },
+   "inkTint": "#8C3228",
+   "shorts": "#E6C428"
+  },
+  "belal-muhammad": {
+   "skin": "#C89676",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#286440"
+  },
+  "jiri-prochazka": {
+   "skin": "#D6A082",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#BE1E24"
+  },
+  "robert-whittaker": {
+   "skin": "#CE9674",
+   "build": "normal",
+   "ink": {
+    "chest": 1,
+    "belly": 0,
+    "upperL": 3,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#2C2E38"
+  },
+  "cory-sandhagen": {
+   "skin": "#EABEA6",
+   "build": "slim",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 1,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#242428"
+  },
+  "dustin-poirier": {
+   "skin": "#DEAA8C",
+   "build": "normal",
+   "ink": {
+    "chest": 2,
+    "belly": 0,
+    "upperL": 3,
+    "foreL": 3,
+    "upperR": 3,
+    "foreR": 3
+   },
+   "shorts": "#323C78"
+  },
+  "israel-adesanya": {
+   "skin": "#603E2E",
+   "build": "slim",
+   "ink": {
+    "chest": 2,
+    "belly": 1,
+    "upperL": 2,
+    "foreL": 1,
+    "upperR": 2,
+    "foreR": 1
+   },
+   "shorts": "#28283A"
+  },
+  "jack-della-maddalena": {
+   "skin": "#ECB89C",
+   "build": "normal",
+   "ink": {
+    "chest": 0,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 0,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#1E1E24"
+  },
+  "dan-hooker": {
+   "skin": "#D8A082",
+   "build": "normal",
+   "ink": {
+    "chest": 3,
+    "belly": 3,
+    "upperL": 3,
+    "foreL": 3,
+    "upperR": 3,
+    "foreR": 3
+   },
+   "shorts": "#1C1E24"
+  },
+  "michael-chandler": {
+   "skin": "#CE8C6A",
+   "build": "stocky",
+   "ink": {
+    "chest": 1,
+    "belly": 0,
+    "upperL": 0,
+    "foreL": 1,
+    "upperR": 0,
+    "foreR": 0
+   },
+   "shorts": "#C8242C"
+  }
+ }
+}

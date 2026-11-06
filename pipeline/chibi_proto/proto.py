@@ -22,9 +22,9 @@ POSES = {
  'idle2':  dict(lean=5,  uF=26, fF=146, uB=6,  fB=146, tF=27, sF=-6,  tB=-18, sB=-38, headDx=0, headDy=1),
  'jab':    dict(lean=12, uF=84, fF=90,  uB=10, fB=150, tF=30, sF=-2,  tB=-22, sB=-36, headDx=1, headDy=1),
  'cross':  dict(lean=20, uF=20, fF=140, uB=78, fB=88,  tF=34, sF=-4,  tB=-28, sB=-40, headDx=2, headDy=1),
- 'kick':   dict(lean=-14,uF=20, fF=135, uB=-10,fB=120,tF=4,  sF=-4,  tB=70,  sB=38,  headDx=-1,headDy=0),
+ 'kick':   dict(lean=-20,uF=30, fF=150, uB=-14,fB=120,tF=2,  sF=-2,  tB=84,  sB=80,  headDx=-1,headDy=0),
  'hurt':   dict(lean=-16,uF=-8, fF=70,  uB=-22,fB=55,  tF=20, sF=-6,  tB=-14, sB=-30, headDx=-2,headDy=1),
- 'down':   dict(lean=-34,uF=-30,fF=10,  uB=-40,fB=0,   tF=34, sF=10,  tB=-6,  sB=-44, headDx=-3,headDy=2),
+ 'down':   dict(lean=-44,uF=-50,fF=-8,  uB=-62,fB=-14, tF=44, sF=-14, tB=14,  sB=-56, headDx=-5,headDy=3),
 }
 
 OUTLINE=(18,20,31)
@@ -43,7 +43,7 @@ def vnoise(x,y,seed):
 
 def ink_mask(lx,ly,density,seed,cell):
     """Stable blobs in part-local coordinates, so the ink follows the limb and doesn't shimmer between frames."""
-    thr={0:-1,1:0.36,2:0.46,3:0.57}[density]
+    thr={0:-1,1:0.30,2:0.42,3:0.54}[density]
     return vnoise(lx/cell,ly/cell,seed)<thr
 
 class Canvas:

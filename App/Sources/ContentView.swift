@@ -11,7 +11,7 @@ struct ContentView: View {
     @State private var session = BattleSession()
     @State private var prefetch = RosterPrefetchModel()
     @State private var screen: Screen = .preFight
-    @State private var showRigCut = false
+    @State private var showChibi = false
 
     var body: some View {
         ZStack {
@@ -33,9 +33,9 @@ struct ContentView: View {
             RosterPrefetchPill(model: prefetch)
         }
         .overlay(alignment: .bottomLeading) {
-            // Dev-only entry for the P6-2 Vision cut check; kept out of PreFightView/BattleView on purpose.
+            // Dev-only entry for the P6-3 chibi preview; kept out of PreFightView/BattleView on purpose.
             if screen == .preFight {
-                Button("🔬 Rig") { showRigCut = true }
+                Button("🧍 Q版") { showChibi = true }
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -45,8 +45,8 @@ struct ContentView: View {
                     .padding(.bottom, 6)
             }
         }
-        .fullScreenCover(isPresented: $showRigCut) {
-            RigCutDebugView { showRigCut = false }
+        .fullScreenCover(isPresented: $showChibi) {
+            ChibiPreviewView { showChibi = false }
         }
         .overlay {
             if prefetch.showOverlay {
