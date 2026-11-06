@@ -19,10 +19,20 @@ struct BattleView: View {
             let isLandscape = geo.size.width > geo.size.height
             VStack(spacing: 8) {
                 topBar
-                if isLandscape {
-                    landscapeBody
-                } else {
-                    portraitBody
+                Group {
+                    if isLandscape {
+                        landscapeBody
+                    } else {
+                        portraitBody
+                    }
+                }
+                .overlay {
+                    // While an exchange plays, tapping anywhere on the battle area skips to its end.
+                    if session.isPlaying {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { session.skipPlayback() }
+                    }
                 }
             }
             .padding(10)
@@ -67,7 +77,7 @@ struct BattleView: View {
                     .font(.system(.caption2, design: .monospaced, weight: .semibold))
                     .buttonStyle(.bordered)
 
-                Text("R\(session.currentRound)/\(session.totalRounds) · 交手 \(session.currentExchange)/\(session.exchangesPerRound)")
+                Text("R\(session.shownRound)/\(session.totalRounds) · 交手 \(session.shownExchange)/\(session.exchangesPerRound)")
                     .font(.system(.subheadline, design: .monospaced, weight: .heavy))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -100,7 +110,8 @@ struct BattleView: View {
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
             Spacer()
-            ForEach(session.completedRounds, id: \.round) { rLog in
+            speedMenu
+            ForEach(Array(session.completedRounds.prefix(session.shownCompletedRounds)), id: \.round) { rLog in
                 if let sc = rLog.score {
                     Text("R\(sc.round): \(sc.pointsA)-\(sc.pointsB)")
                         .font(.system(.caption2, design: .monospaced, weight: .bold))
@@ -112,6 +123,29 @@ struct BattleView: View {
             }
         }
         .frame(height: 18)
+    }
+
+    private var speedMenu: some View {
+        Menu {
+            ForEach(PlaybackSpeed.allCases) { speed in
+                Button {
+                    session.setPlaybackSpeed(speed)
+                } label: {
+                    if speed == session.playbackSpeed {
+                        Label(speed.label, systemImage: "checkmark")
+                    } else {
+                        Text(speed.label)
+                    }
+                }
+            }
+        } label: {
+            Text("⏱ \(session.playbackSpeed.label)")
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.white.opacity(0.1))
+                .clipShape(Capsule())
+        }
     }
 
     // MARK: - Cage
@@ -130,14 +164,14 @@ struct BattleView: View {
                 fighter: session.fighterA,
                 headData: session.headshotDataA,
                 roleTag: "🟢 玩家",
-                cond: session.state.a,
+                cond: session.displayState.a,
                 tint: .green
             )
             FighterStatusCard(
                 fighter: session.fighterB,
                 headData: session.headshotDataB,
                 roleTag: "🔴 AI",
-                cond: session.state.b,
+                cond: session.displayState.b,
                 tint: .red
             )
         }
@@ -147,7 +181,7 @@ struct BattleView: View {
 
     @ViewBuilder
     private var infoZone: some View {
-        if let ground = session.state.ground {
+        if let ground = session.displayState.ground {
             groundStatusBanner(ground)
         } else {
             standingStatusBanner
@@ -241,11 +275,49 @@ struct BattleView: View {
 
     @ViewBuilder
     private var handZone: some View {
-        if let outcome = session.matchOutcome {
+        if session.isPlaying {
+            playbackPanel
+        } else if let outcome = session.matchOutcome {
             outcomeBanner(outcome)
         } else {
             cardSelectionSection
         }
+    }
+
+    /// Replaces the hand while an exchange plays: the hand is locked and the commentary scrolls here.
+    private var playbackPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("🎬 交手進行中")
+                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                    .foregroundStyle(.yellow)
+                Spacer()
+                Text("手牌鎖定 · 點畫面任意處跳過")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            let lines = session.narrationLines
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    let isLatest = index == lines.count - 1
+                    Text(line)
+                        .font(.system(isLatest ? .callout : .caption, design: .monospaced, weight: isLatest ? .bold : .regular))
+                        .foregroundStyle(isLatest ? Color.white : Color.white.opacity(0.45))
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: lines.count)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.yellow.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.yellow.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var cardSelectionSection: some View {
@@ -474,6 +546,7 @@ struct FighterStatusCard: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(color)
                         .frame(width: max(0, geo.size.width * CGFloat(value / 100.0)))
+                        .animation(.easeOut(duration: 0.3), value: value)
                 }
             }
             .frame(height: 6)

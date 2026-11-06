@@ -31,6 +31,18 @@ final class BattleSession {
     var judgeScorecards: [JudgeScorecard] = []
     var copiedToast: Bool = false
 
+    // MARK: Display state (P5-3)
+    // `state` is always the engine's truth and is updated the moment a card is played. Everything the
+    // player sees (health bars, ground banner, round counters) follows `displayState`, which the playback
+    // advances beat by beat and which snaps back to `state` when the exchange finishes or is skipped.
+    var displayState = FightState()
+    var shownRound: Int = 1
+    var shownExchange: Int = 1
+    var shownCompletedRounds: Int = 0
+    var isPlaying: Bool = false
+    var narrationLines: [String] = []
+    var playbackSpeed: PlaybackSpeed = .standard
+
     let totalRounds = 3
     let exchangesPerRound = 8
 
@@ -39,6 +51,19 @@ final class BattleSession {
 
     @ObservationIgnored private var rng: SeededRNG
     private let ai = StyleAI()
+
+    @ObservationIgnored private var playbackTask: Task<Void, Never>?
+    @ObservationIgnored private var playbackGeneration = 0
+    @ObservationIgnored private var pendingSceneReset = false
+    @ObservationIgnored private var pendingFinish: ExchangeFinish?
+    @ObservationIgnored private var layoutApplied = false
+
+    private static let playbackSpeedKey = "playbackSpeed"
+
+    func setPlaybackSpeed(_ speed: PlaybackSpeed) {
+        playbackSpeed = speed
+        UserDefaults.standard.set(speed.rawValue, forKey: Self.playbackSpeedKey)
+    }
 
     static func randomSeed() -> UInt64 {
         UInt64.random(in: 1...999_999)
@@ -57,6 +82,10 @@ final class BattleSession {
         aiHand = HandManager(side: .b, fighter: b, rng: &initRngB)
         seed = initialSeed
         rng = SeededRNG(seed: initialSeed)
+        if let saved = UserDefaults.standard.string(forKey: Self.playbackSpeedKey),
+           let speed = PlaybackSpeed(rawValue: saved) {
+            playbackSpeed = speed
+        }
 
         startNewMatch(withSeed: initialSeed)
     }
@@ -85,12 +114,13 @@ final class BattleSession {
     // MARK: - Derived
 
     var phaseSummaryText: String {
-        BattleText.phaseSummary(state)
+        BattleText.phaseSummary(displayState)
     }
 
     // MARK: - Match lifecycle
 
     func startNewMatch(withSeed newSeed: UInt64) {
+        cancelPlayback()
         seed = newSeed
         rng = SeededRNG(seed: newSeed)
         state = FightState()
@@ -105,6 +135,7 @@ final class BattleSession {
         copiedToast = false
         playerHand = HandManager(side: .a, fighter: fighterA, state: state, rng: &rng)
         aiHand = HandManager(side: .b, fighter: fighterB, state: state, rng: &rng)
+        syncDisplayToEngine()
         scene.resetPositions(distance: .long)
         refreshPixelSprites()
     }
@@ -133,7 +164,8 @@ final class BattleSession {
     // MARK: - Turn logic
 
     func playTurn(playerCard: Card) {
-        guard matchOutcome == nil else { return }
+        // Hand is locked while an exchange is still playing.
+        guard matchOutcome == nil, !isPlaying else { return }
 
         let aiPool = useFiveCardHandMode ? aiHand.activeHand : SampleData.allCards
         let aiCard = ai.chooseCard(
@@ -171,7 +203,9 @@ final class BattleSession {
                 damageByB: exLog.b.damageDealt
             )
         )
-        scene.playExchange(log: exLog)
+        // Presentation only: reads the finished log, never touches `rng` or the fight state.
+        let beats = ExchangePresentation.build(log: exLog, nameA: fighterA.name, nameB: fighterB.name)
+        var roundTurnedOver = false
 
         if let fin = exLog.finish {
             let rLog = RoundLog(
@@ -187,6 +221,7 @@ final class BattleSession {
                 round: currentRound,
                 exchangeInRound: currentExchange
             )
+            startPlayback(log: exLog, beats: beats, resetsScene: false)
             return
         }
 
@@ -219,7 +254,9 @@ final class BattleSession {
                 state.round = currentRound
                 playerHand.playCard(playerCard, updatedState: state, rng: &rng)
                 aiHand.playCard(aiCard, updatedState: state, rng: &rng)
-                scene.resetPositions(distance: state.distance)
+                // The scene is reset after this exchange has finished playing (P5-3). Resetting here used to run
+                // `removeAllActions` in the same tick as the animation and cancelled the round's last exchange.
+                roundTurnedOver = true
             } else {
                 let rLog = RoundLog(
                     round: currentRound,
@@ -234,6 +271,103 @@ final class BattleSession {
                 judgeScorecards = tallied.scorecards
             }
         }
+        startPlayback(log: exLog, beats: beats, resetsScene: roundTurnedOver)
+    }
+
+    // MARK: - Exchange playback (P5-3)
+
+    /// Plays the beats of one already-resolved exchange. The engine state is already final; this only moves
+    /// what the player sees (health bars, cage animation, narration) and never reads or advances `rng`.
+    private func startPlayback(log: ExchangeLog, beats: [ExchangeBeat], resetsScene: Bool) {
+        playbackTask?.cancel()
+        playbackGeneration += 1
+        let generation = playbackGeneration
+        isPlaying = true
+        narrationLines = []
+        pendingSceneReset = resetsScene
+        pendingFinish = log.finish
+        layoutApplied = false
+        scene.beginExchange()
+
+        // Show the pre-exchange picture first (the engine state has already moved on).
+        displayState = log.stateBefore
+        displayState.round = state.round
+
+        let durations = BattlePlayback.timeline(for: beats, log: log, speed: playbackSpeed)
+        playbackTask = Task { [weak self] in
+            for (beat, seconds) in zip(beats, durations) {
+                guard let self, !Task.isCancelled, self.playbackGeneration == generation else { return }
+                self.apply(beat: beat, log: log, duration: seconds)
+                do {
+                    try await Task.sleep(for: .seconds(seconds))
+                } catch {
+                    return
+                }
+            }
+            guard let self, !Task.isCancelled, self.playbackGeneration == generation else { return }
+            self.completePlayback()
+        }
+    }
+
+    private func apply(beat: ExchangeBeat, log: ExchangeLog, duration: TimeInterval) {
+        var shown = displayState
+        shown.a.health = beat.display.a.health
+        shown.a.isRocked = beat.display.a.isRocked
+        shown.a.cutSeverity = beat.display.a.cutSeverity
+        shown.b.health = beat.display.b.health
+        shown.b.isRocked = beat.display.b.isRocked
+        shown.b.cutSeverity = beat.display.b.cutSeverity
+        if beat.kind.changesPosition && !layoutApplied {
+            layoutApplied = true
+            shown.distance = log.stateAfter.distance
+            shown.ground = log.stateAfter.ground
+            shown.isClinch = log.stateAfter.isClinch
+        }
+        displayState = shown
+
+        narrationLines.append(beat.narration)
+        if narrationLines.count > 4 {
+            narrationLines.removeFirst(narrationLines.count - 4)
+        }
+        scene.play(beat: beat, log: log, duration: duration)
+    }
+
+    /// Tap-to-skip: jump to the end of the exchange right now.
+    func skipPlayback() {
+        guard isPlaying else { return }
+        playbackTask?.cancel()
+        completePlayback()
+    }
+
+    private func completePlayback() {
+        guard isPlaying else { return }
+        playbackTask = nil
+        isPlaying = false
+        syncDisplayToEngine()
+        if pendingSceneReset {
+            pendingSceneReset = false
+            scene.resetPositions(distance: state.distance)
+        } else {
+            scene.settle(to: state, finish: pendingFinish)
+        }
+        pendingFinish = nil
+    }
+
+    private func cancelPlayback() {
+        playbackTask?.cancel()
+        playbackTask = nil
+        playbackGeneration += 1
+        isPlaying = false
+        pendingSceneReset = false
+        pendingFinish = nil
+        narrationLines = []
+    }
+
+    private func syncDisplayToEngine() {
+        displayState = state
+        shownRound = currentRound
+        shownExchange = currentExchange
+        shownCompletedRounds = completedRounds.count
     }
 
     // MARK: - Debug / replay

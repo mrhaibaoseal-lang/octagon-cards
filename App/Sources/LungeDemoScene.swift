@@ -1,8 +1,17 @@
 import SpriteKit
 import FightEngine
 
-/// L0/L1 Octagon battle scene: supports standing range adjustments (`.long`, `.mid`, `.close`),
-/// takedown transitions, top/bottom ground grappling posture, GnP animations, sweeps, and submission lock states.
+/// The scene's own `Side` (left / right) shadows the engine's `Side` (.a / .b) inside the class,
+/// so engine sides are always spelled `EngineSide` here. `.a` is the left fighter, `.b` the right one.
+private typealias EngineSide = FightEngine.Side
+
+/// L0/L1 Octagon battle scene: standing range adjustments (`.long`, `.mid`, `.close`), takedown transitions,
+/// top/bottom ground grappling posture, GnP, sweeps and submission pulses.
+///
+/// P5-3: the scene no longer animates a whole exchange at once. `BattleSession` feeds it one
+/// `ExchangeBeat` at a time through `play(beat:log:duration:)`; every beat animation is sized as a fraction of
+/// the beat's duration so it always finishes before the next beat starts. Nothing here uses `SeededRNG`
+/// or changes fight state.
 final class LungeDemoScene: SKScene {
     enum Side { case left, right }
 
@@ -12,11 +21,14 @@ final class LungeDemoScene: SKScene {
     private var rightHasTexture: Bool = false
     private let cageLine = SKShapeNode()
     private let statusLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+    private let flashOverlay = SKSpriteNode(color: .white, size: .zero)
     private var currentDistance: Distance = .long
     private var currentGround: GroundState? = nil
     private var currentClinch: Bool = false
-    private var leftHome = CGPoint.zero
-    private var rightHome = CGPoint.zero
+    private var rockedA = false
+    private var rockedB = false
+    /// Loser of a standing KO / TKO; stays on the canvas after the fight ends.
+    private var downedSide: EngineSide? = nil
 
     private var isSetUp = false
 
@@ -42,6 +54,11 @@ final class LungeDemoScene: SKScene {
 
         addChild(leftFighter)
         addChild(rightFighter)
+
+        flashOverlay.alpha = 0
+        flashOverlay.zPosition = 15
+        addChild(flashOverlay)
+
         layoutFighters(animated: false)
     }
 
@@ -49,6 +66,8 @@ final class LungeDemoScene: SKScene {
         guard leftFighter.parent != nil else { return }
         layoutFighters(animated: false)
     }
+
+    // MARK: - Layout
 
     private func homes(for distance: Distance) -> (CGPoint, CGPoint) {
         let spread: CGFloat
@@ -63,6 +82,68 @@ final class LungeDemoScene: SKScene {
             CGPoint(x: size.width * (0.5 + spread), y: y)
         )
     }
+
+    private func node(_ side: EngineSide) -> SKSpriteNode {
+        side == .a ? leftFighter : rightFighter
+    }
+
+    /// +1 when the fighter faces right (left corner), -1 when facing left.
+    private func dir(_ side: EngineSide) -> CGFloat {
+        side == .a ? 1 : -1
+    }
+
+    /// Where a fighter stands (and how it is rotated) in the scene's current logical state.
+    private func rest(_ side: EngineSide) -> (pos: CGPoint, rot: CGFloat) {
+        if let g = currentGround {
+            let centerX = size.width * 0.5
+            if g.topSide == side {
+                return (CGPoint(x: centerX - 6, y: size.height * 0.48), .pi / 2)
+            }
+            return (CGPoint(x: centerX + 6, y: size.height * 0.30), .pi / 2)
+        }
+        let (lh, rh) = homes(for: currentDistance)
+        var p = side == .a ? lh : rh
+        var rot: CGFloat = 0
+        if downedSide == side {
+            // Pushed away from the winner and lying down.
+            let away = dir(side.opposite)
+            p.x += away * 28
+            p.y -= 22
+            rot = -away * (.pi / 2)
+        }
+        return (p, rot)
+    }
+
+    private func layoutFighters(animated: Bool, duration: TimeInterval = 0.22) {
+        statusLabel.position = CGPoint(x: size.width * 0.5, y: size.height - 8)
+        flashOverlay.size = size
+        flashOverlay.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 16, y: size.height * 0.16))
+        path.addLine(to: CGPoint(x: size.width - 16, y: size.height * 0.16))
+        cageLine.path = path
+
+        for side in [EngineSide.a, EngineSide.b] {
+            let n = node(side)
+            let r = rest(side)
+            if let g = currentGround {
+                n.zPosition = (g.topSide == side) ? 2 : 1
+            } else {
+                n.zPosition = 1
+            }
+            if animated {
+                n.run(.group([
+                    .move(to: r.pos, duration: duration),
+                    .rotate(toAngle: r.rot, duration: duration),
+                ]))
+            } else {
+                n.position = r.pos
+                n.zRotation = r.rot
+            }
+        }
+    }
+
+    // MARK: - Banner
 
     private func updateBannerText(refereeStandUp: Bool = false, finish: ExchangeFinish? = nil) {
         if let fin = finish {
@@ -101,65 +182,7 @@ final class LungeDemoScene: SKScene {
         }
     }
 
-    private func layoutFighters(animated: Bool) {
-        statusLabel.position = CGPoint(x: size.width * 0.5, y: size.height - 8)
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 16, y: size.height * 0.16))
-        path.addLine(to: CGPoint(x: size.width - 16, y: size.height * 0.16))
-        cageLine.path = path
-
-        if let g = currentGround {
-            let centerX = size.width * 0.5
-            let bottomY = size.height * 0.30
-            let topY = size.height * 0.48
-            let topNode = (g.topSide == .a) ? leftFighter : rightFighter
-            let bottomNode = (g.topSide == .a) ? rightFighter : leftFighter
-            topNode.zPosition = 2
-            bottomNode.zPosition = 1
-
-            let topTarget = CGPoint(x: centerX - 6, y: topY)
-            let bottomTarget = CGPoint(x: centerX + 6, y: bottomY)
-            let rot: CGFloat = .pi / 2
-
-            if animated {
-                topNode.run(.group([
-                    .move(to: topTarget, duration: 0.22),
-                    .rotate(toAngle: rot, duration: 0.22),
-                ]))
-                bottomNode.run(.group([
-                    .move(to: bottomTarget, duration: 0.22),
-                    .rotate(toAngle: rot, duration: 0.22),
-                ]))
-            } else {
-                topNode.position = topTarget
-                bottomNode.position = bottomTarget
-                topNode.zRotation = rot
-                bottomNode.zRotation = rot
-            }
-        } else {
-            let (lh, rh) = homes(for: currentDistance)
-            leftHome = lh
-            rightHome = rh
-            leftFighter.zPosition = 1
-            rightFighter.zPosition = 1
-
-            if animated {
-                leftFighter.run(.group([
-                    .move(to: leftHome, duration: 0.20),
-                    .rotate(toAngle: 0, duration: 0.20),
-                ]))
-                rightFighter.run(.group([
-                    .move(to: rightHome, duration: 0.20),
-                    .rotate(toAngle: 0, duration: 0.20),
-                ]))
-            } else {
-                leftFighter.position = leftHome
-                rightFighter.position = rightHome
-                leftFighter.zRotation = 0
-                rightFighter.zRotation = 0
-            }
-        }
-    }
+    // MARK: - Textures & tint
 
     func applyFighterTexture(side: Side, pngData: Data) {
         guard !pngData.isEmpty, let image = UIImage(data: pngData) else { return }
@@ -179,122 +202,529 @@ final class LungeDemoScene: SKScene {
         } else {
             rightHasTexture = true
         }
+        applyTintNow()
     }
 
+    private func tintParams(_ side: EngineSide) -> (SKColor, CGFloat) {
+        let hasTexture = side == .a ? leftHasTexture : rightHasTexture
+        let rocked = side == .a ? rockedA : rockedB
+        if rocked {
+            return (side == .a ? .systemYellow : .systemOrange, hasTexture ? 0.55 : 1.0)
+        }
+        if hasTexture {
+            return (.white, 0.0)
+        }
+        return (side == .a ? .systemGreen : .systemRed, 1.0)
+    }
+
+    private func applyTintNow() {
+        for side in [EngineSide.a, EngineSide.b] {
+            let (c, f) = tintParams(side)
+            node(side).color = c
+            node(side).colorBlendFactor = f
+        }
+    }
+
+    /// Flash a fighter a solid color, then fade back to its normal (or Rocked) tint.
+    private func flashAction(_ side: EngineSide, color: SKColor = .white) -> SKAction {
+        let (c, f) = tintParams(side)
+        return SKAction.sequence([
+            SKAction.colorize(with: color, colorBlendFactor: 1, duration: 0.02),
+            SKAction.colorize(with: c, colorBlendFactor: f, duration: 0.14),
+        ])
+    }
+
+    // MARK: - Resets
+
     func resetPositions(distance: Distance = .long) {
+        speed = 1
+        clearEffects()
+        downedSide = nil
+        rockedA = false
+        rockedB = false
         currentDistance = distance
         currentGround = nil
         currentClinch = false
-        leftFighter.removeAllActions()
-        rightFighter.removeAllActions()
-        leftFighter.color = leftHasTexture ? .white : .systemGreen
-        leftFighter.colorBlendFactor = leftHasTexture ? 0.0 : 1.0
-        rightFighter.color = rightHasTexture ? .white : .systemRed
-        rightFighter.colorBlendFactor = rightHasTexture ? 0.0 : 1.0
+        for n in [leftFighter, rightFighter] {
+            n.removeAllActions()
+            n.setScale(1)
+            n.alpha = 1
+        }
+        applyTintNow()
         updateBannerText()
         layoutFighters(animated: false)
     }
 
-    func playExchange(log: ExchangeLog) {
-        currentDistance = log.stateAfter.distance
-        currentGround = log.stateAfter.ground
-        currentClinch = log.stateAfter.isClinch
-        let (lh, rh) = homes(for: currentDistance)
-        leftHome = lh
-        rightHome = rh
-
-        if log.stateAfter.a.isRocked {
-            leftFighter.color = .systemYellow
-            leftFighter.colorBlendFactor = leftHasTexture ? 0.55 : 1.0
+    /// Jump straight to the final look of an exchange (used when playback finishes or is skipped).
+    /// A standing KO / TKO leaves the loser lying on the canvas.
+    func settle(to state: FightState, finish: ExchangeFinish?) {
+        speed = 1
+        clearEffects()
+        adoptStructure(state)
+        rockedA = state.a.isRocked
+        rockedB = state.b.isRocked
+        if let fin = finish, fin.reason != .submission, state.ground == nil {
+            downedSide = fin.winner.opposite
         } else {
-            leftFighter.color = leftHasTexture ? .white : .systemGreen
-            leftFighter.colorBlendFactor = leftHasTexture ? 0.0 : 1.0
+            downedSide = nil
         }
-
-        if log.stateAfter.b.isRocked {
-            rightFighter.color = .systemOrange
-            rightFighter.colorBlendFactor = rightHasTexture ? 0.55 : 1.0
-        } else {
-            rightFighter.color = rightHasTexture ? .white : .systemRed
-            rightFighter.colorBlendFactor = rightHasTexture ? 0.0 : 1.0
+        for n in [leftFighter, rightFighter] {
+            n.removeAllActions()
+            n.setScale(1)
+            n.alpha = 1
         }
-        updateBannerText(refereeStandUp: log.refereeStandUp, finish: log.finish)
+        applyTintNow()
+        updateBannerText(finish: finish)
+        layoutFighters(animated: false)
+    }
 
-        if let g = currentGround {
-            // Ground animation (takedown entry, GnP, sweep, or submission squeeze)
-            layoutFighters(animated: true)
-            let topNode = (g.topSide == .a) ? leftFighter : rightFighter
-            let bottomNode = (g.topSide == .a) ? rightFighter : leftFighter
-            if log.a.damageDealt > 0 || log.b.damageDealt > 0 {
-                // Ground & Pound posture-up and slam
-                let posture = SKAction.moveBy(x: 0, y: 18, duration: 0.08)
-                let slam = SKAction.moveBy(x: 0, y: -18, duration: 0.06)
-                let flash = SKAction.sequence([
-                    SKAction.colorize(with: .white, colorBlendFactor: 1, duration: 0.03),
-                    SKAction.colorize(withColorBlendFactor: 0, duration: 0.15),
-                ])
-                topNode.run(.sequence([.wait(forDuration: 0.22), posture, slam]))
-                bottomNode.run(.sequence([.wait(forDuration: 0.30), flash]))
-            } else if g.activeSubmission != nil {
-                // Submission squeeze pulse
-                let pulse = SKAction.sequence([
-                    SKAction.scale(to: 1.08, duration: 0.10),
-                    SKAction.scale(to: 1.0, duration: 0.10),
-                ])
-                topNode.run(pulse)
-                bottomNode.run(pulse)
-            }
-        } else {
-            if log.a.damageDealt > 0 && log.a.damageDealt >= log.b.damageDealt {
-                leftFighter.zRotation = 0
-                rightFighter.zRotation = 0
-                attack(from: .left, knockedOut: log.finish?.winner == .a)
-            } else if log.b.damageDealt > 0 {
-                leftFighter.zRotation = 0
-                rightFighter.zRotation = 0
-                attack(from: .right, knockedOut: log.finish?.winner == .b)
-            } else {
-                layoutFighters(animated: true)
-            }
+    /// Called before the first beat of an exchange.
+    func beginExchange() {
+        speed = 1
+        clearEffects()
+    }
+
+    private func clearEffects() {
+        removeChildren(in: children.filter { $0.name == "floater" })
+        flashOverlay.removeAllActions()
+        flashOverlay.alpha = 0
+    }
+
+    private func adoptStructure(_ state: FightState) {
+        currentDistance = state.distance
+        currentGround = state.ground
+        currentClinch = state.isClinch
+    }
+
+    /// Stops whatever the previous beat was doing and puts both fighters on their resting pose.
+    private func snapToRest() {
+        applyTintNow()
+        for side in [EngineSide.a, EngineSide.b] {
+            let n = node(side)
+            let r = rest(side)
+            n.removeAllActions()
+            n.position = r.pos
+            n.zRotation = r.rot
+            n.setScale(1)
+            n.alpha = 1
         }
     }
 
-    func attack(from side: Side, knockedOut: Bool = false) {
-        let attacker = side == .left ? leftFighter : rightFighter
-        let defender = side == .left ? rightFighter : leftFighter
-        let home = side == .left ? leftHome : rightHome
-        let defenderHome = side == .left ? rightHome : leftHome
-        let dir: CGFloat = side == .left ? 1 : -1
-        let impactX = (leftHome.x + rightHome.x) / 2 - dir * 32
+    // MARK: - Floating text & screen flash
 
-        let windUp = SKAction.moveBy(x: -dir * 12, y: 0, duration: 0.08)
-        let lunge = SKAction.move(to: CGPoint(x: impactX, y: home.y), duration: 0.07)
-        let hitStop = SKAction.wait(forDuration: 0.07)
-        let recoil = SKAction.move(to: home, duration: 0.22)
+    private func floaterPoint(_ side: EngineSide) -> CGPoint {
+        let p = rest(side).pos
+        return CGPoint(x: p.x, y: p.y + (currentGround == nil ? 74 : 60))
+    }
 
-        let flash = SKAction.sequence([
-            SKAction.colorize(with: .white, colorBlendFactor: 1, duration: 0.02),
-            SKAction.colorize(withColorBlendFactor: 0, duration: 0.14),
+    private func spawnFloater(
+        _ text: String,
+        at point: CGPoint,
+        color: SKColor,
+        big: Bool = false,
+        delay: TimeInterval = 0
+    ) {
+        let fontSize: CGFloat = big ? 26 : 16
+        let container = SKNode()
+        container.name = "floater"
+        container.zPosition = 20
+        container.alpha = 0
+        container.setScale(0.6)
+
+        let shadow = SKLabelNode(fontNamed: "Menlo-Bold")
+        shadow.text = text
+        shadow.fontSize = fontSize
+        shadow.fontColor = SKColor(white: 0, alpha: 0.85)
+        shadow.verticalAlignmentMode = .center
+        shadow.position = CGPoint(x: 1.5, y: -1.5)
+        container.addChild(shadow)
+
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = text
+        label.fontSize = fontSize
+        label.fontColor = color
+        label.verticalAlignmentMode = .center
+        container.addChild(label)
+
+        container.position = CGPoint(
+            x: min(max(point.x, 44), max(44, size.width - 44)),
+            y: min(point.y, size.height - 30)
+        )
+        addChild(container)
+        container.run(.sequence([
+            .wait(forDuration: delay),
+            .group([
+                .fadeIn(withDuration: 0.04),
+                .scale(to: big ? 1.25 : 1.0, duration: 0.10),
+            ]),
+            .group([
+                .moveBy(x: 0, y: 30, duration: 0.8),
+                .sequence([.wait(forDuration: 0.5), .fadeOut(withDuration: 0.3)]),
+            ]),
+            .removeFromParent(),
+        ]))
+    }
+
+    private func flashScreen(alpha: CGFloat, delay: TimeInterval = 0) {
+        flashOverlay.removeAllActions()
+        flashOverlay.run(.sequence([
+            .wait(forDuration: delay),
+            .fadeAlpha(to: alpha, duration: 0.02),
+            .fadeAlpha(to: 0, duration: 0.18),
+        ]))
+    }
+
+    // MARK: - Beat playback
+
+    /// Plays one beat of an exchange. `duration` is the real time the beat stays on screen.
+    func play(beat: ExchangeBeat, log: ExchangeLog, duration: TimeInterval) {
+        // Slow motion for the finishing blow; it stays on through the finish beat.
+        if BattlePlayback.isFinishingBlow(beat, in: log) {
+            speed = CGFloat(BattlePlayback.finishSlowMotion)
+        }
+        // All animation lengths below are in scene time, so scale the real duration by the scene speed.
+        let d = max(0.1, duration * Double(speed))
+
+        rockedA = beat.display.a.isRocked
+        rockedB = beat.display.b.isRocked
+        snapToRest()
+
+        let grounded = currentGround != nil
+
+        switch beat.kind {
+        case .reveal:
+            for side in [EngineSide.a, EngineSide.b] {
+                node(side).run(.sequence([
+                    .moveBy(x: 0, y: 6, duration: 0.2 * d),
+                    .moveBy(x: 0, y: -6, duration: 0.2 * d),
+                ]))
+            }
+
+        case .action:
+            if let side = beat.actor {
+                // Ready stance: lean back a little, then settle.
+                let lean: CGFloat = grounded ? 0 : -dir(side) * 8
+                node(side).run(.sequence([
+                    .moveBy(x: lean, y: grounded ? 6 : 0, duration: 0.35 * d),
+                    .move(to: rest(side).pos, duration: 0.35 * d),
+                ]))
+            }
+
+        case .hit:
+            playHit(beat, d: d)
+
+        case .blocked:
+            playBlocked(beat, d: d)
+
+        case .dodged:
+            playDodged(beat, d: d)
+
+        case .missed:
+            if let side = beat.actor {
+                if grounded {
+                    bob(side, d: d)
+                } else {
+                    whiffLunge(side, reach: 40, d: d)
+                }
+                spawnFloater("落空", at: floaterPoint(side), color: SKColor(white: 0.8, alpha: 1), delay: 0.3 * d)
+            }
+
+        case .feint:
+            playFeint(beat, d: d)
+
+        case .move:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            layoutFighters(animated: true, duration: min(0.25, 0.5 * d))
+
+        case .takedown:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            spawnFloater("抱摔!", at: centerPoint, color: .systemCyan, big: true, delay: 0.1 * d)
+            flashScreen(alpha: 0.16, delay: 0.1 * d)
+
+        case .positionAdvance:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            spawnFloater("壓制升級", at: centerPoint, color: .systemTeal, delay: 0.1 * d)
+
+        case .sweep:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            spawnFloater("翻身反轉!", at: centerPoint, color: .systemMint, big: true, delay: 0.1 * d)
+
+        case .standUp:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            spawnFloater("起身", at: centerPoint, color: .systemMint, delay: 0.1 * d)
+
+        case .submissionStart:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            pulse(d: d, scale: 1.06)
+            spawnFloater("鎖技起手", at: centerPoint, color: .systemYellow, delay: 0.05 * d)
+
+        case .submissionLock:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            pulse(d: d, scale: 1.10)
+            spawnFloater("深鎖!", at: centerPoint, color: .systemOrange, big: true, delay: 0.05 * d)
+            flashScreen(alpha: 0.14, delay: 0.05 * d)
+
+        case .submissionEscape:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            pulse(d: d, scale: 1.06)
+            spawnFloater("脫困!", at: centerPoint, color: .systemGreen, delay: 0.05 * d)
+
+        case .rocked:
+            if let side = beat.target {
+                let wobble = SKAction.sequence([
+                    .moveBy(x: 5, y: 0, duration: 0.08 * d),
+                    .moveBy(x: -10, y: 0, duration: 0.16 * d),
+                    .moveBy(x: 10, y: 0, duration: 0.16 * d),
+                    .moveBy(x: -5, y: 0, duration: 0.08 * d),
+                ])
+                node(side).run(wobble)
+                spawnFloater("ROCKED!", at: floaterPoint(side), color: .systemOrange, big: true)
+                flashScreen(alpha: 0.12)
+            }
+
+        case .cut:
+            if let side = beat.target {
+                node(side).run(flashAction(side, color: .systemRed))
+                spawnFloater("割傷", at: floaterPoint(side), color: .systemRed)
+            }
+
+        case .interrupted:
+            if let side = beat.actor {
+                node(side).run(.sequence([
+                    .moveBy(x: -dir(side) * 8, y: 0, duration: 0.15 * d),
+                    .move(to: rest(side).pos, duration: 0.3 * d),
+                ]))
+                spawnFloater("被打斷", at: floaterPoint(side), color: SKColor(white: 0.8, alpha: 1))
+            }
+
+        case .refereeStandUp:
+            adoptStructure(log.stateAfter)
+            updateBannerText(refereeStandUp: true)
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            spawnFloater("裁判分開", at: centerPoint, color: .systemCyan, delay: 0.1 * d)
+
+        case .clinch:
+            adoptStructure(log.stateAfter)
+            updateBannerText()
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            spawnFloater("纏鬥", at: centerPoint, color: .systemOrange, delay: 0.1 * d)
+
+        case .cagePressure:
+            if let side = beat.target {
+                let away = dir(side.opposite)
+                node(side).run(.sequence([
+                    .moveBy(x: away * 10, y: 0, duration: 0.25 * d),
+                    .move(to: rest(side).pos, duration: 0.3 * d),
+                ]))
+                spawnFloater("貼籠", at: floaterPoint(side), color: SKColor(white: 0.85, alpha: 1))
+            }
+
+        case .recover:
+            if let side = beat.actor {
+                spawnFloater("回神", at: floaterPoint(side), color: .systemGreen)
+            }
+
+        case .finish:
+            playFinish(log: log, d: d)
+        }
+    }
+
+    private var centerPoint: CGPoint {
+        CGPoint(x: size.width * 0.5, y: size.height * 0.72)
+    }
+
+    // MARK: Beat animations
+
+    private func damageText(_ amount: Double) -> String {
+        "-\(Int(amount.rounded()))"
+    }
+
+    private func bob(_ side: EngineSide, d: TimeInterval) {
+        node(side).run(.sequence([
+            .moveBy(x: 0, y: 12, duration: 0.15 * d),
+            .moveBy(x: 0, y: -12, duration: 0.10 * d),
+        ]))
+    }
+
+    private func pulse(d: TimeInterval, scale: CGFloat) {
+        let action = SKAction.sequence([
+            .scale(to: scale, duration: 0.15 * d),
+            .scale(to: 1.0, duration: 0.15 * d),
         ])
-        let defenderReaction: SKAction
-        if knockedOut {
-            defenderReaction = SKAction.group([
-                SKAction.moveBy(x: dir * 28, y: -22, duration: 0.22),
-                SKAction.rotate(byAngle: -dir * (.pi / 2), duration: 0.22),
-            ])
-        } else {
-            defenderReaction = SKAction.sequence([
-                SKAction.moveBy(x: dir * 16, y: 0, duration: 0.05),
-                SKAction.move(to: defenderHome, duration: 0.22),
-            ])
+        leftFighter.run(action)
+        rightFighter.run(action)
+    }
+
+    /// Lunge toward the middle and come back without touching anyone.
+    private func whiffLunge(_ side: EngineSide, reach: CGFloat, d: TimeInterval) {
+        let home = rest(side).pos
+        let mid = (rest(.a).pos.x + rest(.b).pos.x) / 2
+        let target = CGPoint(x: mid - dir(side) * reach, y: home.y)
+        node(side).run(.sequence([
+            .moveBy(x: -dir(side) * 8, y: 0, duration: 0.15 * d),
+            .move(to: target, duration: 0.12 * d),
+            .move(to: home, duration: 0.35 * d),
+        ]))
+    }
+
+    private func playHit(_ beat: ExchangeBeat, d: TimeInterval) {
+        guard let atk = beat.actor else { return }
+        let def = beat.target ?? atk.opposite
+        let heavy = beat.isHeavy
+        let stop = heavy ? BattlePlayback.heavyHitStop : 0.03
+        let text = damageText(beat.amount)
+        let color: SKColor = heavy ? .systemYellow : .systemOrange
+
+        if currentGround != nil {
+            // Ground & pound: posture up, then slam down.
+            let posture = SKAction.moveBy(x: 0, y: 18, duration: 0.12 * d)
+            let slam = SKAction.moveBy(x: 0, y: -18, duration: 0.08 * d)
+            node(atk).run(.sequence([.wait(forDuration: 0.15 * d), posture, slam]))
+            node(def).run(.sequence([.wait(forDuration: 0.35 * d), flashAction(def)]))
+            spawnFloater(text, at: floaterPoint(def), color: color, big: heavy, delay: 0.35 * d)
+            if heavy { flashScreen(alpha: 0.22, delay: 0.35 * d) }
+            return
         }
 
-        attacker.removeAllActions()
-        defender.removeAllActions()
-        attacker.run(.sequence([windUp, lunge, hitStop, recoil]))
-        defender.run(.sequence([
-            SKAction.wait(forDuration: 0.15),
-            SKAction.group([flash, defenderReaction]),
+        let home = rest(atk).pos
+        let defHome = rest(def).pos
+        let mid = (rest(.a).pos.x + rest(.b).pos.x) / 2
+        let impact = CGPoint(x: mid - dir(atk) * 32, y: home.y)
+        let hitAt = 0.30 * d
+
+        node(atk).run(.sequence([
+            .moveBy(x: -dir(atk) * 12, y: 0, duration: 0.18 * d),
+            .move(to: impact, duration: 0.12 * d),
+            .wait(forDuration: stop),
+            .move(to: home, duration: 0.35 * d),
         ]))
+        node(def).run(.sequence([
+            .wait(forDuration: hitAt + stop),
+            .group([
+                flashAction(def),
+                .sequence([
+                    .moveBy(x: dir(atk) * (heavy ? 26 : 14), y: 0, duration: 0.12 * d),
+                    .move(to: defHome, duration: 0.35 * d),
+                ]),
+            ]),
+        ]))
+        spawnFloater(text, at: floaterPoint(def), color: color, big: heavy, delay: hitAt)
+        if heavy { flashScreen(alpha: 0.22, delay: hitAt) }
+    }
+
+    private func playBlocked(_ beat: ExchangeBeat, d: TimeInterval) {
+        guard let atk = beat.actor else { return }
+        let def = beat.target ?? atk.opposite
+        let label = beat.amount >= 0.5 ? "格擋 \(damageText(beat.amount))" : "格擋"
+
+        if currentGround == nil {
+            let home = rest(atk).pos
+            let defHome = rest(def).pos
+            let mid = (rest(.a).pos.x + rest(.b).pos.x) / 2
+            let impact = CGPoint(x: mid - dir(atk) * 24, y: home.y)
+            node(atk).run(.sequence([
+                .moveBy(x: -dir(atk) * 10, y: 0, duration: 0.18 * d),
+                .move(to: impact, duration: 0.12 * d),
+                .wait(forDuration: 0.03),
+                .move(to: home, duration: 0.35 * d),
+            ]))
+            node(def).run(.sequence([
+                .wait(forDuration: 0.30 * d),
+                .group([
+                    flashAction(def, color: .systemCyan),
+                    .sequence([
+                        .moveBy(x: dir(atk) * 6, y: 0, duration: 0.10 * d),
+                        .move(to: defHome, duration: 0.30 * d),
+                    ]),
+                ]),
+            ]))
+        } else {
+            bob(atk, d: d)
+            node(def).run(.sequence([.wait(forDuration: 0.30 * d), flashAction(def, color: .systemCyan)]))
+        }
+        spawnFloater(label, at: floaterPoint(def), color: .systemCyan, delay: 0.30 * d)
+    }
+
+    private func playDodged(_ beat: ExchangeBeat, d: TimeInterval) {
+        guard let evader = beat.actor else { return }
+        let atk = beat.target ?? evader.opposite
+
+        if currentGround == nil {
+            whiffLunge(atk, reach: 20, d: d)
+            let evaderHome = rest(evader).pos
+            node(evader).run(.sequence([
+                .wait(forDuration: 0.22 * d),
+                .group([
+                    .fadeAlpha(to: 0.5, duration: 0.08 * d),
+                    .moveBy(x: dir(atk) * 22, y: 10, duration: 0.10 * d),
+                ]),
+                .group([
+                    .fadeAlpha(to: 1.0, duration: 0.15 * d),
+                    .move(to: evaderHome, duration: 0.2 * d),
+                ]),
+            ]))
+        } else {
+            bob(atk, d: d)
+            node(evader).run(.sequence([
+                .wait(forDuration: 0.22 * d),
+                .fadeAlpha(to: 0.5, duration: 0.08 * d),
+                .fadeAlpha(to: 1.0, duration: 0.15 * d),
+            ]))
+        }
+        spawnFloater("閃避!", at: floaterPoint(evader), color: .systemMint, delay: 0.25 * d)
+    }
+
+    private func playFeint(_ beat: ExchangeBeat, d: TimeInterval) {
+        guard let side = beat.actor else { return }
+        let foe = beat.target ?? side.opposite
+        let fakeOut = SKAction.sequence([
+            .moveBy(x: dir(side) * 14, y: 0, duration: 0.10 * d),
+            .moveBy(x: -dir(side) * 14, y: 0, duration: 0.10 * d),
+        ])
+        node(side).run(.sequence([fakeOut, fakeOut, .move(to: rest(side).pos, duration: 0.05 * d)]))
+        node(foe).run(.sequence([
+            .wait(forDuration: 0.25 * d),
+            .moveBy(x: dir(side) * 8, y: 0, duration: 0.08 * d),
+            .move(to: rest(foe).pos, duration: 0.2 * d),
+        ]))
+        spawnFloater("佯攻!", at: floaterPoint(foe), color: .systemPurple, delay: 0.25 * d)
+    }
+
+    private func playFinish(log: ExchangeLog, d: TimeInterval) {
+        guard let fin = log.finish else { return }
+        adoptStructure(log.stateAfter)
+        let loser = fin.winner.opposite
+        let standing = currentGround == nil
+
+        if fin.reason != .submission && standing {
+            downedSide = loser
+            layoutFighters(animated: true, duration: 0.5 * d)
+        } else {
+            layoutFighters(animated: true, duration: min(0.25, 0.4 * d))
+            if fin.reason == .submission { pulse(d: d, scale: 1.08) }
+        }
+
+        let headline: String
+        switch fin.reason {
+        case .ko: headline = "KO!"
+        case .tkoBody, .tkoLegs: headline = "TKO!"
+        case .tkoDoctor: headline = "醫生叫停"
+        case .submission: headline = "TAP!"
+        }
+        updateBannerText(finish: fin)
+        spawnFloater(headline, at: centerPoint, color: .systemYellow, big: true, delay: 0.05 * d)
+        flashScreen(alpha: 0.30)
     }
 }
