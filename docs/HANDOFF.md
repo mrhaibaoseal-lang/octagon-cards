@@ -13,7 +13,7 @@
 - **`BattlePlayback.swift`**：`reveal` 0.90、`action` 0.65；`standardRange` 4.0…5.5；新增 `stageTransition` 0.3、`endHold` 0.35。
 - **`BattleSession.swift`**：`startPlayback` 首 beat 前等 `stageTransition`、末 beat 後等 `endHold`；新增 `ExchangeRecap`／`battleLog`（`playTurn` 取得 beats 時、回合與手數遞增前寫入，跳過也看得到；`startNewMatch` 清空）與 `visibleRecaps`（播放中不含最新一筆，防洩漏）；移除 `narrationLines`。`rng` 消耗順序與 `OctagonCore` 未動。
 - **`BattleView.swift`／新增 `BattleRecapView.swift`**：直式播放時收起資訊區與手牌區（0.28 秒動畫），八角籠吃滿；橫式右欄只顯示「交手進行中・點畫面跳過」；站立資訊區改顯示「上一手」（可捲動）並有 📜 按鈕，地面橫幅標題列也有 📜；戰報 sheet 由新到舊列出，不開背景互動。
-- **測試結果**：見下方（本機無 Swift 工具鏈，以 CI 為準）。
+- **測試結果**：CI run `42211740501` ✅（push `01002c3`，91 tests / 12 suites）；IPA run `42211753660` ✅，App 層無編譯警告；IPA 已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`（v0.5.4）。本機無 Swift 工具鏈，**尚未實機看過**。
 - **請使用者實機檢查**：① 不看下方，只看八角籠就知道雙方出什麼、結果如何；② 每手長度與快／標準／慢是否合適；③ 八角籠放大／收回過渡會不會暈或突兀（SpriteView 可能直接跳尺寸）；④ 牌的大小與位置（矮畫面、橫式）；⑤ 打完後「上一手」與戰報 sheet 是否好讀；⑥ 地面戰、鎖技、KO 慢動作、跳過、第 8 手換回合、橫式都正常，牌不殘留。
 - **退路**：若放大縮小太躁，改成八角籠固定大尺寸，手牌從底部滑出蓋在籠子上（只動 `BattleView`）。
 - **下一棒**：等使用者實機確認後，`[實作]` 開新 session 做 P5-4。

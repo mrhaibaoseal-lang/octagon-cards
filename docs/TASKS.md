@@ -102,7 +102,7 @@
 - [x] **P5-3b 翻牌對決（P5-3 實機回饋：旁白太快、看字就看不到動畫）** — 程式完成，**待使用者實機確認後才做 P5-4**
   - 內容：播放時收起手牌與資訊區、八角籠放大；雙方的牌大張翻開、輪流彈出，結果章直接蓋在牌上；每手標準時間 4–5.5 秒；完整句子改到打完後的「上一手」與戰報 sheet（`BattleRecapView`）；移除逐句旁白面板。不改戰鬥數值與 `SeededRNG`
   - 完成條件：CI 與 IPA 通過（App 層無警告）；`OctagonCore` 未改動（91 tests）；使用者實機確認
-  - 完成：v0.5.4 (9)，見 HANDOFF 2026-11-06 P5-3b
+  - 完成：v0.5.4 (9)；CI run `42211740501` ✅、IPA run `42211753660` ✅；IPA 在 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`。見 HANDOFF 2026-11-06 P5-3b
 - [ ] **P5-4 局勢顯示**
   - 內容：`OctagonCore` 新增 `RoundTrend.estimate(exchanges:state:)`，重用 `FightMatchEngine.scoreRound` 的 `damageByA/B`、`rockedByA/B`、`judgeCards` 算出 0–1 局勢值與「勢均力敵／小幅領先／明顯領先」；App 顯示回合進度格、局勢條、三部位血條變化強調；Rocked、深鎖、流血用全畫面可見的警示
   - 完成條件：單元測試涵蓋空回合、單方壓制與數值範圍；不改變 `scoreRound` 計分結果；CI 與 IPA 通過
