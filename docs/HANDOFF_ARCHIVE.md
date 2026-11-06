@@ -5,6 +5,18 @@
 ---
 
 
+## 2026-11-06 · [實作] Claude Sonnet 5.5 (P6-2 實機結果：未達門檻)
+- **結果**：使用者標記 31 位：**可用 20、不可用 11**、1 位未標（Chandler，自動判定 OK）。即使 Chandler 算可用也只有 21，**低於門檻 28，不進 P6-3**，回 `[規劃]`。
+- **失敗名單**（人工不可用）：Tsarukyan、Topuria、O'Malley、Oliveira、Holloway、Pantoja、Whittaker、Poirier、Adesanya、Della Maddalena、Hooker。11 位全部勾「手肘位置錯」（Whittaker 另有肩膀偵測不到）。
+- **失敗模式**：① 手肘：9 位至少一側 Vision 沒給出可信手肘（信心 <0.3），其中 6 位兩側都沒有。② 肩膀：Whittaker、Yan、Pereira 兩肩偵測不到。③ 兩位自動 OK 但人工判不可用（Topuria、Holloway），代表「有偵測到」不等於「位置對」，不能只靠信心值過濾。
+- **偵測率**：32 位中只有 Jon Jones 偵測得到胯（腰部以下被裁，如預期）；大多數人至少一側手腕偵測不到，前臂靠延伸估算（可見比例 32%–100%）。**腿的關節完全不能靠 Vision**，但這本來就是共用素材。
+- **自動與人工的落差**：自動 OK 19 位中 16 位人工可用、2 位不可用、1 未標；自動 FAIL 13 位中有 4 位人工可用（Aspinall、Yan、Lopes、Pereira）。後者的原因未記錄（Yan／Pereira 沒有肩膀點卻標可用，可能是看照片判斷「能手動切」，而不是疊圖框好用），**自動判定規則與人工標準不一致，數據解讀要保守**。原型選手 O'Malley、Adesanya 自動切割都失敗。
+- **給 `[規劃]` 的選項（我未實作，也未驗證）**：A. Vision 只取肩與臉，肘／腕改用肩寬比例推算（照片多為雙臂下垂的標準正面，可能救回多數肘失敗者，但要看 Topuria／Holloway 這類是否仍歪）；B. 為失敗者手量切割框存成資料表（名單約 32 人，可重用原型做法）；C. 不可用者走 §3.6 退路（約三分之一選手無肢體動作）；D. 調低門檻。可混用，如 A 加 B。
+- **資料**：完整逐人結果存於使用者 Downloads 的 `P6-2 Vision 切割結果…txt`（含每人警告）。工具 `RigCutDebugView` 保留，之後調演算法可直接重跑（版本在分支 `claude/charming-elion-751be2`，尚未合併）。
+- **下一棒**：`[規劃]` 定案後再開 P6-3；若選 A，可先在除錯畫面試新算法重標一輪。
+
+---
+
 ## 2026-11-06 · [實作] Claude Sonnet 5.5 (P6-2 Vision 切割驗證工具)
 - **做了什麼**：新增僅供開發的除錯畫面 `RigCutDebugView.swift`，入口是預備頁左下角半透明的「🔬 Rig」小鈕（加在 `ContentView` 的 overlay，沒碰 `PreFightView`／`BattleView`）。對 `RealUFCRoster.all` 的 32 位，下載官方全身照（原圖快取在 `Caches/RigCutPhotos_v1/`，不進 repo），用 `VNDetectHumanBodyPoseRequest` ＋ `VNDetectFaceRectanglesRequest` 找頸／肩／肘／腕／胯，算出軀幹、上臂、前臂的區域框並疊在照片上。
 - **區域算法**（常數都在 `RigCutAnalyzer`，要調直接改）：軀幹＝肩線上緣外推 0.10 肩寬、兩側各外推 0.08，下緣到胯線；胯偵測不到就用肩寬×1.1 估算，並在照片底邊截斷。手臂寬＝0.34 肩寬（前臂 ×0.85）。手腕偵測不到時，前臂沿上臂方向延伸到照片邊緣（虛線＝估算）。
