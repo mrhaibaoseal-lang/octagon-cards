@@ -3,6 +3,14 @@ import Observation
 import UIKit
 import FightEngine
 
+/// One exchange's full commentary, kept for the "previous exchange" banner and the recap sheet (P5-3b).
+struct ExchangeRecap: Identifiable {
+    let id: Int
+    let round: Int
+    let exchange: Int
+    let lines: [String]
+}
+
 /// Owns one sandbox match: selected fighters, engine state, hands, round bookkeeping and the SpriteKit scene.
 /// Rules are unchanged from the original `ContentView`; this is only the logic moved out of the view.
 @MainActor
@@ -40,7 +48,9 @@ final class BattleSession {
     var shownExchange: Int = 1
     var shownCompletedRounds: Int = 0
     var isPlaying: Bool = false
-    var narrationLines: [String] = []
+    /// Every exchange so far. The newest entry is written the moment a card is played, so while
+    /// `isPlaying` it must not be shown; use `visibleRecaps`.
+    var battleLog: [ExchangeRecap] = []
     var playbackSpeed: PlaybackSpeed = .standard
 
     let totalRounds = 3
@@ -113,6 +123,11 @@ final class BattleSession {
 
     // MARK: - Derived
 
+    /// Recaps the player may read now: the exchange still playing is held back so nothing leaks early.
+    var visibleRecaps: [ExchangeRecap] {
+        isPlaying ? Array(battleLog.dropLast()) : battleLog
+    }
+
     var phaseSummaryText: String {
         BattleText.phaseSummary(displayState)
     }
@@ -129,6 +144,7 @@ final class BattleSession {
         roundHistory = []
         completedRounds = []
         replayExchanges = []
+        battleLog = []
         matchOutcome = nil
         decisionType = nil
         judgeScorecards = []
@@ -205,6 +221,15 @@ final class BattleSession {
         )
         // Presentation only: reads the finished log, never touches `rng` or the fight state.
         let beats = ExchangePresentation.build(log: exLog, nameA: fighterA.name, nameB: fighterB.name)
+        // Read before `currentRound` / `currentExchange` are advanced below.
+        battleLog.append(
+            ExchangeRecap(
+                id: battleLog.count,
+                round: currentRound,
+                exchange: currentExchange,
+                lines: beats.filter { $0.kind != .reveal }.map(\.narration)
+            )
+        )
         var roundTurnedOver = false
 
         if let fin = exLog.finish {
@@ -283,7 +308,6 @@ final class BattleSession {
         playbackGeneration += 1
         let generation = playbackGeneration
         isPlaying = true
-        narrationLines = []
         pendingSceneReset = resetsScene
         pendingFinish = log.finish
         layoutApplied = false
@@ -295,6 +319,12 @@ final class BattleSession {
 
         let durations = BattlePlayback.timeline(for: beats, log: log, speed: playbackSpeed)
         playbackTask = Task { [weak self] in
+            // Let the cage and hand area finish their transition before the first beat.
+            do {
+                try await Task.sleep(for: .seconds(BattlePlayback.stageTransition))
+            } catch {
+                return
+            }
             for (beat, seconds) in zip(beats, durations) {
                 guard let self, !Task.isCancelled, self.playbackGeneration == generation else { return }
                 self.apply(beat: beat, log: log, duration: seconds)
@@ -303,6 +333,12 @@ final class BattleSession {
                 } catch {
                     return
                 }
+            }
+            // Hold so the last result stamp can be read.
+            do {
+                try await Task.sleep(for: .seconds(BattlePlayback.endHold))
+            } catch {
+                return
             }
             guard let self, !Task.isCancelled, self.playbackGeneration == generation else { return }
             self.completePlayback()
@@ -325,10 +361,6 @@ final class BattleSession {
         }
         displayState = shown
 
-        narrationLines.append(beat.narration)
-        if narrationLines.count > 4 {
-            narrationLines.removeFirst(narrationLines.count - 4)
-        }
         scene.play(beat: beat, log: log, duration: duration)
     }
 
@@ -360,7 +392,6 @@ final class BattleSession {
         isPlaying = false
         pendingSceneReset = false
         pendingFinish = nil
-        narrationLines = []
     }
 
     private func syncDisplayToEngine() {

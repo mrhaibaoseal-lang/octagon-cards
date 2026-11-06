@@ -12,6 +12,10 @@ private typealias EngineSide = FightEngine.Side
 /// `ExchangeBeat` at a time through `play(beat:log:duration:)`; every beat animation is sized as a fraction of
 /// the beat's duration so it always finishes before the next beat starts. Nothing here uses `SeededRNG`
 /// or changes fight state.
+///
+/// P5-3b: while an exchange plays the cage is enlarged (`stageScale`) and both fighters' cards are shown big at
+/// the top: they flip open on `reveal`, the acting side's card pops forward on `action`, and results are
+/// stamped onto the cards. Card nodes are created lazily at `reveal`, after the cage has reached its big size.
 final class LungeDemoScene: SKScene {
     enum Side { case left, right }
 
@@ -30,7 +34,17 @@ final class LungeDemoScene: SKScene {
     /// Loser of a standing KO / TKO; stays on the canvas after the fight ends.
     private var downedSide: EngineSide? = nil
 
+    /// Exchange cards (P5-3b). Created at `reveal`, removed by `clearEffects`.
+    private var cardNodes: [EngineSide: ExchangeCardNode] = [:]
+    /// The card currently popped forward, if any.
+    private var focusedCardSide: EngineSide? = nil
+
     private var isSetUp = false
+
+    /// How much fighters are enlarged to match the (possibly enlarged) cage. 1 at the small size, up to 1.6.
+    private var stageScale: CGFloat {
+        min(1.6, max(1, size.height / 260))
+    }
 
     override func didMove(to view: SKView) {
         backgroundColor = SKColor(red: 0.08, green: 0.09, blue: 0.13, alpha: 1)
@@ -65,6 +79,9 @@ final class LungeDemoScene: SKScene {
     override func didChangeSize(_ oldSize: CGSize) {
         guard leftFighter.parent != nil else { return }
         layoutFighters(animated: false)
+        for (side, card) in cardNodes {
+            card.position = cardPosition(side, popped: focusedCardSide == side)
+        }
     }
 
     // MARK: - Layout
@@ -76,7 +93,7 @@ final class LungeDemoScene: SKScene {
         case .mid: spread = 0.19
         case .close: spread = 0.11
         }
-        let y = size.height * 0.45
+        let y = size.height * 0.16 + 52 * stageScale
         return (
             CGPoint(x: size.width * (0.5 - spread), y: y),
             CGPoint(x: size.width * (0.5 + spread), y: y)
@@ -96,10 +113,11 @@ final class LungeDemoScene: SKScene {
     private func rest(_ side: EngineSide) -> (pos: CGPoint, rot: CGFloat) {
         if let g = currentGround {
             let centerX = size.width * 0.5
+            let floorY = size.height * 0.16
             if g.topSide == side {
-                return (CGPoint(x: centerX - 6, y: size.height * 0.48), .pi / 2)
+                return (CGPoint(x: centerX - 6, y: floorY + 80 * stageScale), .pi / 2)
             }
-            return (CGPoint(x: centerX + 6, y: size.height * 0.30), .pi / 2)
+            return (CGPoint(x: centerX + 6, y: floorY + 38 * stageScale), .pi / 2)
         }
         let (lh, rh) = homes(for: currentDistance)
         var p = side == .a ? lh : rh
@@ -108,7 +126,7 @@ final class LungeDemoScene: SKScene {
             // Pushed away from the winner and lying down.
             let away = dir(side.opposite)
             p.x += away * 28
-            p.y -= 22
+            p.y -= 22 * stageScale
             rot = -away * (.pi / 2)
         }
         return (p, rot)
@@ -139,6 +157,7 @@ final class LungeDemoScene: SKScene {
             } else {
                 n.position = r.pos
                 n.zRotation = r.rot
+                n.setScale(stageScale)
             }
         }
     }
@@ -193,8 +212,10 @@ final class LungeDemoScene: SKScene {
         let targetW = round(targetH * aspect)
 
         let node = (side == .left) ? leftFighter : rightFighter
+        node.setScale(1) // `size` must not be affected by the stage scale
         node.texture = texture
         node.size = CGSize(width: targetW, height: targetH)
+        node.setScale(stageScale)
         node.color = .white
         node.colorBlendFactor = 0.0
         if side == .left {
@@ -247,7 +268,7 @@ final class LungeDemoScene: SKScene {
         currentClinch = false
         for n in [leftFighter, rightFighter] {
             n.removeAllActions()
-            n.setScale(1)
+            n.setScale(stageScale)
             n.alpha = 1
         }
         applyTintNow()
@@ -270,7 +291,7 @@ final class LungeDemoScene: SKScene {
         }
         for n in [leftFighter, rightFighter] {
             n.removeAllActions()
-            n.setScale(1)
+            n.setScale(stageScale)
             n.alpha = 1
         }
         applyTintNow()
@@ -285,7 +306,9 @@ final class LungeDemoScene: SKScene {
     }
 
     private func clearEffects() {
-        removeChildren(in: children.filter { $0.name == "floater" })
+        removeChildren(in: children.filter { $0.name == "floater" || $0.name == "exchangeCard" })
+        cardNodes = [:]
+        focusedCardSide = nil
         flashOverlay.removeAllActions()
         flashOverlay.alpha = 0
     }
@@ -305,7 +328,7 @@ final class LungeDemoScene: SKScene {
             n.removeAllActions()
             n.position = r.pos
             n.zRotation = r.rot
-            n.setScale(1)
+            n.setScale(stageScale)
             n.alpha = 1
         }
     }
@@ -314,7 +337,7 @@ final class LungeDemoScene: SKScene {
 
     private func floaterPoint(_ side: EngineSide) -> CGPoint {
         let p = rest(side).pos
-        return CGPoint(x: p.x, y: p.y + (currentGround == nil ? 74 : 60))
+        return CGPoint(x: p.x, y: p.y + (currentGround == nil ? 74 : 60) * stageScale)
     }
 
     private func spawnFloater(
@@ -335,6 +358,7 @@ final class LungeDemoScene: SKScene {
         shadow.text = text
         shadow.fontSize = fontSize
         shadow.fontColor = SKColor(white: 0, alpha: 0.85)
+        shadow.zPosition = 0
         shadow.verticalAlignmentMode = .center
         shadow.position = CGPoint(x: 1.5, y: -1.5)
         container.addChild(shadow)
@@ -344,6 +368,7 @@ final class LungeDemoScene: SKScene {
         label.fontSize = fontSize
         label.fontColor = color
         label.verticalAlignmentMode = .center
+        label.zPosition = 0.1
         container.addChild(label)
 
         container.position = CGPoint(
@@ -390,6 +415,8 @@ final class LungeDemoScene: SKScene {
         snapToRest()
 
         let grounded = currentGround != nil
+
+        presentCards(for: beat, log: log, d: d)
 
         switch beat.kind {
         case .reveal:
@@ -542,7 +569,7 @@ final class LungeDemoScene: SKScene {
     }
 
     private var centerPoint: CGPoint {
-        CGPoint(x: size.width * 0.5, y: size.height * 0.72)
+        CGPoint(x: size.width * 0.5, y: size.height * 0.55)
     }
 
     // MARK: Beat animations
@@ -560,8 +587,8 @@ final class LungeDemoScene: SKScene {
 
     private func pulse(d: TimeInterval, scale: CGFloat) {
         let action = SKAction.sequence([
-            .scale(to: scale, duration: 0.15 * d),
-            .scale(to: 1.0, duration: 0.15 * d),
+            .scale(to: scale * stageScale, duration: 0.15 * d),
+            .scale(to: stageScale, duration: 0.15 * d),
         ])
         leftFighter.run(action)
         rightFighter.run(action)
@@ -726,5 +753,247 @@ final class LungeDemoScene: SKScene {
         updateBannerText(finish: fin)
         spawnFloater(headline, at: centerPoint, color: .systemYellow, big: true, delay: 0.05 * d)
         flashScreen(alpha: 0.30)
+    }
+
+    // MARK: - Exchange cards (P5-3b)
+
+    private var cardHeight: CGFloat { min(size.height * 0.3, 130) }
+    private var cardWidth: CGFloat { min(cardHeight * 0.8, size.width * 0.34) }
+
+    private func cardPosition(_ side: EngineSide, popped: Bool) -> CGPoint {
+        let y = size.height - 24 - cardHeight / 2
+        let x: CGFloat = popped ? (side == .a ? 0.33 : 0.67) : (side == .a ? 0.27 : 0.73)
+        return CGPoint(x: size.width * x, y: y)
+    }
+
+    /// Creates the card for `side` if it does not exist yet.
+    @discardableResult
+    private func ensureCard(_ side: EngineSide, log: ExchangeLog, faceUp: Bool) -> ExchangeCardNode {
+        if let existing = cardNodes[side] { return existing }
+        let card = side == .a ? log.a.card : log.b.card
+        let node = ExchangeCardNode(
+            card: card,
+            side: side,
+            size: CGSize(width: cardWidth, height: cardHeight),
+            faceUp: faceUp
+        )
+        node.name = "exchangeCard"
+        node.zPosition = 12
+        node.position = cardPosition(side, popped: false)
+        addChild(node)
+        cardNodes[side] = node
+        return node
+    }
+
+    private func presentCards(for beat: ExchangeBeat, log: ExchangeLog, d: TimeInterval) {
+        switch beat.kind {
+        case .reveal:
+            for (i, side) in [EngineSide.a, EngineSide.b].enumerated() {
+                let node = ensureCard(side, log: log, faceUp: false)
+                node.flip(delay: Double(i) * 0.12 * d, d: d)
+            }
+        case .action:
+            if let side = beat.actor { focusCard(side, log: log, d: d) }
+        case .hit:
+            if let side = beat.actor {
+                stampCard(side, log: log, d: d, text: "命中 \(damageText(beat.amount))",
+                          color: beat.isHeavy ? .systemYellow : .systemOrange)
+            }
+        case .blocked:
+            if let side = beat.actor {
+                stampCard(side, log: log, d: d, text: "被格擋", color: .systemCyan)
+            }
+        case .dodged:
+            // The evader is `actor`; the stamp goes on the card that swung and missed.
+            if let evader = beat.actor {
+                stampCard(beat.target ?? evader.opposite, log: log, d: d, text: "被閃開", color: .systemMint)
+            }
+        case .missed:
+            if let side = beat.actor {
+                stampCard(side, log: log, d: d, text: "落空", color: SKColor(white: 0.8, alpha: 1))
+            }
+        case .feint:
+            if let side = beat.actor {
+                stampCard(side, log: log, d: d, text: "佯攻成功", color: .systemPurple)
+            }
+        case .interrupted:
+            if let side = beat.actor {
+                focusCard(side, log: log, d: d)
+                cardNodes[side]?.front.run(.fadeAlpha(to: 0.4, duration: 0.15 * d))
+                stampCard(side, log: log, d: d, text: "被打斷", color: SKColor(white: 0.8, alpha: 1))
+            }
+        default:
+            break
+        }
+    }
+
+    /// Pops `side`'s card forward and dims / returns the other one. No-op when it is already in front.
+    private func focusCard(_ side: EngineSide, log: ExchangeLog, d: TimeInterval) {
+        ensureCard(side, log: log, faceUp: true)
+        guard focusedCardSide != side else { return }
+        focusedCardSide = side
+        let t = 0.2 * d
+        for (s, node) in cardNodes {
+            node.removeAction(forKey: "focus")
+            if s == side {
+                node.zPosition = 13
+                node.run(.group([
+                    .move(to: cardPosition(s, popped: true), duration: t),
+                    .scale(to: 1.25, duration: t),
+                    .fadeAlpha(to: 1, duration: t),
+                ]), withKey: "focus")
+            } else {
+                node.zPosition = 12
+                node.run(.group([
+                    .move(to: cardPosition(s, popped: false), duration: t),
+                    .scale(to: 1, duration: t),
+                    .fadeAlpha(to: 0.6, duration: t),
+                ]), withKey: "focus")
+            }
+        }
+    }
+
+    private func stampCard(_ side: EngineSide, log: ExchangeLog, d: TimeInterval, text: String, color: SKColor) {
+        focusCard(side, log: log, d: d)
+        cardNodes[side]?.stamp(text, color: color, d: d)
+    }
+}
+
+/// One big exchange card: a face-down back and a light face, plus an optional result stamp on top.
+/// Child z positions are explicit because the scene is drawn with `.ignoresSiblingOrder`.
+private final class ExchangeCardNode: SKNode {
+    let back = SKNode()
+    let front = SKNode()
+    private let cardSize: CGSize
+    private let tint: SKColor
+
+    init(card: Card, side: EngineSide, size: CGSize, faceUp: Bool) {
+        cardSize = size
+        tint = side == .a ? .systemGreen : .systemRed
+        super.init()
+
+        let corner = size.height * 0.1
+        let rect = CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height)
+
+        // Back
+        let backFrame = SKShapeNode(rect: rect, cornerRadius: corner)
+        backFrame.fillColor = SKColor(red: 0.16, green: 0.18, blue: 0.26, alpha: 1)
+        backFrame.strokeColor = tint
+        backFrame.lineWidth = 3
+        backFrame.zPosition = 0
+        back.addChild(backFrame)
+        let mark = SKLabelNode(fontNamed: "Menlo-Bold")
+        mark.text = "?"
+        mark.fontSize = size.height * 0.4
+        mark.fontColor = tint.withAlphaComponent(0.8)
+        mark.verticalAlignmentMode = .center
+        mark.horizontalAlignmentMode = .center
+        mark.zPosition = 0.2
+        back.addChild(mark)
+
+        // Face
+        let frame = SKShapeNode(rect: rect, cornerRadius: corner)
+        frame.fillColor = SKColor(white: 0.93, alpha: 1)
+        frame.strokeColor = tint
+        frame.lineWidth = 3
+        frame.zPosition = 0
+        front.addChild(frame)
+
+        let badge = SKLabelNode(fontNamed: "Menlo-Bold")
+        badge.text = BattleText.cardBadge(card)
+        badge.fontSize = max(9, size.height * 0.11)
+        badge.fontColor = SKColor(white: 0.25, alpha: 1)
+        badge.verticalAlignmentMode = .center
+        badge.horizontalAlignmentMode = .center
+        badge.position = CGPoint(x: 0, y: size.height * 0.28)
+        badge.zPosition = 0.2
+        Self.fit(badge, maxWidth: size.width * 0.88, maxHeight: size.height * 0.2)
+        front.addChild(badge)
+
+        let name = SKLabelNode(fontNamed: "Menlo-Bold")
+        name.text = card.name
+        name.fontSize = max(11, size.height * 0.15)
+        name.fontColor = SKColor(white: 0.1, alpha: 1)
+        name.verticalAlignmentMode = .center
+        name.horizontalAlignmentMode = .center
+        name.numberOfLines = 2
+        name.preferredMaxLayoutWidth = size.width * 0.88
+        name.position = CGPoint(x: 0, y: -size.height * 0.1)
+        name.zPosition = 0.2
+        Self.fit(name, maxWidth: size.width * 0.88, maxHeight: size.height * 0.5)
+        front.addChild(name)
+
+        addChild(back)
+        addChild(front)
+        if faceUp {
+            back.isHidden = true
+        } else {
+            front.isHidden = true
+            xScale = 0
+        }
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    private static func fit(_ label: SKLabelNode, maxWidth: CGFloat, maxHeight: CGFloat) {
+        let f = label.frame
+        guard f.width > 0, f.height > 0 else { return }
+        let k = min(1, maxWidth / f.width, maxHeight / f.height)
+        if k < 1 { label.setScale(k) }
+    }
+
+    /// Back appears, turns edge-on, face appears. Finishes about 0.34 * d after `delay`.
+    func flip(delay: TimeInterval, d: TimeInterval) {
+        let half = 0.1 * d
+        run(.sequence([
+            .wait(forDuration: delay),
+            .scaleX(to: 1, duration: half),
+            .scaleX(to: 0, duration: half),
+            .scaleX(to: 1, duration: half),
+        ]))
+        back.run(.sequence([.wait(forDuration: delay + 2 * half), .hide()]))
+        front.run(.sequence([.hide(), .wait(forDuration: delay + 2 * half), .unhide()]))
+    }
+
+    /// Stamps a result on the card; it stays until the card is removed. Replaces an earlier stamp.
+    func stamp(_ text: String, color: SKColor, d: TimeInterval) {
+        childNode(withName: "stamp")?.removeFromParent()
+        let container = SKNode()
+        container.name = "stamp"
+        container.zPosition = 0.6
+        container.zRotation = -0.14
+        container.position = CGPoint(x: 0, y: -cardSize.height * 0.12)
+
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        label.text = text
+        label.fontSize = max(11, cardSize.height * 0.16)
+        label.fontColor = color
+        label.verticalAlignmentMode = .center
+        label.horizontalAlignmentMode = .center
+        label.zPosition = 0.2
+        Self.fit(label, maxWidth: cardSize.width * 0.8, maxHeight: cardSize.height * 0.3)
+
+        let boxW = cardSize.width * 0.92
+        let boxH = max(cardSize.height * 0.26, label.frame.height * label.yScale + 10)
+        let box = SKShapeNode(
+            rect: CGRect(x: -boxW / 2, y: -boxH / 2, width: boxW, height: boxH),
+            cornerRadius: 6
+        )
+        box.fillColor = SKColor(red: 0.07, green: 0.08, blue: 0.12, alpha: 0.92)
+        box.strokeColor = color
+        box.lineWidth = 2
+        box.zPosition = 0
+        container.addChild(box)
+        container.addChild(label)
+
+        container.alpha = 0
+        container.setScale(1.6)
+        addChild(container)
+        container.run(.group([
+            .fadeIn(withDuration: 0.05 * d),
+            .scale(to: 1, duration: 0.12 * d),
+        ]))
     }
 }

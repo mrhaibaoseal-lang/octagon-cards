@@ -10,6 +10,7 @@ struct BattleView: View {
     let onExit: () -> Void
 
     @State private var showDebugDrawer: Bool = false
+    @State private var showRecap: Bool = false
 
     private let infoZoneHeight: CGFloat = 96
     private let handZoneHeight: CGFloat = 206
@@ -42,6 +43,11 @@ struct BattleView: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
+        .sheet(isPresented: $showRecap) {
+            // No background interaction: the hand stays untouchable while the recap is open.
+            BattleRecapView(session: session)
+                .presentationDetents([.medium, .large])
+        }
     }
 
     // MARK: - Layouts
@@ -50,9 +56,15 @@ struct BattleView: View {
         VStack(spacing: 8) {
             cage
             fightersHUD
-            infoZone.frame(height: infoZoneHeight)
-            handZone.frame(height: handZoneHeight)
+            // While an exchange plays the cage takes the freed space and the cards are shown inside it.
+            if !session.isPlaying {
+                infoZone.frame(height: infoZoneHeight)
+                    .transition(.opacity)
+                handZone.frame(height: handZoneHeight)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.28), value: session.isPlaying)
     }
 
     private var landscapeBody: some View {
@@ -62,8 +74,12 @@ struct BattleView: View {
                 fightersHUD
             }
             VStack(spacing: 8) {
-                infoZone.frame(height: infoZoneHeight)
-                handZone.frame(maxHeight: .infinity)
+                if session.isPlaying {
+                    playingPlaceholder
+                } else {
+                    infoZone.frame(height: infoZoneHeight)
+                    handZone.frame(maxHeight: .infinity)
+                }
             }
         }
     }
@@ -188,14 +204,56 @@ struct BattleView: View {
         }
     }
 
+    private var recapButton: some View {
+        Button("📜") { showRecap = true }
+            .font(.system(size: 12))
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+    }
+
+    /// Landscape right column while an exchange plays.
+    private var playingPlaceholder: some View {
+        Text("🎬 交手進行中・點畫面跳過")
+            .font(.system(.caption, design: .monospaced, weight: .heavy))
+            .foregroundStyle(.yellow)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.yellow.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.yellow.opacity(0.35), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
     private var standingStatusBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("🥊 站立 · \(session.phaseSummaryText)")
-                .font(.system(.caption, design: .monospaced, weight: .heavy))
-            Text("進入地面後，這裡會顯示位置、上下位與鎖技進度。")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
+            HStack {
+                Text("🥊 站立 · \(session.phaseSummaryText)")
+                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                    .lineLimit(1)
+                Spacer()
+                recapButton
+            }
+            if let last = session.visibleRecaps.last {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("上一手 · R\(last.round) 第 \(last.exchange) 手")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.yellow)
+                        ForEach(Array(last.lines.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            } else {
+                Text("進入地面後，這裡會顯示位置、上下位與鎖技進度。")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
         }
         .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -221,6 +279,7 @@ struct BattleView: View {
                 Text("消極 \(ground.stallCount)/3")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
+                recapButton
             }
 
             // Positional hierarchy indicator (1..5)
@@ -275,49 +334,11 @@ struct BattleView: View {
 
     @ViewBuilder
     private var handZone: some View {
-        if session.isPlaying {
-            playbackPanel
-        } else if let outcome = session.matchOutcome {
+        if let outcome = session.matchOutcome {
             outcomeBanner(outcome)
         } else {
             cardSelectionSection
         }
-    }
-
-    /// Replaces the hand while an exchange plays: the hand is locked and the commentary scrolls here.
-    private var playbackPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("🎬 交手進行中")
-                    .font(.system(.caption, design: .monospaced, weight: .heavy))
-                    .foregroundStyle(.yellow)
-                Spacer()
-                Text("手牌鎖定 · 點畫面任意處跳過")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            let lines = session.narrationLines
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                    let isLatest = index == lines.count - 1
-                    Text(line)
-                        .font(.system(isLatest ? .callout : .caption, design: .monospaced, weight: isLatest ? .bold : .regular))
-                        .foregroundStyle(isLatest ? Color.white : Color.white.opacity(0.45))
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .animation(.easeOut(duration: 0.15), value: lines.count)
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.yellow.opacity(0.08))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.yellow.opacity(0.35), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var cardSelectionSection: some View {

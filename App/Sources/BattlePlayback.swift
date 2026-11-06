@@ -1,7 +1,7 @@
 import Foundation
 import FightEngine
 
-/// Playback speed for the exchange timeline (P5-3). Standard targets roughly 3-4 seconds per exchange.
+/// Playback speed for the exchange timeline (P5-3). Standard targets roughly 4-5.5 seconds per exchange.
 enum PlaybackSpeed: String, CaseIterable, Identifiable {
     case fast
     case standard
@@ -34,14 +34,18 @@ enum BattlePlayback {
     /// Extra freeze on heavy hits, in seconds.
     static let heavyHitStop: TimeInterval = 0.08
     /// Non-finish beats of one exchange are stretched/squeezed so their total lands in this range (standard speed).
-    static let standardRange: ClosedRange<TimeInterval> = 3.0...4.2
+    static let standardRange: ClosedRange<TimeInterval> = 4.0...5.5
+    /// Wait before the first beat so the cage can finish growing (P5-3b), in real seconds.
+    static let stageTransition: TimeInterval = 0.3
+    /// Extra hold after the last beat so the final result stamp can be read, in real seconds.
+    static let endHold: TimeInterval = 0.35
     /// How long the finish beat holds (real seconds at standard speed).
     static let finishHold: TimeInterval = 1.6
 
     static func baseDuration(_ kind: ExchangeBeatKind) -> TimeInterval {
         switch kind {
-        case .reveal: 0.60
-        case .action: 0.40
+        case .reveal: 0.90
+        case .action: 0.65
         case .hit: 0.75
         case .blocked: 0.60
         case .dodged: 0.60

@@ -3,7 +3,20 @@
 > 每次收工在**最上方**新增一筆。下一棒開工先讀最上面 2–3 筆。
 
 ## 待規劃確認
-- （P5-3）播放中以旁白面板取代手牌區、回合結算仍瞬間切換，是否接受？見 P5-3 紀錄的「設計取捨」。
+- （P5-3）回合結算仍瞬間切換，是否接受？（旁白面板取代手牌區一項已由 P5-3b 取代。）
+
+---
+
+## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-3b 翻牌對決 v0.5.4)
+- **回饋與決定**：P5-3 實機節奏不錯，但旁白太快、看字就看不到上方動畫。使用者選了方案 C「翻牌對決」：播放時不再讀句子，改看牌。
+- **`LungeDemoScene.swift`**：新增 `ExchangeCardNode`（牌背＋淺色牌面＋結果章）。`reveal` beat 才建牌（八角籠已放大）並翻開（`scaleX` ＋ `hide/unhide`，不用 `SKAction.run`）；`action` 彈出該方的牌（x 0.33w／0.67w、1.25 倍、z 13）、另一張縮回並 alpha 0.6；`hit/blocked/dodged/missed/feint/interrupted` 蓋章（`dodged` 蓋在揮空方；結果 beat 若該牌非焦點會先 focus；`interrupted` 牌面 alpha 0.4）。子節點 z 明確設定（框 0、字 0.2、章框 0.6、章字 0.8；根 12／13；飄字 20，字 0.1 高於陰影）因為 SpriteView 用 `.ignoresSiblingOrder`。`stageScale = clamp(h/260, 1…1.6)` 套用在站位高度（地板線 0.16h 起算）、地面位置、`resetPositions/settle/snapToRest/layoutFighters`、`pulse`、飄字偏移與貼圖 `size` 設定（先 `setScale(1)`）。牌尺寸：`cardHeight = min(0.3h, 130)`、`cardWidth = min(0.8 * cardHeight, 0.34w)`，數值集中在 `cardHeight/cardWidth/cardPosition`。`clearEffects` 併清牌。
+- **`BattlePlayback.swift`**：`reveal` 0.90、`action` 0.65；`standardRange` 4.0…5.5；新增 `stageTransition` 0.3、`endHold` 0.35。
+- **`BattleSession.swift`**：`startPlayback` 首 beat 前等 `stageTransition`、末 beat 後等 `endHold`；新增 `ExchangeRecap`／`battleLog`（`playTurn` 取得 beats 時、回合與手數遞增前寫入，跳過也看得到；`startNewMatch` 清空）與 `visibleRecaps`（播放中不含最新一筆，防洩漏）；移除 `narrationLines`。`rng` 消耗順序與 `OctagonCore` 未動。
+- **`BattleView.swift`／新增 `BattleRecapView.swift`**：直式播放時收起資訊區與手牌區（0.28 秒動畫），八角籠吃滿；橫式右欄只顯示「交手進行中・點畫面跳過」；站立資訊區改顯示「上一手」（可捲動）並有 📜 按鈕，地面橫幅標題列也有 📜；戰報 sheet 由新到舊列出，不開背景互動。
+- **測試結果**：見下方（本機無 Swift 工具鏈，以 CI 為準）。
+- **請使用者實機檢查**：① 不看下方，只看八角籠就知道雙方出什麼、結果如何；② 每手長度與快／標準／慢是否合適；③ 八角籠放大／收回過渡會不會暈或突兀（SpriteView 可能直接跳尺寸）；④ 牌的大小與位置（矮畫面、橫式）；⑤ 打完後「上一手」與戰報 sheet 是否好讀；⑥ 地面戰、鎖技、KO 慢動作、跳過、第 8 手換回合、橫式都正常，牌不殘留。
+- **退路**：若放大縮小太躁，改成八角籠固定大尺寸，手牌從底部滑出蓋在籠子上（只動 `BattleView`）。
+- **下一棒**：等使用者實機確認後，`[實作]` 開新 session 做 P5-4。
 
 ---
 
