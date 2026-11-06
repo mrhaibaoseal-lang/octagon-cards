@@ -19,6 +19,9 @@ private typealias EngineSide = FightEngine.Side
 final class LungeDemoScene: SKScene {
     enum Side { case left, right }
 
+    /// Menlo has no Chinese glyphs, so its labels fell back to a thin system font with uneven spacing.
+    fileprivate static let labelFont = "PingFangTC-Semibold"
+
     private let leftFighter = SKSpriteNode(color: .systemGreen, size: CGSize(width: 56, height: 100))
     private let rightFighter = SKSpriteNode(color: .systemRed, size: CGSize(width: 56, height: 100))
     private var leftHasTexture: Bool = false
@@ -26,11 +29,10 @@ final class LungeDemoScene: SKScene {
     private let cageLine = SKShapeNode()
     /// Slightly lighter strip below the floor line; stands in for the canvas until the broadcast art arrives.
     private let floorNode = SKSpriteNode(color: SKColor(white: 1, alpha: 0.05), size: .zero)
-    private let statusLabel = SKLabelNode(fontNamed: "Menlo-Bold")
+    private let statusLabel = SKLabelNode(fontNamed: LungeDemoScene.labelFont)
     private let flashOverlay = SKSpriteNode(color: .white, size: .zero)
     private var currentDistance: Distance = .long
     private var currentGround: GroundState? = nil
-    private var currentClinch: Bool = false
     private var rockedA = false
     private var rockedB = false
     /// Loser of a standing KO / TKO; stays on the canvas after the fight ends.
@@ -73,7 +75,7 @@ final class LungeDemoScene: SKScene {
         cageLine.zPosition = -1
         addChild(cageLine)
 
-        statusLabel.fontSize = 11
+        statusLabel.fontSize = 14
         statusLabel.fontColor = SKColor(white: 0.85, alpha: 1.0)
         statusLabel.horizontalAlignmentMode = .center
         statusLabel.verticalAlignmentMode = .top
@@ -146,7 +148,7 @@ final class LungeDemoScene: SKScene {
     }
 
     private func layoutFighters(animated: Bool, duration: TimeInterval = 0.22) {
-        // The banner sits just under the floor line (the SwiftUI hand covers it while cards are showing).
+        // Only used during playback (referee, finish), when the hand has slid away.
         statusLabel.position = CGPoint(x: size.width * 0.5, y: floorY - 8)
         flashOverlay.size = size
         flashOverlay.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
@@ -192,29 +194,8 @@ final class LungeDemoScene: SKScene {
             statusLabel.fontColor = .systemCyan
             return
         }
-        if let g = currentGround {
-            let topText = g.topSide == .a ? "🟢玩家上位" : "🔴AI上位"
-            if let sub = g.activeSubmission {
-                let stageText = sub.stage == .lockedIn ? "🔥階段2深鎖 LOCKED IN!" : "階段1抓把 SETUP"
-                statusLabel.text = "🔒 \(sub.name) (\(stageText)) · \(topText)"
-                statusLabel.fontColor = sub.stage == .lockedIn ? .systemOrange : .systemYellow
-            } else {
-                statusLabel.text = "🥋 \(g.position.displayName) · \(topText)"
-                statusLabel.fontColor = .systemTeal
-            }
-        } else {
-            switch currentDistance {
-            case .long:
-                statusLabel.text = "🥊 站立 · 遠距離 LONG RANGE"
-            case .mid:
-                statusLabel.text = "🥊 站立 · 中距離 MID RANGE"
-            case .close:
-                statusLabel.text = currentClinch
-                    ? "🤼 站立 · 籠邊纏抱 / 泰拳箍頸 CLINCH"
-                    : "🥊 站立 · 近距離 / 籠邊 CLOSE RANGE"
-            }
-            statusLabel.fontColor = SKColor(white: 0.85, alpha: 1.0)
-        }
+        // Range and ground position are shown by the SwiftUI strip under the broadcast bar.
+        statusLabel.text = nil
     }
 
     // MARK: - Textures & tint
@@ -281,7 +262,6 @@ final class LungeDemoScene: SKScene {
         rockedB = false
         currentDistance = distance
         currentGround = nil
-        currentClinch = false
         for n in [leftFighter, rightFighter] {
             n.removeAllActions()
             n.setScale(stageScale)
@@ -311,7 +291,7 @@ final class LungeDemoScene: SKScene {
             n.alpha = 1
         }
         applyTintNow()
-        updateBannerText(finish: finish)
+        updateBannerText() // the SwiftUI outcome banner takes over after a finish
         layoutFighters(animated: false)
     }
 
@@ -332,7 +312,6 @@ final class LungeDemoScene: SKScene {
     private func adoptStructure(_ state: FightState) {
         currentDistance = state.distance
         currentGround = state.ground
-        currentClinch = state.isClinch
     }
 
     /// Stops whatever the previous beat was doing and puts both fighters on their resting pose.
@@ -363,14 +342,14 @@ final class LungeDemoScene: SKScene {
         big: Bool = false,
         delay: TimeInterval = 0
     ) {
-        let fontSize: CGFloat = big ? 26 : 16
+        let fontSize: CGFloat = big ? 32 : 18
         let container = SKNode()
         container.name = "floater"
         container.zPosition = 20
         container.alpha = 0
         container.setScale(0.6)
 
-        let shadow = SKLabelNode(fontNamed: "Menlo-Bold")
+        let shadow = SKLabelNode(fontNamed: Self.labelFont)
         shadow.text = text
         shadow.fontSize = fontSize
         shadow.fontColor = SKColor(white: 0, alpha: 0.85)
@@ -379,7 +358,7 @@ final class LungeDemoScene: SKScene {
         shadow.position = CGPoint(x: 1.5, y: -1.5)
         container.addChild(shadow)
 
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        let label = SKLabelNode(fontNamed: Self.labelFont)
         label.text = text
         label.fontSize = fontSize
         label.fontColor = color
@@ -396,7 +375,7 @@ final class LungeDemoScene: SKScene {
             .wait(forDuration: delay),
             .group([
                 .fadeIn(withDuration: 0.04),
-                .scale(to: big ? 1.25 : 1.0, duration: 0.10),
+                .scale(to: 1.0, duration: 0.10),
             ]),
             .group([
                 .moveBy(x: 0, y: 30, duration: 0.8),
@@ -779,7 +758,11 @@ final class LungeDemoScene: SKScene {
     private func cardPosition(_ side: EngineSide, popped: Bool) -> CGPoint {
         // Just under the broadcast bar; the popped card (1.25x) grows about 13pt, still clear of it.
         let y = size.height - topBarClearance - cardHeight / 2
-        let x: CGFloat = popped ? (side == .a ? 0.33 : 0.67) : (side == .a ? 0.27 : 0.73)
+        // The ground strip is wider than the range strip, so grounded cards sit further out.
+        let inner: CGFloat = currentGround == nil ? 0.33 : 0.20
+        let outer: CGFloat = currentGround == nil ? 0.27 : 0.15
+        let f = popped ? inner : outer
+        let x = side == .a ? f : 1 - f
         return CGPoint(x: size.width * x, y: y)
     }
 
@@ -881,10 +864,14 @@ final class LungeDemoScene: SKScene {
 private final class ExchangeCardNode: SKNode {
     let back = SKNode()
     let front = SKNode()
+    /// Size the contents are built at: the popped size, shrunk by `1 / popScale` at rest. SpriteKit rasterises labels
+    /// at their font size, so scaling a small card up is what blurred the text.
     private let cardSize: CGSize
     private let tint: SKColor
+    private static let popScale: CGFloat = 1.25
 
-    init(card: Card, side: EngineSide, size: CGSize, faceUp: Bool) {
+    init(card: Card, side: EngineSide, size displaySize: CGSize, faceUp: Bool) {
+        let size = CGSize(width: displaySize.width * Self.popScale, height: displaySize.height * Self.popScale)
         cardSize = size
         tint = side == .a ? .systemGreen : .systemRed
         super.init()
@@ -899,7 +886,7 @@ private final class ExchangeCardNode: SKNode {
         backFrame.lineWidth = 3
         backFrame.zPosition = 0
         back.addChild(backFrame)
-        let mark = SKLabelNode(fontNamed: "Menlo-Bold")
+        let mark = SKLabelNode(fontNamed: LungeDemoScene.labelFont)
         mark.text = "?"
         mark.fontSize = size.height * 0.4
         mark.fontColor = tint.withAlphaComponent(0.8)
@@ -916,7 +903,7 @@ private final class ExchangeCardNode: SKNode {
         frame.zPosition = 0
         front.addChild(frame)
 
-        let badge = SKLabelNode(fontNamed: "Menlo-Bold")
+        let badge = SKLabelNode(fontNamed: LungeDemoScene.labelFont)
         badge.text = BattleText.cardBadge(card)
         badge.fontSize = max(9, size.height * 0.11)
         badge.fontColor = SKColor(white: 0.25, alpha: 1)
@@ -927,7 +914,7 @@ private final class ExchangeCardNode: SKNode {
         Self.fit(badge, maxWidth: size.width * 0.88, maxHeight: size.height * 0.2)
         front.addChild(badge)
 
-        let name = SKLabelNode(fontNamed: "Menlo-Bold")
+        let name = SKLabelNode(fontNamed: LungeDemoScene.labelFont)
         name.text = card.name
         name.fontSize = max(11, size.height * 0.15)
         name.fontColor = SKColor(white: 0.1, alpha: 1)
@@ -940,6 +927,8 @@ private final class ExchangeCardNode: SKNode {
         Self.fit(name, maxWidth: size.width * 0.88, maxHeight: size.height * 0.5)
         front.addChild(name)
 
+        back.setScale(1 / Self.popScale)
+        front.setScale(1 / Self.popScale)
         addChild(back)
         addChild(front)
         if faceUp {
@@ -981,9 +970,9 @@ private final class ExchangeCardNode: SKNode {
         container.name = "stamp"
         container.zPosition = 0.6
         container.zRotation = -0.14
-        container.position = CGPoint(x: 0, y: -cardSize.height * 0.12)
+        container.position = CGPoint(x: 0, y: -cardSize.height * 0.12 / Self.popScale)
 
-        let label = SKLabelNode(fontNamed: "Menlo-Bold")
+        let label = SKLabelNode(fontNamed: LungeDemoScene.labelFont)
         label.text = text
         label.fontSize = max(11, cardSize.height * 0.16)
         label.fontColor = color
@@ -1006,11 +995,11 @@ private final class ExchangeCardNode: SKNode {
         container.addChild(label)
 
         container.alpha = 0
-        container.setScale(1.6)
+        container.setScale(1.6 / Self.popScale)
         addChild(container)
         container.run(.group([
             .fadeIn(withDuration: 0.05 * d),
-            .scale(to: 1, duration: 0.12 * d),
+            .scale(to: 1 / Self.popScale, duration: 0.12 * d),
         ]))
     }
 }

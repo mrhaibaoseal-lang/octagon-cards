@@ -16,7 +16,7 @@ struct BroadcastBar: View {
             BroadcastFighterPanel(
                 fighter: session.fighterA,
                 headData: session.headshotDataA,
-                roleTag: "🟢 玩家",
+                roleTag: "玩家",
                 cond: session.displayState.a,
                 tint: .green,
                 mirrored: false
@@ -33,7 +33,7 @@ struct BroadcastBar: View {
             BroadcastFighterPanel(
                 fighter: session.fighterB,
                 headData: session.headshotDataB,
-                roleTag: "🔴 AI",
+                roleTag: "AI",
                 cond: session.displayState.b,
                 tint: .red,
                 mirrored: true
@@ -111,21 +111,24 @@ struct BroadcastFighterPanel: View {
         HStack(spacing: 4) {
             if mirrored { Spacer(minLength: 0) }
             if mirrored { badges }
-            Text("\(roleTag) \(fighter.name)")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+            Text(roleTag)
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(tint)
+            Text(fighter.name)
+                .font(.system(size: 13, weight: .heavy))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if !mirrored { badges }
             if !mirrored { Spacer(minLength: 0) }
         }
-        .frame(height: 14)
+        .frame(height: 16)
     }
 
     @ViewBuilder
     private var badges: some View {
         if cond.isRocked {
-            Text("💥ROCKED")
-                .font(.system(size: 8, weight: .heavy, design: .monospaced))
+            Text("ROCKED")
+                .font(.system(size: 10, weight: .heavy))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(Color.orange)
@@ -133,8 +136,8 @@ struct BroadcastFighterPanel: View {
                 .clipShape(Capsule())
         }
         if cond.isBleeding {
-            Text("🩸Lv.\(cond.cutSeverity)")
-                .font(.system(size: 8, weight: .heavy, design: .monospaced))
+            Text("流血\(cond.cutSeverity)")
+                .font(.system(size: 10, weight: .heavy))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(Color.red)
@@ -164,17 +167,19 @@ struct BroadcastStatBar: View {
         VStack(spacing: 1) {
             HStack(spacing: 2) {
                 Text(label)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if let lossText {
                     Text(lossText)
-                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 11, weight: .heavy))
+                        .monospacedDigit()
                         .foregroundStyle(.red)
                         .opacity(lossOpacity)
                 }
                 Text("\(Int(value.rounded()))")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
                     .foregroundStyle(isLow ? Color.red : Color.primary)
             }
             GeometryReader { geo in
@@ -196,7 +201,7 @@ struct BroadcastStatBar: View {
                         .stroke(Color.white, lineWidth: flash ? 1.5 : 0)
                 )
             }
-            .frame(height: 5)
+            .frame(height: 6)
         }
         .frame(maxWidth: .infinity)
         .onAppear { ghost = value }
@@ -242,7 +247,8 @@ struct BroadcastCenter: View {
     var body: some View {
         VStack(spacing: 3) {
             Text("ROUND \(round)/\(totalRounds) · 交手 \(exchange)/\(exchangesPerRound)")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .font(.system(size: 12, weight: .heavy))
+                .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             progressCells
@@ -300,7 +306,7 @@ struct TrendBar: View {
             .frame(height: 6)
 
             Text(caption)
-                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .font(.system(size: 10, weight: .heavy))
                 .foregroundStyle(captionColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -309,9 +315,9 @@ struct TrendBar: View {
 
     private var caption: String {
         switch trend.leader {
-        case .some(.a): return "🟢 玩家 \(trend.label)"
-        case .some(.b): return "🔴 AI \(trend.label)"
-        case .none: return "⚖️ \(trend.label)"
+        case .some(.a): return "玩家 \(trend.label)"
+        case .some(.b): return "AI \(trend.label)"
+        case .none: return trend.label
         }
     }
 
@@ -376,18 +382,42 @@ struct BattleAlert: Identifiable, Equatable {
     }
 }
 
-/// Non-interactive overlay: a pulsing coloured frame around the whole screen plus stacked banners under the
-/// broadcast bar (`topOffset` keeps them from covering it).
-struct BattleAlertOverlay: View {
+/// Banners under the position strip. They live in the page's layout so they can never overlap that strip.
+struct BattleAlertBanners: View {
     let alerts: [BattleAlert]
-    var topOffset: CGFloat = 8
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(alerts) { alert in
+                Text(alert.text)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(alert.kind == .rocked ? Color.black : Color.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity)
+                    .background(alert.color.opacity(0.92))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: 400)
+        .animation(.easeInOut(duration: 0.25), value: alerts)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Non-interactive pulsing coloured frame around the whole screen, for Rocked and deep locks.
+struct BattleAlertFrame: View {
+    let alerts: [BattleAlert]
 
     @State private var pulse = false
 
     private var frameAlert: BattleAlert? { alerts.first(where: \.pulsesScreen) }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             if let frameAlert {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(frameAlert.color, lineWidth: 5)
@@ -395,24 +425,6 @@ struct BattleAlertOverlay: View {
                     .opacity(pulse ? 1.0 : 0.45)
                     .transition(.opacity)
             }
-            VStack(spacing: 4) {
-                ForEach(alerts) { alert in
-                    Text(alert.text)
-                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(alert.kind == .rocked ? Color.black : Color.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity)
-                        .background(alert.color.opacity(0.92))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .frame(maxWidth: 480)
-            .padding(.horizontal, 8)
-            .padding(.top, topOffset)
         }
         .animation(.easeInOut(duration: 0.25), value: alerts)
         .allowsHitTesting(false)
