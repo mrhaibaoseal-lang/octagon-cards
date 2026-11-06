@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-11-06 · [規劃] Claude Opus 5.5 (橫版與戰鬥人物定案)
+- **使用者決定**：只做橫版；風格為像素賽事轉播風，盡量貼近 UFC；戰鬥人物用「共用骨架＋官方照貼圖」，頭身比約 35%；選角頁維持官方照像素圖；實作開新 session。
+- **實測發現**：官方「全身照」只拍到腰部或大腿，腿和腳必須共用素材；照片手臂直接彎曲會斷開；自動抽刺青在深色皮膚上不可靠，所以改用照片當貼圖。詳見 `docs/VISUAL_DIRECTION.md`。
+- **修改檔案**：`docs/VISUAL_DIRECTION.md`（新）、`RULES.md` §2、`docs/ANIMATION_ART.md`（加註）、`docs/TASKS.md`（新增 P6，ART-1 擴充）、`pipeline/prototypes/`（新，原型腳本，不含照片）。沒有改產品程式，未跑 CI 或打包。
+- **未驗證**：原型只測 3 位選手，切割框為手動量測，Vision 自動切割還沒跑過，這是 P6-2 要回答的問題。
+- **下一棒**：`[實作]` 開新 session 做 P6-1；P6-2 可並行，兩者都不要動 `OctagonCore`。
+
+---
+
 ## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-4 局勢顯示 v0.5.5)
 - **`OctagonCore`（新 `RoundTrend.swift`，純 Swift）**：`RoundTrend.estimate(exchanges:state:)` 直接呼叫 `FightMatchEngine.scoreRound`（**沒有改動、也沒抽出內部函式**，計分結果不可能變），取 `damageByA/B`、`rockedByA/B`、`judgeCards`：`edge = 0.6 × 傷害差 + 0.5 × 裁判差`，再乘信心係數 `min(交手數, 4)/4`（避免第一拳就顯示壓制）。傷害差 = `(壓力A − 壓力B)/(壓力A + 壓力B + 24)`，壓力 = 傷害 + 12×Rocked；裁判差 = 三張卡 `(A−B)` 平均 ÷ 2。輸出 `value`（0–1，0.5 勢均力敵，越大越偏玩家 A）、`leader: Side?`、`level`（`even / slight / clear` → 勢均力敵／小幅領先／明顯領先，門檻 |edge| 0.12、0.40）、`exchangeCount`。空回合 = `RoundTrend.even`。另有 `RoundTrend.exchangeWinner(_:)`（單次交手誰佔上風，用於進度格；權重同 `scoreRound`）。不碰 `SeededRNG`、不輸出精確分數。
 - **測試 `RoundTrendTests.swift`（12 個）**：空回合、完全對稱互換仍 0.5、第一拳不算壓制、A／B 單方壓制（>0.85／<0.15 且 clear）、鏡像相加為 1、純摔技控制、領先隨優勢單調上升、40 個 seed 實戰每個回合前綴都在 0–1 且 leader／level 一致、重複呼叫相同且 `scoreRound` 前後相同、單次交手勝者、中文等級名稱。
