@@ -88,7 +88,7 @@
 - [x] **P5-0 精簡交接文件**
   - 內容：把 `docs/HANDOFF.md` 中 2026-11-04 之前的紀錄原文搬到新檔 `docs/HANDOFF_ARCHIVE.md`；`HANDOFF.md` 保留「待規劃確認」與最近紀錄，並加一行封存連結
   - 完成條件：沒有遺失任何紀錄；只改文件
-- [ ] **P5-1 拆分 `ContentView.swift` 並整理版面（`App/Sources`）**
+- [x] **P5-1 拆分 `ContentView.swift` 並整理版面（`App/Sources`）**
   - 內容：拆成 `PreFightView`（選角）、`BattleView`（對戰）、`DebugDrawerView`、對局狀態物件 `BattleSession`（`@Observable`，承接 `playTurn` 等邏輯）；選角移到賽前頁，對戰頁固定不捲動，八角籠加高，Debug 預設收起，地面資訊改放固定區域，手牌不再因橫幅被推動
   - 完成條件：CI 通過、對戰規則與 Debug 功能不變、`ContentView.swift` 只留導覽；打包 IPA
 - [ ] **P5-2 交手演出時間軸（`OctagonCore` 純 Swift）**

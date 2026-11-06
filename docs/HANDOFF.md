@@ -7,6 +7,20 @@
 
 ---
 
+## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-1 拆分 ContentView 並整理版面 v0.5.2)
+- **拆分（行為不變，只搬移與版面整理）**：`ContentView.swift` 1040 行 → 約 60 行，只留導覽（賽前頁 ⇄ 對戰頁）與首次下載選手圖的覆蓋層。
+  - 新增 `BattleSession.swift`（`@MainActor @Observable`）：選手、引擎狀態、手牌、回合記錄、`SeededRNG`、`LungeDemoScene`；承接 `startNewMatch` / `playTurn` / `refreshPixelSprites` / `copyReplayBundle`，邏輯逐行照搬。
+  - 新增 `PreFightView.swift`（選角：5 組熱門對戰＋兩個自選選手選單＋選手預覽卡＋「開始對戰」）、`BattleView.swift`（對戰＋`FighterStatusCard`）、`DebugDrawerView.swift`、`BattleText.swift`（格式化文字）、`SandboxMatchup.swift`、`RosterPrefetchModel.swift`（首次下載進度，仍用同一個 UserDefaults key `rosterPrefetchCompletedOnce`）。
+  - `LungeDemoScene.swift`：`didMove(to:)` 加 `isSetUp` 保護——離開再進對戰頁會重新呈現同一個 scene，否則節點會重複 `addChild` 而崩潰。
+  - `project.yml`：`sources` 為整個 `App/Sources` 目錄，新檔自動收進；版本 `0.5.2 (7)`。
+- **版面**：對戰頁不捲動（直式：頂列→八角籠（吃剩餘高度，最小 150pt）→雙方狀態卡→固定高 96pt 的地面／站立資訊區→固定高 206pt 手牌區）；地面橫幅出現時手牌位置不動；Rocked／流血標籤列保留固定高度；橫式改為左右兩欄。Debug 預設收起，按「🔍 算式」以 sheet 開啟（`.medium` 時背景仍可點牌）；「📋 重現碼」仍在頂列，Debug sheet 內也有一顆。
+- **有意的小改動（請確認）**：(1) 對戰 HUD 不再顯示 `lastFightPatchNote`，改放賽前預覽卡；(2) 狀態卡的特質列在沒有 Rocked／流血時才顯示；(3) 點「← 選角」會放棄目前對局並換新 Seed，下次一定從新局開始；(4) 賽前頁換選手仍會即時換新 Seed（同舊行為）。
+- **測試結果**：CI run `42204613192` ✅（push `efda3dc`，OctagonCore 未改動）；IPA run `42204614229` ✅，App 層無編譯警告；已下載至 `dist/OctagonCards-unsigned-ipa/OctagonCards-unsigned.ipa`（v0.5.2）。本機無 Swift 工具鏈，未做畫面實測。
+- **待使用者／實機確認**：八角籠實際高度（iPhone 15 直式估計約 200–225pt，小螢幕機型會接近 150pt 下限）、橫式版面是否擠、Debug sheet 與複製重現碼是否正常。
+- **下一棒**：`[實作]` 開新 session 做 P5-2（`OctagonCore` 交手演出時間軸）。
+
+---
+
 ## 2026-11-06 · [實作] Claude Sonnet 5.5 (P5-0 精簡交接文件)
 - 把 2026-11-03 及更早的 17 筆紀錄原文搬到新檔 `docs/HANDOFF_ARCHIVE.md`（行 80 起逐字搬移，未改一字）；`HANDOFF.md` 保留「待規劃確認」與 2026-11-04 起的 5 筆，檔尾加封存連結。
 - 驗證：搬移前 22 筆 `## 2026…`，搬移後 5 + 17 = 22；用 `diff` 確認封存內容與原檔對應行完全相同、保留部分加封存內容可還原原檔。
