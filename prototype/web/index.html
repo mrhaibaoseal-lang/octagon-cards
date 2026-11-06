@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Octagon Cards 原型</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="rotate">請把手機轉成橫向</div>
+  <div id="game">
+    <canvas id="cage" width="844" height="390"></canvas>
+    <div id="battle" class="hidden">
+      <header id="bar">
+        <div class="panel" id="panel-a"></div>
+        <div id="center-bar"></div>
+        <div class="panel mirror" id="panel-b"></div>
+      </header>
+      <section id="intent"></section>
+      <div id="alert" class="hidden"></div>
+      <div id="reveal" class="hidden"></div>
+      <div id="verdict" class="hidden"></div>
+      <div id="last"></div>
+      <section id="tray">
+        <div id="choice"></div>
+        <div id="hand"></div>
+        <div id="actions">
+          <div id="energy"></div>
+          <button id="brace"></button>
+          <button id="fight" disabled>出手</button>
+        </div>
+      </section>
+      <button id="skip" class="hidden">點畫面跳過</button>
+    </div>
+    <div id="overlay" class="hidden"></div>
+    <div id="select" class="hidden"></div>
+  </div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

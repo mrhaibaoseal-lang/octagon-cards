@@ -1,47 +1,37 @@
-# Octagon Cards — 專案規則與重要事項 (Project Rules & Guardrails)
+# Octagon Cards — 專案鐵則
 
-> 本文件定義 **Octagon Cards** 的核心約束、開發規範、自動化邊界與美術/技術原則。所有後續開發階段皆須嚴格遵守。
+> 2026-11-07 重做方向後改寫。舊版規則與設計文件在 [docs/archive/](docs/archive/)，舊程式在 tag `legacy-v0.6.1`。
+> 遊戲規格見 [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)。
 
----
+## 1. 專案定位
+- **性質**：個人自用的 UFC 卡牌格鬥遊戲，最終平台是 iPhone（橫向）。
+- **四層模式，同一個戰鬥核心**：對戰 → 衝冠短跑 → 生涯 → 真實 UFC 同步。依序疊上去，不同時開工。
+- **最高原則：先好玩，再加東西。** 每個階段由使用者親自玩過、同意後才進下一階段。自動測試與模擬只是輔助，不能代替這一關。
 
-## 1. 專案定位與核心原則
-- **性質**：個人自用（Self-use only）的 iOS 原生 UFC 回合制卡牌格鬥 ＋ 經紀養成遊戲。
-- **平台**：iOS 原生（`SwiftUI` + `SpriteKit` + `SwiftData`），在 Windows 開發、透過 GitHub Actions（公開 Repo，`macos-latest`）雲端編譯未簽名 `.ipa`，下載後使用 **FlareStore 付費憑證**簽名安裝至 iPhone。
-- **對局時長**：標準 3 回合對戰約 **10 分鐘**（每回合 8 次交手 Exchange），5 回合冠軍戰約 15–16 分鐘；另設快速模式（每回合 5 次交手）。
+## 2. 開發順序
+1. **玩法先在網頁驗證**（`prototype/web/`）。瀏覽器就能玩，不需要打包。
+2. 玩法定案後才移植回 Swift（`Packages/OctagonCore`、`App/`）。舊 App 在移植完成前保留，不要刪。
+3. **規則與數值放 JSON**（`prototype/web/rules/`），引擎不得比對特定牌名，也不得把數值寫死在流程裡。移植時 Swift 讀同一份資料。
+4. **模擬必須走和遊戲相同的流程**：同一個引擎、同樣的手牌與 AI。不得用另一套簡化流程校準平衡。
 
----
+## 3. 戰鬥設計原則
+- 玩家要能一眼看懂：誰贏一手由相剋決定，擲骰只影響效果高低，機率出牌前就看得到。
+- 讀心要有依據：對手傾向顯示在畫面上，而且是真實數字，不能騙玩家。
+- 新系統要能回答「它讓玩家多了什麼決定」。答不出來就不加。
 
-## 2. 美術與 AI 額度保護規則（Zero-Quota-Waste）
-1. **選手美術全面採用「零 AI 官方去背照自動像素化」**：
-   - 來源：UFC.com 選手頁面之官方透明 PNG（`athlete_bio_full_body` 半身照 + `event_results_athlete_headshot` 大頭照）。
-   - 處理：Python (`uv` + `Pillow`) 自動裁切透明邊 → 銳化與對比強化（保留刺青細節）→ BOX 縮圖（小人高 `112px–128px`、頭像 `64px`）→ 32 色量化（無抖色）→ `1px` 深色描邊。
-   - **禁止對一般選手逐一呼叫 AI 生圖**，確保 700+ 名現役選手與每週新秀更新為 **0 AI 成本、100% 真實長相與真實刺青**。
-   - **官方照不進 repo（公開 repo 的處理方式）**：repo 只放程式、規則文件與**不含照片的 JSON 資料**（選手數據、圖片網址）。App 首次需要某位選手時，**在手機上下載官方去背照 → 本機像素化 → 快取**。好處：repo 與 IPA 內沒有任何照片、每週新人不需要重新打包、不佔用雲端建置時間。`pipeline/pixelate_sprites.py` 保留為「效果原型與參數校準工具」，Swift 端實作同一套流程（裁邊 → 銳化 → 縮圖 → 32 色量化 → 描邊）。
-   - **用途（2026-11-06 更新，見 `docs/VISUAL_DIRECTION.md`）**：選角頁使用上述像素圖；戰鬥人物改用「共用骨架＋官方照貼圖」，同樣在手機上自動產生，一般選手仍是 0 次 AI 生圖。
-2. **AI 生圖僅限「一次性共用素材」**：
-   - 八角籠背景、觀眾席、打擊特效（拳風、火花、血滴）、40 張通用卡牌插圖、戰鬥骨架的共用四肢與手套，以及**地面戰專用雙人姿勢模板（見 `docs/GROUND_GAME_DESIGN.md`）**。
-   - 總 AI 生成張數控制在 100 張以內。
+## 4. 美術
+- **選手採精選名單（約 32 人）＋逐人 AI 精靈圖**：每人一張綠幕姿勢表，戰鬥用逐格換圖。不再追求 700+ 人全自動。
+- **生圖由使用者在 Gemini 執行**，用的是使用者的額度。總量控制在約 40 張選手圖，先驗證再擴大。
+- **不再嘗試**（使用者已否決或試過失敗）：程式畫身體、手寫像素、Q 版、照片切割綁骨架、3D 投影貼圖。原因見 `docs/archive/HANDOFF_LEGACY.md`。
+- 提示詞不放 UFC 商標與 logo。
 
----
+## 5. 公開 repo 的界線
+- repo 是公開的。**選手圖、官方照及其衍生圖一律不進 repo**，放在 gitignore 的 `prototype/web/assets/private/`。
+- 真實選手樣貌與 UFC 相關內容僅限自用，不對外發布。
+- 沒有私人素材時，原型要能用占位圖正常運作。
 
-## 3. 技術與架構規則（Windows 寫 Swift + 雲端打包）
-1. **核心邏輯與 UI 嚴格分離**：
-   - `FightEngine`（站立/纏抱/地面戰鬥規則、AI 決策、裁判計分）與 `RatingEngine`（ufcstats 數據轉能力值）必須寫成**純 Swift Package（不 import UIKit / SpriteKit / SwiftUI）**。
-   - 這樣可以在 Windows 本機直接執行 `swift test` 驗證所有戰鬥與地面規則，不消耗雲端建置時間。
-2. **XcodeGen 管理專案**：
-   - 禁止手動編輯 `.xcodeproj`，統一由 `project.yml` 在 GitHub Actions macOS runner 上動態生成 Xcode 專案。
-3. **只走免費雲端打包**：
-   - repo 維持**公開**，使用 GitHub 標準 `macos` runner（公開 repo 免費）；不使用付費的大型 runner。
-   - 平常 push 只在 Linux 跑純 Swift Package 測試；**只在打 tag 時**才建 IPA，避免無謂消耗。
-   - 未經你同意，不觸發任何付費或可能計費的雲端流程。
-4. **憑證安全**：
-   - FlareStore 的 `.p12` 與 `.mobileprovision` **永不上傳 GitHub**。GitHub Actions 只產出 Unsigned IPA，在手機端用 FlareStore 本地簽名。
-
----
-
-## 4. 自動更新與資料規則
-1. **每週日自動同步**：
-   - 爬取 `ufcstats.com`（生涯與單場逐回合統計）與 `UFC.com`（排名、賽事卡、去背照）。
-2. **新人第一時間上線機制**：
-   - 只要進入 UFC 名單或即將出賽（含 Contender Series 新簽約），爬蟲立即建檔並以貝氏收縮（Bayesian Shrinkage）計算初始能力值。
-   - 若官方已有去背照 → 立即轉成像素圖；若尚未拍官方照 → 自動套用「量級體型剪影＋國旗＋真實姓名」暫代卡，待官方補照後自動替換。
+## 6. 打包與費用
+- 只用免費服務：公開 repo 加標準 `macos-latest` runner。未經同意不觸發任何可能計費的流程。
+- GitHub Actions 只產出未簽名 IPA，由使用者用 FlareStore 在手機簽名。`.p12`、`.mobileprovision` 永不上傳。
+- Xcode 專案由 `project.yml`（XcodeGen）產生，不提交 `.xcodeproj`。
+- Windows 沒有 Swift 工具鏈，Swift 的編譯與測試以 CI 為準。

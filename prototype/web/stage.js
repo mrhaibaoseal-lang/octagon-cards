@@ -1,0 +1,368 @@
+// Canvas layer: cage background, fighter sprites and impact effects. Knows nothing about the rules.
+
+const SCALE = 2; // sprite pixels to screen points
+const POSES = ["idle", "punch", "kick", "hit", "shoot", "down"];
+const FLOOR_Y = 296;
+const PLACEHOLDER_TINT = { khabib: "#49648c", oliveira: "#2f8f83", neutral: "#777c8c" };
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function tinted(img, color) {
+  const c = document.createElement("canvas");
+  c.width = img.width;
+  c.height = img.height;
+  const x = c.getContext("2d");
+  x.drawImage(img, 0, 0);
+  x.globalCompositeOperation = "source-in";
+  x.fillStyle = color;
+  x.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+
+function whiteOf(img) {
+  return tinted(img, "#ffffff");
+}
+
+/** Loads real sprites where they exist. Fighters without art borrow a flat silhouette of whatever art exists. */
+export async function loadAssets(fighterIds) {
+  const assets = { fighters: {}, portraits: {} };
+  let manifest = null;
+  try {
+    const res = await fetch("assets/private/manifest.json");
+    if (res.ok) manifest = await res.json();
+  } catch {
+    manifest = null;
+  }
+  const loadSet = async (id, meta) => {
+    const set = {};
+    for (const pose of POSES) {
+      const img = meta[pose] && (await loadImage(`assets/private/${id}/${pose}.png`));
+      if (img) set[pose] = { img, white: whiteOf(img), w: meta[pose].w, h: meta[pose].h, anchorX: meta[pose].anchorX };
+    }
+    return set;
+  };
+  const real = {};
+  for (const id of Object.keys(manifest?.fighters || {})) real[id] = await loadSet(id, manifest.fighters[id]);
+  const donor = Object.values(real)[0] || null;
+  for (const id of fighterIds) {
+    if (real[id]) {
+      assets.fighters[id] = { poses: real[id], placeholder: false };
+    } else if (donor) {
+      const poses = {};
+      for (const pose of POSES) {
+        const d = donor[pose];
+        if (!d) continue;
+        const img = tinted(d.img, PLACEHOLDER_TINT[id] || "#777c8c");
+        poses[pose] = { img, white: d.white, w: d.w, h: d.h, anchorX: d.anchorX };
+      }
+      assets.fighters[id] = { poses, placeholder: true };
+    } else {
+      assets.fighters[id] = { poses: null, placeholder: true };
+    }
+    const portrait = `assets/private/${id}/portrait.png`;
+    if (await loadImage(portrait)) assets.portraits[id] = portrait;
+  }
+  return assets;
+}
+
+function buildBackground() {
+  const c = document.createElement("canvas");
+  c.width = 844;
+  c.height = 390;
+  const x = c.getContext("2d");
+  const sky = x.createLinearGradient(0, 0, 0, 240);
+  sky.addColorStop(0, "#05060b");
+  sky.addColorStop(1, "#141826");
+  x.fillStyle = sky;
+  x.fillRect(0, 0, 844, 390);
+  // Overhead lights.
+  for (const lx of [150, 330, 514, 694]) {
+    const g = x.createRadialGradient(lx, 0, 4, lx, 0, 170);
+    g.addColorStop(0, "rgba(255,244,214,0.3)");
+    g.addColorStop(1, "rgba(255,244,214,0)");
+    x.fillStyle = g;
+    x.fillRect(lx - 170, 0, 340, 200);
+  }
+  // Crowd, as dim noise behind the fence.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 700; i++) {
+    x.fillStyle = `rgba(${90 + rand() * 90},${90 + rand() * 80},${110 + rand() * 80},${0.05 + rand() * 0.12})`;
+    x.fillRect(Math.floor(rand() * 844), 112 + Math.floor(rand() * 60), 3, 4);
+  }
+  // Fence.
+  x.fillStyle = "#0d0f17";
+  for (const [px, w] of [[0, 8], [200, 6], [420, 6], [638, 6], [836, 8]]) x.fillRect(px, 66, w, 160);
+  x.strokeStyle = "rgba(190,200,220,0.09)";
+  x.lineWidth = 1;
+  for (let i = -240; i < 1000; i += 16) {
+    x.beginPath();
+    x.moveTo(i, 66);
+    x.lineTo(i + 160, 226);
+    x.moveTo(i + 160, 66);
+    x.lineTo(i, 226);
+    x.stroke();
+  }
+  x.fillStyle = "#0a0b11";
+  x.fillRect(0, 62, 844, 5);
+  // Canvas floor.
+  const floor = x.createLinearGradient(0, 226, 0, 390);
+  floor.addColorStop(0, "#2d3347");
+  floor.addColorStop(1, "#1a1e2c");
+  x.fillStyle = floor;
+  x.fillRect(0, 226, 844, 164);
+  x.fillStyle = "rgba(255,255,255,0.05)";
+  x.beginPath();
+  x.ellipse(422, 296, 330, 58, 0, 0, Math.PI * 2);
+  x.fill();
+  x.strokeStyle = "rgba(255,255,255,0.08)";
+  x.lineWidth = 2;
+  x.beginPath();
+  x.ellipse(422, 296, 330, 58, 0, 0, Math.PI * 2);
+  x.stroke();
+  return c;
+}
+
+export class Stage {
+  constructor(canvas, assets) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.assets = assets;
+    this.background = buildBackground();
+    this.fx = [];
+    this.flashAlpha = 0;
+    this.shakeAmp = 0;
+    this.timeScale = 1;
+    this.freezeUntil = 0;
+    this.last = performance.now();
+    this.time = 0;
+    this.fighters = { a: this.makeFighter("a"), b: this.makeFighter("b") };
+    this.dpr = 1;
+    this.resize(1);
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  makeFighter(side) {
+    return { side, id: null, x: side === "a" ? 250 : 594, y: FLOOR_Y, tx: side === "a" ? 250 : 594, ty: FLOOR_Y, pose: "idle", restPose: "idle", poseUntil: 0, flip: side === "b", ox: 0, oy: 0, wx: 0, whiteUntil: 0, z: 0, downed: false };
+  }
+
+  resize(ratio) {
+    this.dpr = ratio;
+    this.canvas.width = Math.round(844 * ratio);
+    this.canvas.height = Math.round(390 * ratio);
+  }
+
+  setFighters(idA, idB) {
+    this.fighters.a.id = idA;
+    this.fighters.b.id = idB;
+  }
+
+  /** Where everyone should stand for this situation. */
+  setLayout(view, snap = false) {
+    const { a, b } = this.fighters;
+    for (const f of [a, b]) {
+      f.flip = f.side === "b";
+      f.z = 0;
+      f.downed = false;
+    }
+    if (view.ground) {
+      const top = this.fighters[view.ground.top];
+      const bottom = this.fighters[view.ground.top === "a" ? "b" : "a"];
+      const dir = view.ground.top === "a" ? 1 : -1; // the top fighter faces along this direction
+      const shift = [34, 18, 4][view.ground.pos] ?? 18;
+      top.restPose = "shoot";
+      top.tx = 422 - dir * (40 + shift);
+      // Raised so the fighter underneath stays visible above the hand.
+      top.ty = FLOOR_Y - 34;
+      top.flip = dir < 0;
+      top.z = 1;
+      bottom.restPose = "down";
+      bottom.tx = 422 + dir * 10;
+      bottom.ty = FLOOR_Y - 18;
+      bottom.flip = dir < 0;
+      bottom.downed = true;
+    } else {
+      const gap = view.range === "in" ? 84 : 172;
+      a.restPose = "idle";
+      b.restPose = "idle";
+      a.tx = 422 - gap;
+      b.tx = 422 + gap;
+      a.ty = FLOOR_Y;
+      b.ty = FLOOR_Y;
+    }
+    for (const f of [a, b]) {
+      if (performance.now() >= f.poseUntil) f.pose = f.restPose;
+      if (snap) {
+        f.x = f.tx;
+        f.y = f.ty;
+        f.ox = 0;
+        f.oy = 0;
+      }
+    }
+  }
+
+  /** Attacker steps in with a pose and returns. */
+  strike(side, pose, reach, ms) {
+    const f = this.fighters[side];
+    f.pose = pose;
+    f.poseUntil = performance.now() + ms;
+    const dir = f.flip ? -1 : 1;
+    f.anim = { kind: "lunge", start: performance.now(), ms, reach: reach * dir };
+  }
+
+  /** Defender is knocked back with a white flash. */
+  recoil(side, amount, ms, pose = "hit") {
+    const f = this.fighters[side];
+    if (!f.downed) {
+      f.pose = pose;
+      f.poseUntil = performance.now() + ms;
+    }
+    const dir = f.flip ? 1 : -1;
+    f.anim = { kind: "knock", start: performance.now(), ms, reach: amount * dir };
+    f.whiteUntil = performance.now() + 90;
+  }
+
+  stagger(side, ms) {
+    const f = this.fighters[side];
+    f.pose = "hit";
+    f.poseUntil = performance.now() + ms;
+    f.anim = { kind: "wobble", start: performance.now(), ms };
+  }
+
+  fall(side) {
+    const f = this.fighters[side];
+    f.restPose = "down";
+    f.pose = "down";
+    f.poseUntil = 0;
+    f.ty = FLOOR_Y - 18;
+    f.downed = true;
+    f.flip = f.side === "b" ? false : true;
+    f.anim = null;
+  }
+
+  victory(side) {
+    const f = this.fighters[side];
+    f.restPose = "idle";
+    f.pose = "idle";
+    f.ty = FLOOR_Y;
+  }
+
+  floater(side, text, color, size = 22) {
+    const f = this.fighters[side];
+    this.fx.push({ x: f.x + (f.flip ? -20 : 20), y: f.y - 150, text, color, size, born: performance.now(), life: 900 });
+  }
+
+  flash(alpha) {
+    this.flashAlpha = Math.max(this.flashAlpha, alpha);
+  }
+
+  shake(amp) {
+    this.shakeAmp = Math.max(this.shakeAmp, amp);
+  }
+
+  hitStop(ms) {
+    this.freezeUntil = performance.now() + ms;
+  }
+
+  frame(now) {
+    const realDt = Math.min(50, now - this.last);
+    this.last = now;
+    const frozen = now < this.freezeUntil;
+    const dt = frozen ? 0 : realDt * this.timeScale;
+    this.time += dt;
+    for (const f of Object.values(this.fighters)) this.updateFighter(f, dt, now);
+    this.flashAlpha = Math.max(0, this.flashAlpha - realDt * 0.004);
+    this.shakeAmp = Math.max(0, this.shakeAmp - realDt * 0.05);
+    this.draw(now);
+    requestAnimationFrame((t) => this.frame(t));
+  }
+
+  updateFighter(f, dt, now) {
+    const k = 1 - Math.pow(0.001, dt / 260);
+    f.x += (f.tx - f.x) * k;
+    f.y += (f.ty - f.y) * k;
+    f.ox = 0;
+    f.oy = 0;
+    if (f.anim) {
+      const p = (now - f.anim.start) / f.anim.ms;
+      if (p >= 1) f.anim = null;
+      else if (f.anim.kind === "lunge") f.ox = f.anim.reach * Math.sin(Math.PI * Math.min(1, p * 1.05));
+      else if (f.anim.kind === "knock") f.ox = f.anim.reach * Math.sin(Math.PI * Math.min(1, p));
+      else if (f.anim.kind === "wobble") f.ox = Math.sin(p * 18) * 7 * (1 - p);
+    }
+    if (now >= f.poseUntil) f.pose = f.restPose;
+  }
+
+  drawFighter(f, now) {
+    const art = this.assets.fighters[f.id];
+    const breathe = !f.downed && f.pose === "idle" ? Math.round(Math.sin(this.time / 420 + (f.side === "a" ? 0 : 1)) * 1.5) : 0;
+    const x = this.ctx;
+    const px = f.x + f.ox;
+    const py = f.y + f.oy;
+    // Shadow.
+    x.fillStyle = "rgba(0,0,0,0.42)";
+    x.beginPath();
+    x.ellipse(px, py + 1, f.pose === "down" ? 96 : 56, 8, 0, 0, Math.PI * 2);
+    x.fill();
+    const sprite = art?.poses?.[f.pose] || art?.poses?.idle;
+    if (!sprite) {
+      x.fillStyle = "#39415a";
+      x.fillRect(px - 26, py - 150, 52, 150);
+      return;
+    }
+    const w = sprite.w * SCALE;
+    const h = sprite.h * SCALE;
+    const white = now < f.whiteUntil;
+    x.save();
+    x.imageSmoothingEnabled = false;
+    x.translate(Math.round(px), Math.round(py - h + breathe));
+    if (f.flip) x.scale(-1, 1);
+    x.drawImage(white ? sprite.white : sprite.img, Math.round(-sprite.anchorX * SCALE), 0, w, h);
+    x.restore();
+    if (art.placeholder && !f.downed) {
+      x.fillStyle = "rgba(255,255,255,0.75)";
+      x.font = "700 10px -apple-system, 'PingFang TC', sans-serif";
+      x.textAlign = "center";
+      x.fillText("占位圖", px, py - h - 4);
+    }
+  }
+
+  draw(now) {
+    const x = this.ctx;
+    x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    x.imageSmoothingEnabled = false;
+    const sx = this.shakeAmp ? (Math.random() - 0.5) * this.shakeAmp : 0;
+    const sy = this.shakeAmp ? (Math.random() - 0.5) * this.shakeAmp : 0;
+    x.save();
+    x.translate(sx, sy);
+    x.drawImage(this.background, 0, 0);
+    const order = Object.values(this.fighters).sort((p, q) => p.z - q.z);
+    for (const f of order) this.drawFighter(f, now);
+    x.restore();
+    x.textAlign = "center";
+    this.fx = this.fx.filter((e) => now - e.born < e.life);
+    for (const e of this.fx) {
+      const p = (now - e.born) / e.life;
+      x.globalAlpha = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
+      x.font = `900 ${e.size}px -apple-system, 'PingFang TC', sans-serif`;
+      x.lineWidth = 4;
+      x.strokeStyle = "#000";
+      const y = e.y - p * 26;
+      x.strokeText(e.text, e.x, y);
+      x.fillStyle = e.color;
+      x.fillText(e.text, e.x, y);
+      x.globalAlpha = 1;
+    }
+    if (this.flashAlpha > 0) {
+      x.fillStyle = `rgba(255,255,255,${this.flashAlpha})`;
+      x.fillRect(0, 0, 844, 390);
+    }
+  }
+}
