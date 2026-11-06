@@ -38,6 +38,19 @@
       "bottom": { "S": 0.15, "G": 0.25, "C": 0.60 }
     }
   },
+  "hooker": {
+    "name": "Dan Hooker", "short": "Hooker", "nick": "絞刑手",
+    "summary": "手長腳長，耐打又有體力。沒有一擊必殺，靠消耗把你拖垮。",
+    "attrs": { "power": 78, "accuracy": 84, "wrestling": 55, "grappleDef": 65, "submission": 62, "chin": 74, "cardio": 85 },
+    "deck": ["jab", "cross", "lead_hook", "calf_kick", "body_kick", "head_kick", "knee", "elbow", "single_leg", "clinch", "guard_counter", "counter_hook", "check_kick", "slip_back"],
+    "signature": "sig_hooker",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.12, "C": 0.38 },
+      "in":     { "S": 0.50, "G": 0.15, "C": 0.35 },
+      "top":    { "S": 0.50, "G": 0.25, "C": 0.25 },
+      "bottom": { "S": 0.30, "G": 0.50, "C": 0.20 }
+    }
+  },
   "neutral": {
     "name": "測試選手", "short": "測試", "nick": "只給模擬用", "hidden": true,
     "summary": "所有屬性相同，用來測試打法勝率。",

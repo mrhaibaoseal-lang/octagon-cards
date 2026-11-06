@@ -143,7 +143,7 @@ function main() {
     console.log(row(name, results[name], games));
   }
   console.log(`\n=== AI vs AI 對戰表（各 ${games} 場，列 = A 方）===`);
-  const ids = ["mcgregor", "khabib", "oliveira"];
+  const ids = Object.keys(data.fighters).filter((id) => !data.fighters[id].hidden);
   for (const a of ids) {
     for (const b of ids) {
       if (a === b) continue;

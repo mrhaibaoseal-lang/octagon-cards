@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants } from "../engine.js";
 import { data, playGame, strategies } from "../sim.js";
 
-const FIGHTERS = ["mcgregor", "khabib", "oliveira", "neutral"];
+const FIGHTERS = Object.keys(data.fighters);
 
 test("the RNG matches the Swift SplitMix64 sequence", () => {
   const s = { rng: 42n };

@@ -34,5 +34,6 @@
 
   "sig_mcgregor": { "name": "招牌：左手炸彈", "type": "S", "cost": 2, "power": 30, "range": "any", "target": "head", "crit": 0.2, "signature": true },
   "sig_khabib":   { "name": "招牌：達吉斯坦連摔", "type": "G", "cost": 2, "quality": 0.3, "range": "any", "landing": 1, "signature": true, "drain": 14, "advanceBonus": 1 },
-  "sig_oliveira": { "name": "招牌：絕地鎖技", "type": "C", "cost": 2, "power": 8, "range": "any", "target": "head", "crit": 0.1, "signature": true, "lockBottom": true, "lockTop": true, "lockAnywhere": true, "lockDepth": 2 }
+  "sig_oliveira": { "name": "招牌：絕地鎖技", "type": "C", "cost": 2, "power": 8, "range": "any", "target": "head", "crit": 0.1, "signature": true, "lockBottom": true, "lockTop": true, "lockAnywhere": true, "lockDepth": 2 },
+  "sig_hooker":   { "name": "招牌：絞刑連擊", "type": "S", "cost": 2, "power": 26, "range": "any", "target": "body", "crit": 0.12, "signature": true }
 }
