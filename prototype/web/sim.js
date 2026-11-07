@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadData, cardCost, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, bestPlay, budget, nextUnit, opposite, checkInvariants, usableAt, arrange } from "./engine.js";
+import { loadData, cardCost, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, getIntent, bestPlay, budget, nextUnit, opposite, checkInvariants, usableAt, arrange } from "./engine.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(here, "rules", name), "utf8"));
@@ -20,7 +20,11 @@ const MODE = (ARGS.find((a) => a.startsWith("--mode=")) || "--mode=standard").sl
 function randomPlay(state, s) {
   const b = budget(state, s);
   const type = TYPES[Math.floor(nextUnit(state) * 3)];
-  const pool = state[s].hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist));
+  const all = state[s].hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist, s));
+  // Fence cards go alone: sometimes throw one by itself, otherwise ignore them.
+  const fence = all.filter((c) => state.cards[c].cageOnly && cardCost(state, s, c) <= b);
+  if (fence.length && nextUnit(state) < 0.5) return [fence[0]];
+  const pool = all.filter((c) => !state.cards[c].cageOnly);
   const cards = [];
   let left = b;
   for (const c of pool) {
@@ -29,7 +33,7 @@ function randomPlay(state, s) {
       left -= cardCost(state, s, c);
     }
   }
-  return arrange(state, cards) || [];
+  return arrange(state, cards, s) || [];
 }
 
 /** What a viewer actually sees: with blood in the eyes only the most likely type shows. */
@@ -113,7 +117,9 @@ export function playGame(idA, idB, stratA, seed, data_ = data, mode = MODE) {
     const playA = stratA ? stratA(state, "a") : chooseAI(state, "a").cards;
     const playB = chooseAI(state, "b").cards;
     if (state.ground) groundExchanges++;
-    for (const e of resolveExchange(state, playA, playB)) counts[e.kind] = (counts[e.kind] || 0) + 1;
+    const events = resolveExchange(state, playA, playB);
+    if (state.pending) events.push(...resolvePending(state, chooseChase(state, state.pending.side)));
+    for (const e of events) counts[e.kind] = (counts[e.kind] || 0) + 1;
     minStamina = Math.min(minStamina, state.a.stamina);
     exchanges++;
     const errs = checkInvariants(state);

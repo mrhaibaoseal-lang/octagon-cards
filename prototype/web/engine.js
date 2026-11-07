@@ -67,6 +67,8 @@ export function createMatch(data, idA, idB, seed = 1, mode = "standard") {
     seed,
     dist: data.rules.dist.start, // 0 far, 1 mid, 2 close, 3 clinch. Shared by both fighters while standing.
     ground: null,
+    cage: null, // { side, ttl }: the fighter whose back is to the fence
+    pending: null, // a choice the winner of a takedown still has to make
     round: 1,
     exchange: 1,
     stall: 0,
@@ -100,6 +102,7 @@ function makeSide(data, id, maxHp) {
     pips: { head: 0, body: 0, legs: 0 },
     cut: 0, // bleeding level 0-3
     marks: {}, // short-lived tags: { tag: { turns, n } }
+    pressure: 0, // how much ground this fighter has recently given up
     draw: [...f.deck],
     discard: [],
     hand: [],
@@ -120,6 +123,7 @@ function drawOne(state, s) {
 }
 
 const BASIC_STEPS = ["step_in", "step_back"];
+const CAGE_CARDS = ["cage_push", "cage_turn"];
 const isBasic = (state, c) => Boolean(state.cards[c].basic);
 
 /** Draws up to a full hand, then adds the permanent steps and, when the fighter has the momentum, the signature. */
@@ -131,7 +135,7 @@ function refillHand(state, s) {
   while (core.length < size && me.draw.length + me.discard.length > 0) core.push(drawOne(state, s));
   // The drawn cards always hold all three types that can be played from where the fighters stand now,
   // so every read can be acted on. A type the deck cannot play from here at all is skipped.
-  const playable = (c, t) => state.cards[c].type === t && usableAt(state, state.cards[c], state.dist);
+  const playable = (c, t) => state.cards[c].type === t && usableAt(state, state.cards[c], state.dist, s);
   const holds = (list, t) => list.some((c) => playable(c, t));
   for (const t of TYPES) {
     if (holds(core, t)) continue;
@@ -144,7 +148,7 @@ function refillHand(state, s) {
     if (idx < 0) continue;
     // Swap out a card whose removal leaves every type that is currently covered still covered. Dead cards go first.
     const covered = TYPES.filter((x) => holds(core, x));
-    const order = core.map((c, i) => i).sort((i, j) => Number(usableAt(state, state.cards[core[i]], state.dist)) - Number(usableAt(state, state.cards[core[j]], state.dist)));
+    const order = core.map((c, i) => i).sort((i, j) => Number(usableAt(state, state.cards[core[i]], state.dist, s)) - Number(usableAt(state, state.cards[core[j]], state.dist, s)));
     const swapAt = order.find((i) => {
       const rest = core.filter((_, k) => k !== i);
       return covered.every((x) => holds(rest, x));
@@ -155,6 +159,8 @@ function refillHand(state, s) {
     core[swapAt] = taken;
   }
   me.hand = [...core, ...BASIC_STEPS];
+  // Up against the fence a fighter gets two ways out.
+  if (state.cage?.side === s && !state.ground) me.hand.push(...CAGE_CARDS);
   if (me.momentum >= state.rules.momentum.signatureCost) me.hand.push(sig);
 }
 
@@ -167,6 +173,7 @@ export function budget(state, s) {
   let b = e.base;
   if (me.stamina < e.gassedAt) b = 1;
   else if (me.stamina < e.tiredAt) b = 2;
+  if (isFinal(state)) b += state.rules.match.finalExchange.energyBonus;
   if (state[opposite(s)].rocked) b += e.swarmBonus;
   for (const [tag, m] of Object.entries(me.marks)) {
     const def = state.rules.tags[tag] || {};
@@ -174,6 +181,9 @@ export function budget(state, s) {
   }
   return Math.max(1, b);
 }
+
+/** The last exchange of a round: everyone has an extra energy to spend and the judges weigh it more. */
+export const isFinal = (state) => state.exchange === state.perRound;
 
 /** Which style table applies: the ground roles, or the outside / inside of the stand-up game. */
 export const phaseOf = (state, s) => (state.ground ? (state.ground.top === s ? "top" : "bottom") : state.dist >= 2 ? "in" : "out");
@@ -192,8 +202,11 @@ const typeOfPlay = (state, cards) => (cards.length ? state.cards[cards[0]].type 
 const clampDist = (state, d) => clamp(d, 0, state.rules.dist.names.length - 1);
 
 /** Can this card be thrown from distance `d`? On the ground distance does not apply, but steps do not exist there. */
-export function usableAt(state, card, d) {
+export function usableAt(state, card, d, s) {
+  // Fence cards exist only for the fighter who is up against it. A fighter against the fence has nowhere to back off to.
+  if (card.cageOnly) return Boolean(s) && !state.ground && state.cage?.side === s;
   if (state.ground) return !card.moveOnly;
+  if (s && state.cage?.side === s && card.type === "C" && card.move < 0) return false;
   return !card.range || (d >= card.range[0] && d <= card.range[1]);
 }
 
@@ -201,28 +214,28 @@ export function usableAt(state, card, d) {
 const moveOf = (state, cards) => (state.ground ? 0 : cards.reduce((sum, c) => sum + (state.cards[c].move || 0), 0));
 
 /** Cards are thrown in order and each one is checked where the previous ones left the fighters. */
-function sequenceError(state, cards) {
+function sequenceError(state, cards, s) {
   let d = state.dist;
   for (const c of cards) {
     const card = state.cards[c];
-    if (!usableAt(state, card, d)) return "out of range";
+    if (!usableAt(state, card, d, s)) return "out of range";
     if (!state.ground) d = clampDist(state, d + (card.move || 0));
   }
   return null;
 }
 
 /** A legal order for these cards (the given order when it works), or null when none exists. */
-export function arrange(state, cards) {
-  if (cards.length <= 1) return sequenceError(state, cards) ? null : [...cards];
+export function arrange(state, cards, s) {
+  if (cards.length <= 1) return sequenceError(state, cards, s) ? null : [...cards];
   const permute = (rest, done) => {
-    if (!rest.length) return sequenceError(state, done) ? null : done;
+    if (!rest.length) return sequenceError(state, done, s) ? null : done;
     for (let i = 0; i < rest.length; i++) {
       const found = permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...done, rest[i]]);
       if (found) return found;
     }
     return null;
   };
-  if (!sequenceError(state, cards)) return [...cards];
+  if (!sequenceError(state, cards, s)) return [...cards];
   return permute(cards, []);
 }
 
@@ -236,8 +249,9 @@ export function playError(state, s, cards) {
     counts[c]--;
   }
   if (new Set(cards.map((c) => state.cards[c].type)).size > 1) return "mixed types";
+  if (cards.length > 1 && cards.some((c) => state.cards[c].cageOnly)) return "fence cards go alone";
   if (costOf(state, cards, s) > budget(state, s)) return "over budget";
-  if (!arrange(state, cards)) return "out of range";
+  if (!arrange(state, cards, s)) return "out of range";
   return null;
 }
 
@@ -261,6 +275,8 @@ function tierOdds(state, s, cards) {
     const def = state.rules.tags[tag] || {};
     bonus += (def.crit || 0) * (def.perStack ? m.n : 1);
   }
+  // A man with his back to the fence is easier to take down.
+  if (type === "G" && state.cage?.side === opposite(s)) bonus += state.rules.cage.takedownBonus;
   return {
     crit: clamp(t.baseCrit + bonus + diff * t.critPerStat, t.minCrit, t.maxCrit),
     graze: clamp(t.baseGraze - bonus - diff * t.grazePerStat, t.minGraze, t.maxGraze),
@@ -299,7 +315,7 @@ export function previewPlay(state, s, cards) {
   const d = state.rules.damage;
   let winMult = type === "S" ? d.winStrikeBonus : d.counterMult;
   if (state.ground) winMult *= state.ground.top === s ? d.groundPositionMult[state.ground.pos] : d.bottomStrikeMult;
-  const order = arrange(state, cards) || cards;
+  const order = arrange(state, cards, s) || cards;
   return {
     type,
     cost: costOf(state, cards, s),
@@ -342,6 +358,8 @@ export function describeCard(state, s, cardId) {
       else effect = "脫離或翻身";
     } else if (role === "bottom" && card.lockBottom) effect = `鎖技：${card.name}`;
     else effect = role === "top" ? "化解蹬踢" : "抓他砸拳";
+  } else if (card.cage) {
+    effect = card.cage === "turn" ? "贏了：脫離籠邊" : "贏了：和他換位置";
   } else if (card.moveOnly) {
     effect = card.move > 0 ? `靠近 ${card.move} 格` : `拉開 ${-card.move} 格`;
   } else if (card.type === "S") effect = `傷害 ${dmg}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
@@ -352,7 +370,7 @@ export function describeCard(state, s, cardId) {
   // Setups this card lays down, and the ones it can follow (live when the tag is on).
   const setups = (card.setup || []).map((st) => ({ tag: st.tag, label: state.rules.tags[st.tag]?.label || st.tag, when: st.when, to: st.to || "self" }));
   const follows = Object.entries(card.follow || {}).map(([tag, eff]) => ({ tag, label: state.rules.tags[tag]?.label || tag, bonus: Math.round(((eff.crit || 0) + (eff.quality || 0)) * 100), live: Boolean(state[s].marks[tag]) }));
-  return { action, effect, cost: cardCost(state, s, cardId), unusable: !usableAt(state, card, state.dist), rangeText: rangeText(state, card), setups, follows };
+  return { action, effect, cost: cardCost(state, s, cardId), unusable: !usableAt(state, card, state.dist, s), blocked: !g && state.cage?.side === s && card.type === "C" && card.move < 0 ? "背靠籠子" : "", rangeText: rangeText(state, card), setups, follows };
 }
 
 /** "近距", "中~近距" or "" for a card that works anywhere. */
@@ -370,7 +388,7 @@ const beaterOf = (triangle, t) => TYPES.find((x) => triangle[x] === t);
 function typeAvailable(state, s, type) {
   if (type === "C") return true; // bracing is always possible
   const b = budget(state, s);
-  return state[s].hand.some((c) => state.cards[c].type === type && cardCost(state, s, c) <= b && usableAt(state, state.cards[c], state.dist));
+  return state[s].hand.some((c) => state.cards[c].type === type && cardCost(state, s, c) <= b && usableAt(state, state.cards[c], state.dist, s));
 }
 
 /** How far outside their comfortable range a fighter stands (0 when inside it). */
@@ -400,6 +418,11 @@ export function getIntent(state, s) {
   if (me.rocked) { w.C += ai.rockedCounter; tags.push("被打暈，想撐過去"); }
   if (state[oppSide].rocked) { w.S += ai.swarmStrike; tags.push("要衝上來追擊"); }
   if (me.stamina < ai.lowStaminaAt) { w.C += ai.lowStaminaCounter; tags.push("快沒力了"); }
+  if (state.cage && !state.ground) {
+    const c = state.rules.cage;
+    if (state.cage.side === s) { w.C += c.pinnedC; w.G += c.pinnedG; tags.push("背靠籠子，想脫離"); }
+    else { w.G += c.pinnerG; tags.push("把你逼在籠邊，想摔"); }
+  }
   if (!state.ground) {
     const [lo, hi] = state.fighters[me.id].prefer;
     if (state.dist < lo) { w.G += ai.wantClose; tags.push("想拉近距離"); }
@@ -441,6 +464,7 @@ function followValue(state, s, card) {
 
 function cardValue(state, s, cardId) {
   const card = state.cards[cardId];
+  if (card.cageOnly) return card.cage === "turn" ? 12 : 6;
   const g = state.ground;
   // Moving toward a comfortable distance is worth something, moving away from it costs something.
   let step = 0;
@@ -461,7 +485,7 @@ function cardValue(state, s, cardId) {
 
 /** Highest-value ordered set of `type` cards that can legally be thrown within `limit` energy. Empty means bracing. */
 export function bestPlay(state, s, type, limit) {
-  const hand = state[s].hand.filter((c) => state.cards[c].type === type && cardCost(state, s, c) <= limit && usableAt(state, state.cards[c], state.dist));
+  const hand = state[s].hand.filter((c) => state.cards[c].type === type && cardCost(state, s, c) <= limit && usableAt(state, state.cards[c], state.dist, s));
   let best = [];
   // A strike or grapple that was chosen is always thrown, however poor; only a defend falls back to bracing.
   let bestValue = type === "C" ? 0 : -Infinity;
@@ -477,7 +501,8 @@ export function bestPlay(state, s, type, limit) {
       cards.push(hand[i]);
     }
     if (cost > limit || value <= bestValue) continue;
-    const ordered = arrange(state, cards);
+    if (cards.length > 1 && cards.some((c) => state.cards[c].cageOnly)) continue;
+    const ordered = arrange(state, cards, s);
     if (!ordered) continue;
     bestValue = value;
     best = ordered;
@@ -502,7 +527,7 @@ export function chooseAI(state, s) {
   if (me.stamina < ai.commit.conserveAt) limit = Math.min(limit, 2);
   // Holding back never means failing to throw the type the shown odds promised: spend what the cheapest legal card costs.
   if (type !== "C") {
-    const legal = me.hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist)).map((c) => cardCost(state, s, c));
+    const legal = me.hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist, s)).map((c) => cardCost(state, s, c));
     if (legal.length) limit = Math.min(b, Math.max(limit, Math.min(...legal)));
   }
   const sig = state.fighters[me.id].signature;
@@ -510,6 +535,35 @@ export function chooseAI(state, s) {
     return { cards: [sig] };
   }
   return { cards: bestPlay(state, s, type, limit) };
+}
+
+/** AI: follow the man down, or let him up. Grapplers follow nearly always, strikers often would rather stand. */
+export function chooseChase(state, s) {
+  const f = state.fighters[state[s].id];
+  const foe = state[opposite(s)];
+  const c = state.rules.chase;
+  let p = f.chase ?? c.default;
+  p += foe.stamina < 30 ? c.tiredFoeBonus : 0;
+  p -= Math.max(0, foe.attrs.submission - c.dangerPivot) * c.perSubmission;
+  return nextUnit(state) < clamp(p, 0.1, 0.95) ? "follow" : "release";
+}
+
+/** Settles the choice left by a takedown: "follow" stays on the ground, "release" lets him stand and keeps the edge. */
+export function resolvePending(state, choice) {
+  const p = state.pending;
+  if (!p) throw new Error("nothing pending");
+  state.pending = null;
+  const events = [];
+  const follow = choice !== "release";
+  events.push({ kind: "chase", side: p.side, follow });
+  if (!follow) {
+    standUp(state, events, "release");
+    const tag = state.rules.chase.tag;
+    state[p.side].marks[tag] = { turns: state.rules.chase.turns, n: 1 };
+    events.push({ kind: "mark", side: p.side, tag, n: 1 });
+  }
+  for (const s of SIDES) refillHand(state, s);
+  return events;
 }
 
 export function chooseCorner(state, s) {
@@ -561,7 +615,7 @@ function settleMarks(state, events) {
 }
 
 function score(state, s, kind, amount) {
-  state.roundScore[s][kind] += amount;
+  state.roundScore[s][kind] += amount * (isFinal(state) ? state.rules.match.finalExchange.scoreMult : 1);
 }
 
 function finish(state, winner, method, events, reason = null) {
@@ -719,6 +773,71 @@ function resolveLock(state, winner, plays, events) {
   }
 }
 
+/** The fighter on the fence turns out of it. They end up in the middle, free. */
+function escapeCage(state, w, events) {
+  state.cage = null;
+  state[w].pressure = 0;
+  events.push({ kind: "cageEnd", side: w, how: "turn" });
+  setDist(state, state.rules.cage.escapeDist, events, w);
+}
+
+/** The fighter on the fence shoves off and the two swap places: now the other one has his back to it. */
+function pushOff(state, w, l, events) {
+  const c = state.rules.cage;
+  addStamina(state, l, -state.rules.grapple.drainOnLanding);
+  state.cage = { side: l, ttl: c.ttl };
+  state[l].pressure = c.pressureAt;
+  state[w].pressure = 0;
+  events.push({ kind: "cage", side: l, how: "push" });
+  setDist(state, c.pushDist, events, w);
+}
+
+/**
+ * Who is being pushed back? A fighter who keeps giving ground (backing off, or being run onto) ends up against the fence.
+ * Ground given is read from the distance changes this exchange caused: closing costs the other fighter, retreating costs the retreater.
+ */
+function updateCage(state, events, types) {
+  const c = state.rules.cage;
+  if (state.ground) {
+    state.cage = null;
+    for (const s of SIDES) state[s].pressure = 0;
+    return;
+  }
+  if (events.some((e) => e.kind === "cage" || e.kind === "cageEnd")) return;
+  const gave = { a: false, b: false };
+  for (const e of events) {
+    if (e.kind !== "range" || !e.by) continue;
+    if (e.dist > e.from) gave[opposite(e.by)] = true;
+    else if (types[e.by] === "C") gave[e.by] = true;
+    else gave[opposite(e.by)] = true; // pushed away by a strike
+  }
+  // Close in, a grapple that wins drives the other man back onto the fence even when no distance changes hands.
+  const winnerType = types.a === types.b ? null : state.rules.triangle[types.a] === types.b ? "a" : "b";
+  if (winnerType && types[winnerType] === "G" && state.dist >= state.rules.cage.closeDist) gave[opposite(winnerType)] = true;
+  // Pressure builds each time ground is given and only drains when the other man gives ground back.
+  for (const s of SIDES) {
+    if (gave[s]) state[s].pressure += 1;
+    else if (gave[opposite(s)]) state[s].pressure = Math.max(0, state[s].pressure - 1);
+  }
+  if (state.cage) {
+    const pinned = state.cage.side;
+    if (state.dist === 0) {
+      state.cage = null;
+      events.push({ kind: "cageEnd", side: pinned, how: "gap" });
+    } else if (gave[pinned]) state.cage.ttl = c.ttl;
+    else if (--state.cage.ttl <= 0) {
+      state.cage = null;
+      events.push({ kind: "cageEnd", side: pinned, how: "fade" });
+    }
+    return;
+  }
+  const side = SIDES.find((x) => gave[x] && state[x].pressure >= c.pressureAt);
+  if (side && state.dist >= 1) {
+    state.cage = { side, ttl: c.ttl };
+    events.push({ kind: "cage", side, how: "pressure" });
+  }
+}
+
 function resolveStandingWin(state, w, l, plays, events) {
   const wCards = plays[w];
   const lCards = plays[l];
@@ -738,6 +857,7 @@ function resolveStandingWin(state, w, l, plays, events) {
     const ended = dealHit(state, w, wCards, tier, state.rules.damage.counterMult * overcommit(state, lCards, l), events);
     if (ended) return;
     shiftDist(state, moveOf(state, wCards), events, w);
+    if (wCards.some((c) => state.cards[c].cage === "turn")) escapeCage(state, w, events);
     if (lockCard) {
       state.ground = { top: l, pos: 0, lock: null };
       startLock(state, w, state.cards[lockCard].name, state.cards[lockCard].lockDepth || 1, events);
@@ -745,6 +865,10 @@ function resolveStandingWin(state, w, l, plays, events) {
     return;
   }
   // Grapple beats defend. Steps alone only close the gap.
+  if (wCards.some((c) => state.cards[c].cage === "push")) {
+    pushOff(state, w, l, events);
+    return;
+  }
   const takers = wCards.filter((c) => !state.cards[c].moveOnly);
   if (takers.length === 0) {
     const grab = wCards.reduce((sum, c) => sum + (state.cards[c].drain || 0), 0);
@@ -874,7 +998,7 @@ function resolveTrade(state, plays, events) {
   let reach = state.dist;
   for (const c of plays[second]) {
     const card = state.cards[c];
-    if (usableAt(state, card, reach)) {
+    if (usableAt(state, card, reach, second)) {
       reply.push(c);
       if (!state.ground) reach = clampDist(state, reach + (card.move || 0));
     } else {
@@ -923,13 +1047,14 @@ function resolveStandoff(state, plays, events) {
 /** Resolves one simultaneous exchange. `playA` / `playB` are arrays of card ids. Returns the event list. */
 export function resolveExchange(state, playA, playB) {
   if (state.phase !== "exchange") throw new Error(`cannot resolve in phase ${state.phase}`);
+  if (state.pending) throw new Error("a pending choice has to be resolved first");
   for (const [s, cards] of [["a", playA], ["b", playB]]) {
     const err = playError(state, s, cards);
     if (err) throw new Error(`${s} illegal play: ${err} (${cards.join(",")})`);
   }
   const events = [];
-  const order = (cards) => (cards.length ? arrange(state, cards) : ["brace"]);
-  const plays = { a: order(playA), b: order(playB) };
+  const order = (cards, s) => (cards.length ? arrange(state, cards, s) : ["brace"]);
+  const plays = { a: order(playA, "a"), b: order(playB, "b") };
   const types = { a: typeOfPlay(state, plays.a), b: typeOfPlay(state, plays.b) };
   const tri = state.rules.triangle;
   const mirror = types.a === types.b;
@@ -978,7 +1103,12 @@ export function resolveExchange(state, playA, playB) {
   if (types.a !== "C" || types.b !== "C") state.stall = 0;
 
   state.history.push(types);
+  if (!state.over) updateCage(state, events, types);
   endExchange(state, plays, types, wasRocked, events);
+  state.exchangeCost = null;
+  // Whoever just took the other man down chooses whether to follow him to the ground.
+  const down = events.find((e) => e.kind === "takedown");
+  if (down && !state.over && state.phase === "exchange" && state.ground) state.pending = { kind: "chase", side: down.side };
   return events;
 }
 
@@ -1017,10 +1147,14 @@ function endRound(state, events) {
     if (Math.abs(gap) < 0.5) return { a: 10, b: 10 };
     return gap > 0 ? { a: 10, b: loserScore } : { a: loserScore, b: 10 };
   });
-  state.roundCards.push({ round: state.round, judges });
+  state.roundCards.push({ round: state.round, judges, score: state.roundScore });
   events.push({ kind: "roundEnd", round: state.round, judges });
   state.roundScore = freshScore();
-  for (const side of SIDES) state[side].marks = {};
+  for (const side of SIDES) {
+    state[side].marks = {};
+    state[side].pressure = 0;
+  }
+  state.cage = null;
   state.a.rocked = false;
   state.b.rocked = false;
   // The cutman works on the cut between rounds.
@@ -1100,5 +1234,6 @@ export function checkInvariants(state) {
   }
   if (!Number.isInteger(state.dist) || state.dist < 0 || state.dist >= state.rules.dist.names.length) errors.push(`dist ${state.dist}`);
   if (state.phase === "over" && !state.over) errors.push("over without result");
+  if (state.cage && (!SIDES.includes(state.cage.side) || state.ground)) errors.push("cage state");
   return errors;
 }

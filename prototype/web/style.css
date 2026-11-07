@@ -31,6 +31,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .mirror .nameline { flex-direction: row-reverse; }
 .nameline .tag { flex: none; font-size: 10px; font-weight: 800; padding: 0 4px; border-radius: 3px; background: #ff7a1a; color: #000; }
 .nameline .tag.mk { background: #9be7ff; color: #00212b; }
+.nameline .tag.cage { background: #e5484d; color: #fff; }
 .nameline .tag.leg { background: #ff9f43; color: #000; }
 .nameline .tag.bleed { background: #c1121f; color: #fff; }
 .nameline .pips { margin-left: auto; font-size: 9px; color: var(--dim); display: flex; gap: 4px; font-weight: 600; }
@@ -58,6 +59,9 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .dot { width: 8px; height: 5px; border-radius: 1px; background: rgba(255, 255, 255, 0.18); }
 .dot.done { background: rgba(255, 255, 255, 0.6); }
 .dot.now { background: var(--gold); }
+.dot.last { box-shadow: 0 0 0 1px #ff9f43; }
+.dot.now.last { background: #ff9f43; }
+.place .pin { color: #ff7b7f; }
 .place { font-size: 11px; font-weight: 800; color: var(--gold); line-height: 1.15; }
 .track4 { display: flex; justify-content: center; gap: 2px; margin-top: 2px; }
 .track4 i { font-style: normal; font-size: 9px; font-weight: 800; width: 21px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); color: var(--dim); line-height: 12px; }
@@ -84,6 +88,8 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 
 /* Alert */
 #alert { position: absolute; top: 70px; left: 8px; width: 170px; padding: 5px 8px; border-radius: 6px; font-size: 12px; font-weight: 800; line-height: 1.25; background: rgba(229, 72, 77, 0.92); }
+#alert.right { left: auto; right: 8px; top: 138px; }
+#alert.note { background: rgba(40, 60, 100, 0.92); }
 #alert.swarm { background: rgba(245, 197, 66, 0.95); color: #000; }
 
 /* Tray */
@@ -96,6 +102,14 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #hand { position: absolute; left: 0; right: 126px; bottom: 0; height: var(--hand-h); align-items: flex-end; justify-content: center; }
 #choice { position: absolute; left: 0; right: 126px; bottom: calc(var(--hand-h) + 12px); margin: 0 auto; width: fit-content; max-width: 100%; white-space: nowrap; }
 #actions { position: absolute; right: 0; bottom: 0; width: 120px; display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+#cagebtns { display: flex; gap: 3px; }
+#cagebtns:empty { display: none; }
+.cg { flex: 1; min-width: 0; height: 40px; border-radius: 6px; border: 1px solid var(--line); font-size: 11px; font-weight: 800; line-height: 1.15; padding: 2px 0; }
+.cg small { display: block; font-size: 9px; font-weight: 600; opacity: 0.85; }
+.cg.sel { outline: 2px solid #fff; }
+.cg.dim { opacity: 0.4; }
+.sheet.small { width: 420px; }
+#overlay.lite { background: rgba(4, 5, 9, 0.2); align-items: flex-start; padding-top: 62px; }
 #basics { display: flex; gap: 3px; }
 #basics button { flex: 1; min-width: 0; height: 40px; background: #1e2536; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1.15; padding: 2px 0; }
 #basics button small { display: block; font-size: 9px; font-weight: 600; color: var(--dim); }

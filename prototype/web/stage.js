@@ -3,6 +3,7 @@
 const SCALE = 2; // sprite pixels to screen points
 const POSES = ["idle", "punch", "kick", "hit", "shoot", "down"];
 const FLOOR_Y = 296;
+const CAGE_EDGE = 128; // where a fighter against the fence stands
 // Half the gap between the two fighters at each distance (far, mid, close, clinch), and how far a strike reaches.
 const HALF_GAP = [190, 140, 96, 54];
 export const REACH = [100, 76, 44, 18];
@@ -206,6 +207,7 @@ export class Stage {
       f.downed = false;
     }
     if (view.ground) {
+      this.cage = null;
       const top = this.fighters[view.ground.top];
       const bottom = this.fighters[view.ground.top === "a" ? "b" : "a"];
       const dir = view.ground.top === "a" ? 1 : -1; // the top fighter faces along this direction
@@ -223,10 +225,20 @@ export class Stage {
       bottom.downed = true;
     } else {
       const gap = HALF_GAP[view.dist ?? 1];
+      const pin = typeof view.cage === "string" ? view.cage : view.cage?.side ?? null;
+      this.cage = pin;
       a.restPose = "idle";
       b.restPose = "idle";
       a.tx = 422 - gap;
       b.tx = 422 + gap;
+      // A fighter on the fence stands at the edge of the cage and the other one comes to him.
+      if (pin === "a") {
+        a.tx = CAGE_EDGE;
+        b.tx = CAGE_EDGE + 2 * gap;
+      } else if (pin === "b") {
+        b.tx = 844 - CAGE_EDGE;
+        a.tx = 844 - CAGE_EDGE - 2 * gap;
+      }
       a.ty = FLOOR_Y;
       b.ty = FLOOR_Y;
     }
@@ -384,6 +396,17 @@ export class Stage {
     x.globalAlpha = 1;
   }
 
+  /** A red glow along the fence the fighter is pinned against. */
+  drawFence(x, now) {
+    const left = this.cage === "a";
+    const g = x.createLinearGradient(left ? 0 : 844, 0, left ? 150 : 694, 0);
+    const pulse = 0.3 + 0.1 * Math.sin(now / 180);
+    g.addColorStop(0, `rgba(255, 70, 60, ${pulse})`);
+    g.addColorStop(1, "rgba(255, 70, 60, 0)");
+    x.fillStyle = g;
+    x.fillRect(left ? 0 : 694, 0, 150, 330);
+  }
+
   draw(now) {
     const x = this.ctx;
     x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -393,6 +416,7 @@ export class Stage {
     x.save();
     x.translate(sx, sy);
     x.drawImage(this.background, 0, 0);
+    if (this.cage) this.drawFence(x, now);
     const order = Object.values(this.fighters).sort((p, q) => p.z - q.z);
     for (const f of order) this.drawFighter(f, now);
     x.restore();

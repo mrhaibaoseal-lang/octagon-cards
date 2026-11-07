@@ -2,6 +2,7 @@
   "version": 1,
   "match": {
     "handSize": 5, "maxStamina": 100, "maxMomentum": 100,
+    "finalExchange": { "energyBonus": 1, "scoreMult": 1.5 },
     "modes": {
       "standard": { "label": "一般賽", "rounds": 3, "exchanges": 10, "hp": 190, "desc": "3 回合 × 10 手" },
       "main": { "label": "主賽", "rounds": 5, "exchanges": 8, "hp": 250, "desc": "5 回合 × 8 手" }
@@ -46,9 +47,12 @@
     "opened": { "label": "刺拳開路", "short": "開路" },
     "winded": { "label": "身體吃重", "short": "吃重" },
     "tied": { "label": "貼身纏上", "short": "貼身" },
+    "released": { "label": "放他起來，佔上風", "short": "佔先", "crit": 0.1 },
     "fooled": { "label": "被假動作騙到", "short": "被騙", "sharpen": 1.8, "readBoost": 2 }
   },
   "setups": { "clinch": { "tag": "tied", "turns": 1 } },
+  "cage": { "pressureAt": 2, "ttl": 4, "closeDist": 2, "takedownBonus": 0.12, "pinnerG": 0.25, "pinnedC": 0.2, "pinnedG": 0.1, "escapeDist": 1, "pushDist": 2 },
+  "chase": { "default": 0.6, "tiredFoeBonus": 0.15, "dangerPivot": 80, "perSubmission": 0.004, "tag": "released", "turns": 2 },
   "grapple": {
     "statPivot": 70, "scrambleMomentum": 3, "scrambleStamina": 3,
     "drainOnLanding": 6, "positionFromTier": { "graze": -1, "clean": 0, "crit": 1 },

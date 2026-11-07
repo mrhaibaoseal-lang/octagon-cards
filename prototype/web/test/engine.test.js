@@ -1,7 +1,7 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData } from "../engine.js";
+import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData, chooseChase, resolvePending } from "../engine.js";
 import { data, playGame, strategies } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
@@ -297,6 +297,7 @@ test("a grappler fights closer than a striker", () => {
           continue;
         }
         resolveExchange(state, chooseAI(state, "a").cards, chooseAI(state, "b").cards);
+        if (state.pending) resolvePending(state, chooseChase(state, state.pending.side));
         if (!state.ground) {
           total++;
           if (state.dist >= 2) close++;
@@ -392,4 +393,95 @@ test("depth.json layers onto the roster without touching the base files", () => 
   assert.deepEqual(merged.fighters.x.deck, ["feint", "jab"]);
   assert.equal(merged.fighters.x.chase, 0.3);
   assert.ok(merged.cards.jab.follow && merged.cards.jab.name === "刺拳" && merged.cards.feint);
+});
+
+// ---------- The fence, the last exchange of a round, and chasing a takedown ----------
+
+test("giving ground twice puts a fighter on the fence: no retreating, two fence cards, takedowns land more", () => {
+  const state = setup(["jab"], [], 1);
+  // The challenger keeps stepping in and winning (grapple beats defend), so the other man keeps giving ground.
+  for (let i = 0; i < 2; i++) {
+    state.dist = 1;
+    state.a.hand = ["step_in", "step_back"];
+    state.b.hand = ["guard_counter", "step_back", "step_in"];
+    resolveExchange(state, ["step_in"], ["step_back"]);
+  }
+  assert.equal(state.cage?.side, "b", "b is against the fence");
+  assert.ok(state.b.hand.includes("cage_push") && state.b.hand.includes("cage_turn"));
+  assert.ok(!state.a.hand.includes("cage_turn"), "only the pinned fighter gets them");
+  assert.ok(playError(state, "b", ["step_back"]), "cannot back off the fence");
+  assert.ok(playError(state, "b", ["slip_back"]) !== null || !state.b.hand.includes("slip_back"));
+  assert.ok(playError(state, "b", ["cage_push", "cage_turn"]), "fence cards go alone");
+  const base = setup(["single_leg"], [], 2);
+  const pinned = setup(["single_leg"], [], 2);
+  pinned.cage = { side: "b", ttl: 3 };
+  assert.ok(previewPlay(pinned, "a", ["single_leg"]).critPct >= previewPlay(base, "a", ["single_leg"]).critPct + 10);
+});
+
+test("turning out of the fence frees the fighter, and pushing off swaps who is against it", () => {
+  const turn = setup(["jab"], ["guard_counter"], 2);
+  turn.cage = { side: "b", ttl: 3 };
+  turn.b.hand = ["cage_turn", "cage_push", "guard_counter", "step_in", "step_back"];
+  resolveExchange(turn, ["jab"], ["cage_turn"]);
+  assert.equal(turn.cage, null);
+  assert.equal(turn.dist, data.rules.cage.escapeDist);
+  const push = setup(["guard_counter"], [], 2);
+  push.cage = { side: "b", ttl: 3 };
+  push.b.hand = ["cage_turn", "cage_push", "guard_counter", "step_in", "step_back"];
+  push.a.hand = ["guard_counter", "step_in", "step_back"];
+  resolveExchange(push, ["guard_counter"], ["cage_push"]);
+  assert.equal(push.cage?.side, "a", "now a is against the fence");
+});
+
+test("the last exchange of a round gives everyone one more energy and counts more with the judges", () => {
+  const state = createMatch(data, "neutral", "neutral", 3);
+  const plain = budget(state, "a");
+  state.exchange = state.perRound;
+  assert.equal(budget(state, "a"), plain + data.rules.match.finalExchange.energyBonus);
+  state.a.stamina = 5;
+  assert.equal(budget(state, "a"), 1 + data.rules.match.finalExchange.energyBonus, "even a gassed fighter gets it");
+  const run = (exchange) => {
+    const s = createMatch(data, "neutral", "neutral", 3);
+    s.exchange = exchange;
+    s.a.hand = ["jab", "step_in", "step_back"];
+    s.b.hand = ["step_in", "step_back"];
+    resolveExchange(s, ["jab"], ["step_in"]);
+    return (s.roundCards[0]?.score ?? s.roundScore).a.striking;
+  };
+  const early = run(2);
+  const late = run(data.rules.match.modes.standard.exchanges);
+  assert.ok(late > early * 1.3, `late ${late} vs early ${early}`);
+});
+
+test("a takedown leaves the winner a choice: follow to the ground, or let him up and keep the edge", () => {
+  let sawFollow = 0;
+  let sawRelease = 0;
+  for (let seed = 1; seed <= 80; seed++) {
+    const state = setup(["double_leg"], ["guard_counter"], 2, seed);
+    const events = resolveExchange(state, ["double_leg"], ["guard_counter"]);
+    if (!events.some((e) => e.kind === "takedown")) continue;
+    assert.deepEqual(state.pending, { kind: "chase", side: "a" });
+    assert.throws(() => resolveExchange(state, [], []), /pending/);
+    if (seed % 2) {
+      resolvePending(state, "follow");
+      assert.ok(state.ground, "still on the ground");
+      sawFollow++;
+    } else {
+      resolvePending(state, "release");
+      assert.equal(state.ground, null);
+      assert.equal(state.dist, data.rules.dist.standUp);
+      assert.ok(state.a.marks.released, "the one who let him up has the edge");
+      sawRelease++;
+    }
+    assert.equal(state.pending, null);
+  }
+  assert.ok(sawFollow > 3 && sawRelease > 3, `${sawFollow}/${sawRelease}`);
+  // Grapplers nearly always follow, strikers often let go.
+  const rate = (id) => {
+    const state = createMatch(data, id, "neutral", 9);
+    let follow = 0;
+    for (let i = 0; i < 400; i++) if (chooseChase(state, "a") === "follow") follow++;
+    return follow / 400;
+  };
+  assert.ok(rate("khabib") > rate("mcgregor") + 0.3);
 });

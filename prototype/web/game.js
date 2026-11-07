@@ -1,5 +1,5 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf, cardCost } from "./engine.js";
+import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf, cardCost } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -18,6 +18,7 @@ let picks = { a: "mcgregor", b: "khabib", mode: "standard" };
 let skipping = false;
 let skipWake = null;
 let lastLine = "";
+let viewCage = null; // who the screen shows against the fence
 let viewDist = 1; // the distance as the screen currently shows it, which trails the engine during playback
 
 // ---------- Boot ----------
@@ -127,9 +128,10 @@ function syncShown() {
   shown = {};
   for (const s of ["a", "b"]) {
     const me = state[s];
-    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks) };
+    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks), pinned: state.cage?.side === s };
   }
   viewDist = state.dist;
+  viewCage = state.cage?.side ?? null;
   stage.setCuts(shown.a.cut, shown.b.cut);
 }
 
@@ -144,6 +146,7 @@ function renderPanel(side) {
     return `<span>${TARGET_NAMES[t]}<span class="pip ${cls}">${"●".repeat(n)}${"○".repeat(data.rules.debuff.maxPips - n)}</span></span>`;
   }).join("");
   const legHurt = v.pips.legs >= data.rules.debuff.threshold ? `<span class="tag leg">腿傷·步+${data.rules.debuff.legMoveCost}⚡</span>` : "";
+  const pinned = v.pinned ? '<span class="tag cage">背靠籠邊</span>' : "";
   const markChips = v.marks.map((t) => `<span class="tag mk">${data.rules.tags[t]?.short || t}</span>`).join("");
   const el = $(`panel-${side}`);
   const pctOf = (hp) => (hp / state.maxHp) * 100;
@@ -152,7 +155,7 @@ function renderPanel(side) {
   el.innerHTML = `
     ${portraitHtml(f === undefined ? "" : state[side].id)}
     <div class="stats">
-      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${legHurt}${markChips}<span class="pips">${pips}</span></div>
+      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${pinned}${legHurt}${markChips}<span class="pips">${pips}</span></div>
       <div class="barwrap"><div class="fill ghost" style="width:${pctOf(prevGhost)}%"></div><div class="fill hp ${pctOf(v.hp) <= 18 ? "low" : ""}" style="width:${pctOf(v.hp)}%"></div></div>
       <div class="thinrow">
         <div class="barwrap thin"><div class="fill stam ${v.stamina < data.rules.energy.tiredAt ? "low" : ""}" style="width:${v.stamina}%"></div></div>
@@ -172,13 +175,15 @@ function placeText(view) {
   }
   const { names, short } = data.rules.dist;
   const track = short.map((s, i) => `<i class="${i === view.dist ? "on" : ""}">${s}</i>`).join("");
-  return `站立 · ${names[view.dist]}<div class="track4">${track}</div>`;
+  const pin = typeof view.cage === "string" ? view.cage : view.cage?.side;
+  const where = pin ? `<span class="pin">${pin === "a" ? "你" : "他"}在籠邊</span>` : "站立";
+  return `${where} · ${names[view.dist]}<div class="track4">${track}</div>`;
 }
 
 function renderCenter() {
   const total = state.perRound;
   let dots = "";
-  for (let i = 1; i <= total; i++) dots += `<span class="dot ${i < state.exchange ? "done" : i === state.exchange ? "now" : ""}"></span>`;
+  for (let i = 1; i <= total; i++) dots += `<span class="dot ${i < state.exchange ? "done" : i === state.exchange ? "now" : ""} ${i === total ? "last" : ""}"></span>`;
   $("center-bar").innerHTML = `<div class="round">第 ${state.round}<small>/${state.rounds}</small> 回合</div><div class="dots">${dots}</div><div class="place">${placeText(state)}</div>`;
 }
 
@@ -200,7 +205,7 @@ function renderIntent() {
   const sig = intent.signatureReady ? " <b>⚡招牌就緒</b>" : "";
   const blind = intent.blind ? '<div class="blind">血流進眼睛，只看得清最可能的出招</div>' : "";
   // Fighters stand near the centre when close or grounded, so the panel moves out of their way.
-  $("intent").classList.toggle("side", Boolean(state.ground) || state.dist >= 2);
+  $("intent").classList.toggle("side", Boolean(state.ground) || (state.dist >= 2 && !state.cage));
   $("intent").innerHTML = `
     <div class="title"><span>${fighterOf("b").short} 下一手傾向</span>${sig}</div>
     ${rows}${blind}
@@ -225,6 +230,20 @@ function renderAlert() {
     el.className = "swarm";
     el.innerHTML = `他被打暈了！追擊！<br>多 1 能量，傷害 +25%`;
   }
+  // Situations that are not emergencies are listed under whatever is already shown.
+  const notes = [];
+  if (state.cage && !state.ground) {
+    notes.push(state.cage.side === "a" ? "你被逼到籠邊！不能後退、易被摔<br>用推籠或轉身脫離" : "他被逼到籠邊！他不能後退，摔他更容易");
+  }
+  if (isFinal(state)) notes.push("回合最後一手！雙方 +1 能量，裁判更重視");
+  if (notes.length) {
+    const body = notes.join("<br>");
+    if (el.className === "hidden") {
+      el.className = state.cage?.side === "b" ? "swarm" : "note";
+      el.innerHTML = body;
+    } else el.innerHTML += `<br>${body}`;
+  }
+  if (el.className !== "hidden") el.classList.toggle("right", state.cage?.side === "a" && !state.ground);
   $("last").style.display = el.className === "hidden" ? "" : "none";
   $("last").innerHTML = lastLine;
 }
@@ -259,11 +278,17 @@ function renderHand() {
     return { card: data.cards[c], d: describeCard(state, "a", c), isSel, affordable: isSel || ok };
   };
   const drawn = state.a.hand.map((c, i) => i).filter((i) => !data.cards[state.a.hand[i]].basic);
+  const fence = state.a.hand.map((c, i) => i).filter((i) => data.cards[state.a.hand[i]].cageOnly);
+  $("cagebtns").innerHTML = fence.map((i) => {
+    const { card, d, isSel, affordable } = look(i);
+    return `<button class="cg bg-${card.type} ${isSel ? "sel" : ""} ${affordable ? "" : "dim"}" data-i="${i}">${card.name}<small>${"⚡".repeat(d.cost)} ${d.effect}</small></button>`;
+  }).join("");
+  $("cagebtns").querySelectorAll(".cg").forEach((el) => el.addEventListener("click", () => onCard(Number(el.dataset.i), el)));
   $("hand").innerHTML = drawn.map((i) => {
     const { card, d, isSel, affordable } = look(i);
     const label = d.action || data.rules.typeNames[card.type];
     const where = state.ground ? "" : d.rangeText;
-    const rangeHtml = d.unusable ? `<span class="bad">要在${where}</span>` : where ? `<span>${where}</span>` : "<span></span>";
+    const rangeHtml = d.unusable ? `<span class="bad">${d.blocked || `要在${where}`}</span>` : where ? `<span>${where}</span>` : "<span></span>";
     const target = card.target && card.power ? `<span>打${TARGET_NAMES[card.target]}</span>` : "";
     return `<button class="card ${isSel ? "sel" : ""} ${affordable ? "" : "dim"} ${d.unusable ? "far" : ""} ${card.signature ? "signature" : ""}" data-i="${i}">
       <div class="head bg-${card.type}"><span>${label}</span><span class="cost">${"⚡".repeat(d.cost)}</span></div>
@@ -280,7 +305,8 @@ function renderHand() {
   for (const [id, el, label] of [["step_in", $("step-in"), "前進"], ["step_back", $("step-back"), "後退"]]) {
     const i = state.a.hand.indexOf(id);
     const { isSel, affordable } = look(i);
-    el.innerHTML = `${label}<small>${"⚡".repeat(describeCard(state, "a", id).cost)}</small>`;
+    const dc = describeCard(state, "a", id);
+    el.innerHTML = `${label}<small>${dc.blocked || "⚡".repeat(dc.cost)}</small>`;
     el.className = `${isSel ? "sel" : ""} ${affordable ? "" : "dim"}`;
   }
   $("brace").innerHTML = "硬撐<small>⚡0</small>";
@@ -505,6 +531,32 @@ async function playEvents(events) {
         await wait(620);
         $("verdict").classList.add("hidden");
         break;
+      case "cage":
+        viewCage = e.side;
+        shown[e.side].pinned = true;
+        renderPanel(e.side);
+        syncLayout({});
+        stage.shake(6);
+        showVerdict(e.how === "push" ? "推籠反轉！" : "被逼到籠邊！", e.how === "push" ? `${nameOf(e.side)} 背靠籠子了` : `${nameOf(e.side)} 不能再後退`, "#ff9f43");
+        await wait(760);
+        $("verdict").classList.add("hidden");
+        break;
+      case "cageEnd":
+        viewCage = null;
+        shown[e.side].pinned = false;
+        renderPanel(e.side);
+        syncLayout({});
+        if (e.how === "turn") {
+          showVerdict("轉身脫離！", `${nameOf(e.side)} 離開籠邊`, "#5be49b");
+          await wait(640);
+          $("verdict").classList.add("hidden");
+        }
+        break;
+      case "chase":
+        showVerdict(e.follow ? "追進地面" : "讓他站起來", e.follow ? `${nameOf(e.side)} 繼續壓制` : `${nameOf(e.side)} 佔上風`, e.follow ? "#7cb7ff" : "#9fe2bf");
+        await wait(560);
+        $("verdict").classList.add("hidden");
+        break;
       case "mark": {
         shown[e.side].marks = [...new Set([...shown[e.side].marks, e.tag])];
         renderPanel(e.side);
@@ -563,7 +615,7 @@ async function playEvents(events) {
         break;
       case "standup":
         syncLayout({ dist: e.dist });
-        showVerdict(e.reason === "referee" ? "裁判叫起" : "站起來了", "", "#fff");
+        showVerdict(e.reason === "referee" ? "裁判叫起" : e.reason === "release" ? "放他起來" : "站起來了", "", "#fff");
         await wait(620);
         $("verdict").classList.add("hidden");
         break;
@@ -638,7 +690,7 @@ function renderPanelsFromState() {
 
 function syncLayout(view) {
   if (!view.ground) viewDist = view.dist ?? viewDist;
-  const full = { dist: viewDist, ground: view.ground || null };
+  const full = { dist: viewDist, ground: view.ground || null, cage: viewCage };
   stage.setLayout(full);
   const el = $("center-bar").querySelector(".place");
   if (el) el.innerHTML = placeText(full);
@@ -665,6 +717,7 @@ async function onFight() {
   const cards = selectedCards();
   const ai = chooseAI(state, "b").cards;
   const distBefore = state.dist;
+  const cageBefore = state.cage?.side ?? null;
   const groundBefore = state.ground ? { ...state.ground } : null;
   const events = resolveExchange(state, cards, ai);
   $("tray").classList.add("away");
@@ -675,8 +728,10 @@ async function onFight() {
   skipping = false;
   // Keep showing the situation as it was until the playback moves it.
   viewDist = distBefore;
-  stage.setLayout({ dist: distBefore, ground: groundBefore });
+  viewCage = cageBefore;
+  stage.setLayout({ dist: distBefore, ground: groundBefore, cage: cageBefore });
   await playEvents(events);
+  if (state.pending) await settleChase();
   stage.timeScale = 1;
   $("skip").classList.add("hidden");
   $("reveal").classList.add("hidden");
@@ -685,6 +740,36 @@ async function onFight() {
   if (state.phase === "corner") showCorner();
   else if (state.phase === "over") showResult();
   else beginTurn();
+}
+
+/** After a takedown: you choose whether to follow him down; the AI chooses for itself. Then the rest plays out. */
+async function settleChase() {
+  const side = state.pending.side;
+  syncShown();
+  renderPanelsFromState();
+  const choice = side === "a" ? await askChase() : chooseChase(state, "b");
+  await playEvents(resolvePending(state, choice));
+}
+
+function askChase() {
+  return new Promise((resolve) => {
+    const box = $("overlay");
+    box.classList.remove("hidden");
+    box.classList.add("lite");
+    box.innerHTML = `<div class="sheet small">
+      <h2>摔倒他了！</h2>
+      <div class="note">追進地面，還是讓他站起來？</div>
+      <div class="opts">
+        <button class="opt primary" data-c="follow">追進地面<small>繼續壓制、找機會上鎖</small></button>
+        <button class="opt" data-c="release">讓他站起來<small>回到近距離，你的下兩手爆擊率 +${Math.round((data.rules.tags[data.rules.chase.tag].crit || 0) * 100)}%</small></button>
+      </div>
+    </div>`;
+    box.querySelectorAll(".opt").forEach((el) => el.addEventListener("click", () => {
+      box.classList.add("hidden");
+      box.classList.remove("lite");
+      resolve(el.dataset.c);
+    }));
+  });
 }
 
 // ---------- Between rounds and the end ----------
