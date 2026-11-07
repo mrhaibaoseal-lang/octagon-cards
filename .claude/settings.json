@@ -5,5 +5,15 @@
       "Read(./data/raw_ufcstats.json)",
       "Read(./dist/**)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/docs/brief.js\"" }
+        ]
+      }
+    ]
   }
 }
