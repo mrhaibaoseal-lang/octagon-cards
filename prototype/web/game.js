@@ -886,8 +886,10 @@ function cardFlip(e) {
   const label = { guard: `架${GUARD_WORDS[reply.height] || ""}`, cover: "抱頭", evade: "閃身", counter: `反擊：${data.cards[reply.card]?.name || ""}`, shoot: "抱腿反擊", preempt: "搶先" }[reply.kind] || "";
   const how = e.visible ? "看到了，當場應對" : "事先押的";
   const name = card.name.replace(/^招牌[：:]/, "");
-  return `<div class="flip"><div class="head ${HEIGHT_COLORS[card.height] || ""}">${heightWord(card.height)} · 速${e.speed}</div><div class="body">${name}<br><small>第 ${e.index + 1}/${e.of} 張</small></div><div class="who">${nameOf(L)}</div></div>
-    <div class="flip reply"><div class="head" style="background:#4a5470">${label}</div><div class="body"><small>${how}</small></div><div class="who">${nameOf(R)}</div></div>`;
+  const mine = `<div class="flip"><div class="head ${HEIGHT_COLORS[card.height] || ""}">${heightWord(card.height)} · 速${e.speed}</div><div class="body">${name}<br><small>第 ${e.index + 1}/${e.of} 張</small></div><div class="who">${nameOf(L)}</div></div>`;
+  const answer = `<div class="flip reply"><div class="head" style="background:#4a5470">${label}</div><div class="body"><small>${how}</small></div><div class="who">${nameOf(R)}</div></div>`;
+  // Left is always you and right is always him, whoever is throwing the card.
+  return L === "a" ? mine + answer : answer + mine;
 }
 const heightWord = (h) => ({ high: "上段", mid: "中段", low: "下段", grab: "抱摔", feint: "假動作" }[h] || "");
 
