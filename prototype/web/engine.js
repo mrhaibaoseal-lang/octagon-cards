@@ -633,7 +633,7 @@ function groundIntent(state, s) {
   return {
     ground: true,
     kind,
-    options: ids.map((id) => ({ id, label: labels[id] })),
+    options: ids.map((id) => ({ id, label: labels[id], type: typeOf[id] })),
     probs,
     top,
     tell: tells[(state.round * 7 + state.exchange * 3) % tells.length],
@@ -1464,7 +1464,7 @@ function resolveGroundExchange(state, playA, playB) {
     winner = out === "top" ? top : out === "bottom" ? opposite(top) : null;
     if (winner) text = R.ground.wins[cat[winner]];
   }
-  const labelOf = (s) => (lockFight ? state.cards[plays[s][0]].name : R.ground.cats[cat[s]].label);
+  const labelOf = (s) => (lockFight ? (state.cards[plays[s][0]].lockSide === "attack" ? "進攻" : "防守") : R.ground.cats[cat[s]].label);
   events.push({ kind: "reveal", a: plays.a, b: plays.b, types, labels: { a: labelOf("a"), b: labelOf("b") }, winner, ground: groundBefore, dist: state.dist, cost: { ...state.exchangeCost } });
   events.push({ kind: "verdict", winner, type: winner ? types[winner] : types.a, text });
 

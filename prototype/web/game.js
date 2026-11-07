@@ -1,11 +1,13 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf, cardCost } from "./engine.js";
+import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockStatus, groundOutcome, roleOf, cardCost } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
 const TYPES = ["S", "G", "C"];
 const ATTR_LABELS = [["power", "力量"], ["accuracy", "精準"], ["wrestling", "摔角"], ["grappleDef", "防摔"], ["submission", "柔術"], ["chin", "下巴"], ["cardio", "體能"]];
 const TARGET_NAMES = { head: "頭", body: "身", legs: "腿" };
+/** Reasons a second card cannot join the play, in which case clicking it starts a new play instead. */
+const REPLACES = ["mixed types", "fence cards go alone", "one card on the ground"];
 
 let data;
 let assets;
@@ -20,12 +22,15 @@ let skipWake = null;
 let lastLine = "";
 let viewCage = null; // who the screen shows against the fence
 let viewDist = 1; // the distance as the screen currently shows it, which trails the engine during playback
+let viewGround = null; // the mat as the screen shows it: { top, pos } or null
+let viewLock = null; // who holds a lock on screen, if any
+const groundTop = () => viewGround?.top ?? null;
 
 // ---------- Boot ----------
 
 async function boot() {
-  const [rules, cards, fighters, depth] = await Promise.all(["rules", "cards", "fighters", "depth"].map((n) => fetch(`rules/${n}.json`).then((r) => r.json())));
-  data = loadData({ rules, cards, fighters, depth });
+  const [rules, cards, fighters, depth, ground] = await Promise.all(["rules", "cards", "fighters", "depth", "ground"].map((n) => fetch(`rules/${n}.json`).then((r) => r.json())));
+  data = loadData({ rules, cards, fighters, depth, ground });
   const ids = Object.keys(fighters).filter((id) => !fighters[id].hidden);
   assets = await loadAssets(ids);
   stage = new Stage($("cage"), assets);
@@ -142,6 +147,8 @@ function syncShown() {
   }
   viewDist = state.dist;
   viewCage = state.cage?.side ?? null;
+  viewGround = state.ground ? { top: state.ground.top, pos: state.ground.pos } : null;
+  viewLock = state.ground?.lock?.attacker ?? null;
   stage.setCuts(shown.a.cut, shown.b.cut);
 }
 
@@ -182,7 +189,8 @@ function renderPanel(side) {
 function placeText(view) {
   if (view.ground) {
     const you = view.ground.top === "a" ? "你在上位" : "你在下位";
-    return `地面 · ${data.rules.positions[view.ground.pos]}<br>${you}`;
+    const track = data.rules.ground.short.map((t, i) => `<i class="${i === view.ground.pos ? "on" : ""}">${t}</i>`).join("");
+    return `${data.rules.positions[view.ground.pos]} · ${you}<div class="track4 track5">${track}</div>`;
   }
   const { names, short } = data.rules.dist;
   const track = short.map((s, i) => `<i class="${i === view.dist ? "on" : ""}">${s}</i>`).join("");
@@ -206,12 +214,14 @@ function renderHud() {
 
 function renderIntent() {
   const intent = getIntent(state, "b");
-  // One slim bar under his panel: the three shares side by side. With blood in your eyes only the likeliest shows; the others read "?".
-  const segs = TYPES.map((t) => {
-    const hidden = intent.blind && t !== intent.top;
-    const p = Math.round(intent.probs[t] * 100);
-    const width = hidden ? 8 : intent.blind ? 100 - 16 : p;
-    return `<span class="seg bg-${t} ${hidden ? "hide" : ""}" style="flex:${Math.max(width, 1)}">${data.rules.typeNames[t]} ${hidden ? "?" : `${p}%`}</span>`;
+  // One slim bar under his panel: the shares side by side. With blood in your eyes only the likeliest shows; the others read "?".
+  const opts = intent.ground ? intent.options : TYPES.map((t) => ({ id: t, label: data.rules.typeNames[t], type: t }));
+  const n = opts.filter((o) => intent.probs[o.id] > 0).length;
+  const segs = opts.filter((o) => intent.probs[o.id] > 0 || !intent.ground).map((o) => {
+    const hidden = intent.blind && o.id !== intent.top;
+    const p = Math.round(intent.probs[o.id] * 100);
+    const width = hidden ? 8 : intent.blind ? 100 - 8 * (n - 1) : p;
+    return `<span class="seg bg-${o.type} ${hidden ? "hide" : ""}" style="flex:${Math.max(width, 1)}">${o.label} ${hidden ? "?" : `${p}%`}</span>`;
   }).join("");
   const sig = intent.signatureReady ? '<b class="sig">⚡招牌</b>' : "";
   const note = intent.blind ? "血流進眼睛，只看得清最可能的出招" : intent.tags.length ? intent.tags.join("・") : intent.tell;
@@ -223,13 +233,13 @@ function renderIntent() {
 function renderAlert() {
   const el = $("alert");
   el.className = "hidden";
-  const lock = state.ground?.lock;
+  const lock = lockStatus(state);
   if (lock) {
-    const pct = Math.round(lockTapChance(state) * 100);
-    el.className = "";
+    el.className = lock.attacker === "a" ? "swarm" : "";
+    const stage = `第 ${lock.depth} 階（第 ${lock.tapDepth} 階拍墊）`;
     el.innerHTML = lock.attacker === "a"
-      ? `你鎖住了：${lock.name}<br>再贏一手，${pct}% 逼他拍墊`
-      : `被鎖住了：${lock.name}<br>這手贏才能逃，輸了 ${pct}% 拍墊`;
+      ? `你鎖住了：${lock.name}<br>${stage}<br>他猜錯就更深，猜中退一階`
+      : `被鎖住了：${lock.name}<br>${stage}<br>猜中他的招退一階，猜錯更深`;
   } else if (state.a.rocked) {
     el.className = "";
     el.innerHTML = `你被打暈了！<br>這手只有 1 能量，撐過去`;
@@ -241,6 +251,11 @@ function renderAlert() {
   const notes = [];
   if (state.cage && !state.ground) {
     notes.push(state.cage.side === "a" ? "你被逼到籠邊！不能後退、易被摔<br>用推籠或轉身脫離" : "他被逼到籠邊！他不能後退，摔他更容易");
+  }
+  if (state.ground && !lock) {
+    notes.push(state.ground.top === "a"
+      ? "你在上位：選動作，他來猜<br>穩壓免費、專抓逃脫"
+      : "你在下位：猜他的動作<br>撐架剋過位・反制剋砸拳・逃脫剋鎖技");
   }
   if (isFinal(state)) notes.push("回合最後一手！雙方 +1 能量，裁判更重視");
   if (notes.length) {
@@ -281,7 +296,7 @@ function renderHand() {
     const isSel = selected.includes(i);
     // Clicking a card that does not go with the current play starts a new play with it, so only the alone check matters then.
     const together = playError(state, "a", [...cards, c]);
-    const ok = together === null || ((together === "mixed types" || together === "fence cards go alone") && playError(state, "a", [c]) === null);
+    const ok = together === null || (REPLACES.includes(together) && playError(state, "a", [c]) === null);
     const d = describeCard(state, "a", c);
     // A card out of range now may still be thrown after the step that comes with it.
     if (d.unusable && cards.length && !isSel && together === null) d.unusable = false;
@@ -297,7 +312,7 @@ function renderHand() {
   $("hand").innerHTML = drawn.map((i) => {
     const { card, d, isSel, affordable } = look(i);
     const label = d.action || data.rules.typeNames[card.type];
-    const where = state.ground ? "" : d.rangeText;
+    const where = d.rangeText;
     const rangeHtml = d.unusable ? `<span class="bad">${d.blocked || `要在${where}`}</span>` : where ? `<span>${where}</span>` : "<span></span>";
     const target = card.target && card.power ? `<span>打${TARGET_NAMES[card.target]}</span>` : "";
     return `<button class="card ${isSel ? "sel" : ""} ${affordable ? "" : "dim"} ${d.unusable ? "far" : ""} ${card.signature ? "signature" : ""}" data-i="${i}">
@@ -312,16 +327,22 @@ function renderHand() {
   let energy = "";
   for (let i = 0; i < b; i++) energy += i < spent ? "⚡" : '<span class="off">⚡</span>';
   $("energy").innerHTML = energy;
-  for (const [id, el, label] of [["step_in", $("step-in"), "前進"], ["step_back", $("step-back"), "後退"]]) {
+  const mat = Boolean(state.ground);
+  const fixed = mat ? [] : [["step_in", $("step-in"), "前進"], ["step_back", $("step-back"), "後退"]];
+  for (const el of [$("step-in"), $("step-back")]) el.classList.toggle("hidden", mat);
+  for (const [id, el, label] of fixed) {
     const i = state.a.hand.indexOf(id);
     const { isSel, affordable } = look(i);
     const dc = describeCard(state, "a", id);
     el.innerHTML = `${label}<small>${dc.blocked || "⚡".repeat(dc.cost)}</small>`;
     el.className = `${isSel ? "sel" : ""} ${affordable ? "" : "dim"}`;
   }
-  $("brace").innerHTML = "硬撐<small>⚡0</small>";
+  // The free play: bracing on his feet, the hold on top, covering up underneath. Not an option in a lock fight.
+  const free = mat ? (roleOf(state, "a") === "top" ? ["穩壓", "抓逃脫"] : ["抱頭", "砸拳減半"]) : ["硬撐", "⚡0"];
+  $("brace").innerHTML = `${free[0]}<small>${mat ? `⚡0 ${free[1]}` : free[1]}</small>`;
   $("brace").className = bracing ? "sel" : "";
-  $("fight").disabled = !(cards.length || bracing);
+  $("brace").classList.toggle("hidden", Boolean(state.ground?.lock));
+  $("fight").disabled = !(cards.length || (bracing && !state.ground?.lock));
   renderChoice();
 }
 
@@ -330,7 +351,13 @@ function renderChoice() {
   const cards = selectedCards();
   if (!cards.length && !bracing) {
     const mine = fighterOf("a").ability;
-    el.innerHTML = `選牌：同一類可多張；前進／後退可搭配出手（先移動再出牌）${mine ? ` · 能力「${mine.name}」` : ""}`;
+    if (state.ground?.lock) el.innerHTML = state.ground.lock.attacker === "a" ? "選一招進攻：被對應的防守擋住就退一階，其餘讓鎖更深" : "選一招防守：猜中他的進攻就退一階，退完就逃脫";
+    else if (state.ground) el.innerHTML = `地面一手只出一張牌，或用右邊免費的${roleOf(state, "a") === "top" ? "穩壓" : "抱頭"}${mine ? ` · 能力「${mine.name}」` : ""}`;
+    else el.innerHTML = `選牌：同一類可多張；前進／後退可搭配出手（先移動再出牌）${mine ? ` · 能力「${mine.name}」` : ""}`;
+    return;
+  }
+  if (state.ground) {
+    renderGroundChoice(cards);
     return;
   }
   const preview = previewPlay(state, "a", cards);
@@ -352,6 +379,45 @@ function renderChoice() {
   el.innerHTML = `${seq}<b class="t-${t}">${n[t]}</b>：贏 ${n[beats]} <b>${pct(beats)}</b> · 平 ${n[t]} <b>${pct(t)}</b> · 輸 ${n[losesTo]} <b>${pct(losesTo)}</b>${dmg}${moves}${risk}`;
 }
 
+/** What the pick risks on the mat, from the shown tendencies: which of his options beat it, how likely, and what a win does. */
+function renderGroundChoice(cards) {
+  const el = $("choice");
+  const intent = getIntent(state, "b");
+  const pct = (id) => (intent.blind && id !== intent.top ? "?" : `${Math.round((intent.probs[id] || 0) * 100)}%`);
+  const lock = state.ground.lock;
+  if (lock) {
+    const l = data.rules.lock;
+    const card = data.cards[cards[0]];
+    if (card.lockSide === "attack") {
+      const answer = l.beats[card.lockMove];
+      el.innerHTML = `<b>${card.name}</b>：他若選 <b>${l.defend[answer]} ${pct(answer)}</b> 就被擋下（鎖退一階），其餘讓鎖更深`;
+    } else {
+      const attack = Object.keys(l.beats).find((k) => l.beats[k] === card.lockMove);
+      el.innerHTML = `<b>${card.name}</b>：他若選 <b>${l.attack[attack]} ${pct(attack)}</b> 就猜中，鎖退一階；其餘更深`;
+    }
+    return;
+  }
+  const role = roleOf(state, "a");
+  const cat = cards.length ? data.cards[cards[0]].cat : role === "top" ? "hold" : "cover";
+  const def = data.rules.ground.cats[cat];
+  const outcomeFor = (o) => (role === "top" ? groundOutcome(state, cat, o.id) : groundOutcome(state, o.id, cat));
+  const live = intent.options.filter((o) => intent.probs[o.id] > 0);
+  const losing = live.filter((o) => outcomeFor(o) === (role === "top" ? "bottom" : "top"));
+  const winning = live.filter((o) => outcomeFor(o) === role);
+  const sum = (list) => list.reduce((a, o) => a + (intent.probs[o.id] || 0), 0);
+  const show = (list) => (list.length ? list.map((o) => `${o.label} <b>${pct(o.id)}</b>`).join("、") : "沒有");
+  let text = `<b class="t-${def.type}">${def.label}</b>：贏 <b>${intent.blind ? "?" : `${Math.round(sum(winning) * 100)}%`}</b> · 輸給 ${show(losing)}`;
+  if (cards.length) {
+    const preview = previewPlay(state, "a", cards);
+    if (data.cards[cards[0]].power) text += ` · 贏了造成約 <b>${preview.damage}</b> · 爆擊 ${preview.critPct}%`;
+    const extra = Math.max(0, preview.cost - 1);
+    if (extra) text += ` · 猜錯多吃 ${Math.round(extra * data.rules.damage.overcommitPerEnergy * 100)}%`;
+  } else {
+    text += role === "top" ? " · 他若逃脫會被抓住、耗體力" : " · 他若砸拳，傷害減半";
+  }
+  el.innerHTML = text;
+}
+
 function onCard(i, el) {
   const card = data.cards[state.a.hand[i]];
   bracing = false;
@@ -362,7 +428,7 @@ function onCard(i, el) {
   }
   let next = [...selected, i].map((x) => state.a.hand[x]);
   const together = playError(state, "a", next);
-  if (together === "mixed types" || together === "fence cards go alone") {
+  if (REPLACES.includes(together)) {
     selected = [];
     next = [state.a.hand[i]];
   }
@@ -432,20 +498,12 @@ function showVerdict(text, sub = "", color = "#fff", big = false) {
   el.innerHTML = `${text}${sub ? `<span class="sub">${sub}</span>` : ""}`;
 }
 
-function playLabel(side, cards, types, ground) {
-  const type = types[side];
-  if (ground) {
-    const role = ground.top === side ? "top" : "bottom";
-    return data.rules.groundLabels[role][type];
-  }
-  return data.rules.typeNames[type];
-}
-
 function renderReveal(e) {
   const flip = (side) => {
-    const names = e[side].map((c) => data.cards[c].name).join(" + ");
+    const names = e[side].map((c) => data.cards[c].name).join(" + ") || "免費";
     const res = e.winner === side ? "win" : e.winner ? "lose" : "";
-    return `<div class="flip ${res}"><div class="head bg-${e.types[side]}">${playLabel(side, e[side], e.types, e.ground)}</div><div class="body">${names}</div><div class="who">${side === "a" ? "你" : fighterOf("b").short} ${"⚡".repeat(e.cost[side])}</div></div>`;
+    const head = e.labels ? e.labels[side] : data.rules.typeNames[e.types[side]];
+    return `<div class="flip ${res}"><div class="head bg-${e.types[side]}">${head}</div><div class="body">${names}</div><div class="who">${side === "a" ? "你" : fighterOf("b").short} ${"⚡".repeat(e.cost[side])}</div></div>`;
   };
   $("reveal").innerHTML = flip("a") + flip("b");
   $("reveal").classList.remove("hidden");
@@ -493,7 +551,8 @@ async function playEvents(events) {
         const f = stage.fighters[e.attacker];
         const reach = REACH[viewDist];
         if (f.downed || stage.fighters[def].downed) {
-          stage.strike(e.attacker, f.restPose === "shoot" ? "shoot" : "kick", 12, dur);
+          // On the mat the man on top punches down from his kneeling pose; the man underneath kicks up.
+          stage.strike(e.attacker, groundTop() === e.attacker ? "gpunch" : "kick", 12, dur);
         } else {
           stage.strike(e.attacker, actionPoseFor(e.card), reach, dur);
         }
@@ -639,7 +698,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "ride":
-        showVerdict(e.held ? "被壓住了" : "穩穩壓住", "體力在流失", "#7cb7ff");
+        showVerdict(e.caught ? "抓住他逃脫！" : e.held ? "被壓住了" : "穩穩壓住", "體力在流失", "#7cb7ff");
         renderPanelsFromState();
         await wait(520);
         $("verdict").classList.add("hidden");
@@ -651,7 +710,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "standoff":
-        showVerdict("互相試探", "雙方回體力", "#9fe2bf");
+        showVerdict(e.ground ? "互相僵持" : "互相試探", "雙方回體力", "#9fe2bf");
         await wait(480);
         $("verdict").classList.add("hidden");
         break;
@@ -662,22 +721,32 @@ async function playEvents(events) {
         break;
       case "lockStart":
         stage.shake(8);
-        showVerdict(`${e.name}！`, `${nameOf(e.attacker)} 鎖住了`, "#ff7b7f");
+        viewLock = e.attacker;
+        syncLayout({ ground: viewGround || (state.ground && { top: state.ground.top, pos: state.ground.pos }) });
+        showVerdict(`${e.name}！`, `${nameOf(e.attacker)} 鎖住了 · 第 ${e.depth} 階`, "#ff7b7f");
         await wait(800);
         $("verdict").classList.add("hidden");
         break;
       case "lockDeepen":
         stage.shake(10);
-        showVerdict("越鎖越深", `${e.name} 還沒拍墊`, "#ff7b7f");
+        showVerdict("越鎖越深", `${e.name} · 第 ${e.depth} 階${e.depth >= data.rules.lock.tapDepth - 1 ? "，再錯就拍墊" : ""}`, "#ff7b7f");
         await wait(760);
         $("verdict").classList.add("hidden");
         break;
-      case "lockHold":
-        showVerdict("僵持", `${e.name} 雙方都在耗力`, "#fff");
-        await wait(560);
+      case "lockEase":
+        showVerdict("鬆了一階", `${e.name} · 回到第 ${e.depth} 階`, "#9fe2bf");
+        await wait(700);
+        $("verdict").classList.add("hidden");
+        break;
+      case "stopped":
+        stage.pose(e.side, "gup", 420);
+        showVerdict(data.rules.ground.wins[e.by] || "擋下了", `${nameOf(e.side)} 猜中了`, "#5be49b");
+        await wait(620);
         $("verdict").classList.add("hidden");
         break;
       case "lockEscape":
+        viewLock = null;
+        syncLayout({ ground: viewGround });
         stage.flash(0.15);
         showVerdict("掙脫了！", `${nameOf(e.side)} 逃出 ${e.name}`, "#5be49b");
         await wait(720);
@@ -709,7 +778,9 @@ function renderPanelsFromState() {
 
 function syncLayout(view) {
   if (!view.ground) viewDist = view.dist ?? viewDist;
-  const full = { dist: viewDist, ground: view.ground || null, cage: viewCage };
+  viewGround = view.ground ? { top: view.ground.top, pos: view.ground.pos } : null;
+  if (!viewGround) viewLock = null;
+  const full = { dist: viewDist, ground: viewGround && { ...viewGround, lock: viewLock }, cage: viewCage };
   stage.setLayout(full);
   const el = $("center-bar").querySelector(".place");
   if (el) el.innerHTML = placeText(full);
@@ -748,7 +819,9 @@ async function onFight() {
   // Keep showing the situation as it was until the playback moves it.
   viewDist = distBefore;
   viewCage = cageBefore;
-  stage.setLayout({ dist: distBefore, ground: groundBefore, cage: cageBefore });
+  viewGround = groundBefore ? { top: groundBefore.top, pos: groundBefore.pos } : null;
+  viewLock = groundBefore?.lock?.attacker ?? null;
+  stage.setLayout({ dist: distBefore, ground: viewGround && { ...viewGround, lock: viewLock }, cage: cageBefore });
   await playEvents(events);
   if (state.pending) await settleChase();
   stage.timeScale = 1;

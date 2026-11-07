@@ -88,7 +88,7 @@ uv run --no-project --with pillow --with numpy python -I pipeline/portrait.py --
 - 倒地（KO）仍用第一張表的 `down`，被摔下去的瞬間用 `shoot`→`down`；拍墊用 `gcover` 加抖動與一隻手拍地的特效（先不新增姿勢）。
 - 提示詞沿用第一張的範本，只換第一段與六個姿勢的描述（要照上表描述，並保留「exactly two arms and two legs, no extra limbs」）。**逐格數手腳**，跪壓和低身過位最容易多出手。
 - 轉換：`--poses gkneel,gpunch,gpass,gguard,gcover,gup`，同一位選手會把新姿勢**加進**原本的檔案（`pipeline/sprite_sheet.py` 已改成合併，不會蓋掉第一張）。`gguard`、`gcover` 如果畫成頭在左邊，要像 `down` 一樣能翻（轉換工具要補 `--flip` 參數，等第一張出來再加）。
-- 舞台怎麼疊：上位用 `gkneel`／`gpunch`／`gpass`，下位用 `gguard`／`gcover`／`gup`，沒有地面姿勢的選手退回現在的 `shoot` 疊 `down`，所以舊選手可以慢慢補，不會壞。
+- 舞台怎麼疊（`stage.js` 已實作）：上位待機 `gkneel`（全防守、騎乘）或 `gpass`（半防守、側控、背後、鎖技發力），砸拳時換 `gpunch`；下位待機 `gguard`（全防守、半防守）或 `gcover`（側控以上），猜中時換 `gup`；位置越高上位壓得越近。沒有地面姿勢的選手退回現在的 `shoot` 疊 `down`（`gkneel`／`gpunch`／`gpass`／`gup` → `shoot`，`gguard`／`gcover` → `down`），所以舊選手可以慢慢補，不會壞。
 - **先試做兩位**：McGregor、Khabib，確認「上位和下位疊在一起自然」再決定其餘選手要不要補。
 
 ## 還沒解決

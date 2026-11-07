@@ -1,7 +1,14 @@
 // Canvas layer: cage background, fighter sprites and impact effects. Knows nothing about the rules.
 
 const SCALE = 2; // sprite pixels to screen points
-const POSES = ["idle", "punch", "kick", "hit", "shoot", "down"];
+const POSES = ["idle", "punch", "kick", "hit", "shoot", "down", "gkneel", "gpunch", "gpass", "gguard", "gcover", "gup"];
+// A fighter without the ground poses (docs/ART_SPEC.md) keeps the old look: the top man in his shot, the man underneath flat on his back.
+const FALLBACK = { gkneel: "shoot", gpunch: "shoot", gpass: "shoot", gguard: "down", gcover: "down", gup: "shoot" };
+// Ground poses by position (full guard, half guard, side control, mount, back): the man on top and the man underneath.
+const TOP_REST = ["gkneel", "gpass", "gpass", "gkneel", "gpass"];
+const BOTTOM_REST = ["gguard", "gguard", "gcover", "gcover", "gcover"];
+// How far the man on top leans over the other one at each position: the higher, the closer.
+const GROUND_SHIFT = [38, 30, 20, 10, 2];
 const FLOOR_Y = 296;
 const CAGE_EDGE = 128; // where a fighter against the fence stands
 // Half the gap between the two fighters at each distance (far, mid, close, clinch), and how far a strike reaches.
@@ -208,17 +215,22 @@ export class Stage {
     }
     if (view.ground) {
       this.cage = null;
-      const top = this.fighters[view.ground.top];
-      const bottom = this.fighters[view.ground.top === "a" ? "b" : "a"];
-      const dir = view.ground.top === "a" ? 1 : -1; // the top fighter faces along this direction
-      const shift = [34, 18, 4][view.ground.pos] ?? 18;
-      top.restPose = "shoot";
+      const topSide = view.ground.top;
+      const top = this.fighters[topSide];
+      const bottom = this.fighters[topSide === "a" ? "b" : "a"];
+      const dir = topSide === "a" ? 1 : -1; // the top fighter faces along this direction
+      const pos = view.ground.pos ?? 1;
+      const shift = GROUND_SHIFT[pos] ?? 20;
+      const holder = typeof view.ground.lock === "string" ? view.ground.lock : view.ground.lock?.attacker ?? null;
+      // A lock from underneath keeps the man on top kneeling; a lock from above puts him down into it.
+      top.restPose = holder === topSide ? "gpass" : holder ? "gkneel" : TOP_REST[pos] ?? "gpass";
       top.tx = 422 - dir * (40 + shift);
       // Raised so the fighter underneath stays visible above the hand.
       top.ty = FLOOR_Y - 34;
       top.flip = dir < 0;
       top.z = 1;
-      bottom.restPose = "down";
+      bottom.restPose = BOTTOM_REST[pos] ?? "gguard";
+      if (holder && holder !== topSide) bottom.restPose = "gguard";
       bottom.tx = 422 + dir * 10;
       bottom.ty = FLOOR_Y - 18;
       bottom.flip = dir < 0;
@@ -260,6 +272,13 @@ export class Stage {
     f.poseUntil = performance.now() + ms;
     const dir = f.flip ? -1 : 1;
     f.anim = { kind: "lunge", start: performance.now(), ms, reach: reach * dir };
+  }
+
+  /** A passing change of pose (for example a scramble to the feet) with no lunge. */
+  pose(side, pose, ms) {
+    const f = this.fighters[side];
+    f.pose = pose;
+    f.poseUntil = performance.now() + ms;
   }
 
   /** Defender is knocked back with a white flash. */
@@ -354,9 +373,9 @@ export class Stage {
     // Shadow.
     x.fillStyle = "rgba(0,0,0,0.42)";
     x.beginPath();
-    x.ellipse(px, py + 1, f.pose === "down" ? 96 : 56, 8, 0, 0, Math.PI * 2);
+    x.ellipse(px, py + 1, f.pose === "down" || f.pose === "gguard" || f.pose === "gcover" ? 96 : 56, 8, 0, 0, Math.PI * 2);
     x.fill();
-    const sprite = art?.poses?.[f.pose] || art?.poses?.idle;
+    const sprite = art?.poses?.[f.pose] || art?.poses?.[FALLBACK[f.pose]] || art?.poses?.idle;
     if (!sprite) {
       x.fillStyle = "#39415a";
       x.fillRect(px - 26, py - 150, 52, 150);
