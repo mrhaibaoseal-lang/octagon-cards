@@ -69,6 +69,62 @@
       "bottom": { "S": 0.25, "G": 0.55, "C": 0.20 }
     }
   },
+  "jones": {
+    "name": "Jon Jones", "short": "Jones", "nick": "全能支配者",
+    "summary": "什麼都會，沒有明顯弱點。用長手長腳的蹬踢和肘擊管住距離，必要時把你摔倒。",
+    "attrs": { "power": 82, "accuracy": 80, "wrestling": 88, "grappleDef": 86, "submission": 76, "chin": 84, "cardio": 82 },
+    "prefer": [0, 1],
+    "deck": ["jab", "cross", "step_jab", "calf_kick", "front_kick", "body_kick", "spin_elbow", "elbow", "knee", "single_leg", "cage_trip", "clinch", "guard_counter", "check_kick", "slip_back", "guillotine"],
+    "signature": "sig_jones",
+    "style": {
+      "out":    { "S": 0.45, "G": 0.20, "C": 0.35 },
+      "in":     { "S": 0.40, "G": 0.30, "C": 0.30 },
+      "top":    { "S": 0.40, "G": 0.35, "C": 0.25 },
+      "bottom": { "S": 0.25, "G": 0.45, "C": 0.30 }
+    }
+  },
+  "adesanya": {
+    "name": "Israel Adesanya", "short": "Adesanya", "nick": "最後的風格大師",
+    "summary": "步法與反擊的大師，遠距離最危險。被摔到地面就吃虧。",
+    "attrs": { "power": 80, "accuracy": 90, "wrestling": 56, "grappleDef": 66, "submission": 44, "chin": 68, "cardio": 82 },
+    "prefer": [0, 1],
+    "deck": ["jab", "jab", "cross", "lead_hook", "step_jab", "front_kick", "body_kick", "head_kick", "spin_kick", "knee", "single_leg", "slip_back", "back_counter", "counter_hook", "pivot_counter", "check_kick"],
+    "signature": "sig_adesanya",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.08, "C": 0.42 },
+      "in":     { "S": 0.45, "G": 0.10, "C": 0.45 },
+      "top":    { "S": 0.45, "G": 0.25, "C": 0.30 },
+      "bottom": { "S": 0.25, "G": 0.50, "C": 0.25 }
+    }
+  },
+  "makhachev": {
+    "name": "Islam Makhachev", "short": "Makhachev", "nick": "達吉斯坦的壓制者",
+    "summary": "壓制與鎖技兼備。貼上來就很難逃，比 Khabib 更會鎖，但站著的打擊普通。",
+    "attrs": { "power": 72, "accuracy": 76, "wrestling": 94, "grappleDef": 92, "submission": 86, "chin": 84, "cardio": 92 },
+    "prefer": [2, 3],
+    "deck": ["jab", "cross", "dirty_box", "elbow", "knee", "double_leg", "double_leg", "single_leg", "cage_trip", "slam", "clinch", "lunge", "rnc", "arm_triangle", "guard_counter", "guillotine"],
+    "signature": "sig_makhachev",
+    "style": {
+      "out":    { "S": 0.30, "G": 0.40, "C": 0.30 },
+      "in":     { "S": 0.30, "G": 0.45, "C": 0.25 },
+      "top":    { "S": 0.30, "G": 0.45, "C": 0.25 },
+      "bottom": { "S": 0.20, "G": 0.55, "C": 0.25 }
+    }
+  },
+  "holloway": {
+    "name": "Max Holloway", "short": "Holloway", "nick": "福氣",
+    "summary": "出手量驚人，下巴與體力都頂尖。靠一波波組合拳慢慢累積勝勢，但單發沒那麼重。",
+    "attrs": { "power": 70, "accuracy": 90, "wrestling": 60, "grappleDef": 76, "submission": 50, "chin": 92, "cardio": 96 },
+    "prefer": [1, 2],
+    "deck": ["jab", "jab", "cross", "one_two", "lead_hook", "step_jab", "single_leg", "uppercut", "knee", "calf_kick", "body_kick", "head_kick", "slip_back", "back_counter", "counter_hook", "guard_counter"],
+    "signature": "sig_holloway",
+    "style": {
+      "out":    { "S": 0.55, "G": 0.10, "C": 0.35 },
+      "in":     { "S": 0.55, "G": 0.10, "C": 0.35 },
+      "top":    { "S": 0.55, "G": 0.20, "C": 0.25 },
+      "bottom": { "S": 0.30, "G": 0.50, "C": 0.20 }
+    }
+  },
   "neutral": {
     "name": "測試選手", "short": "測試", "nick": "只給模擬用", "hidden": true,
     "summary": "所有屬性相同，用來測試打法勝率。",
