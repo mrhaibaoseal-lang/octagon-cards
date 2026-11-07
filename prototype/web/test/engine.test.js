@@ -1,7 +1,7 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, groundCatOf, lockStatus, describeCard } from "../engine.js";
+import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, groundCatOf, lockStatus, describeCard, lockResistChance, lockGuessWrong } from "../engine.js";
 import { data, playGame, strategies } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
@@ -751,10 +751,10 @@ test("a lock fight is a guess: right eases it a stage and out at the first, wron
   assert.ok(m.a.hand.every((c) => data.cards[c].cat), "back to ground cards once the lock is gone");
   const deeper = lockFight(1);
   const hurt = deeper.b.stamina;
-  const sink = resolveExchange(deeper, ["lk_leg"], ["lk_handfight"]);
+  const sink = resolveExchange(deeper, ["lk_leg"], ["lk_handfight"], { resist: false });
   assert.ok(sink.some((e) => e.kind === "lockDeepen" && e.depth === 2));
   assert.ok(deeper.b.stamina < hurt, "the victim tires");
-  const tap = resolveExchange(deeper, ["lk_tighten"], ["lk_yank"]);
+  const tap = resolveExchange(deeper, ["lk_tighten"], ["lk_yank"], { resist: false });
   assert.ok(tap.some((e) => e.kind === "tap"));
   assert.equal(deeper.over.method, "SUB");
   assert.equal(deeper.over.winner, "a");
@@ -766,7 +766,71 @@ test("a lock fight is a guess: right eases it a stage and out at the first, wron
   }
   // A lock held from underneath works the same with the sides swapped.
   const under = lockFight(2, { top: "b", attacker: "a" });
-  assert.ok(resolveExchange(under, ["lk_tighten"], ["lk_turn"]).some((e) => e.kind === "tap"));
+  assert.ok(resolveExchange(under, ["lk_tighten"], ["lk_turn"], { resist: false }).some((e) => e.kind === "tap"));
+});
+
+test("a wrong guess in a lock fight can still be held off: the chance comes from skill, depth and gas, and is rolled for the AI", () => {
+  const m = lockFight(2);
+  const held = resolveExchange(m, ["lk_tighten"], ["lk_turn"], { resist: true });
+  assert.ok(held.some((e) => e.kind === "lockResist"));
+  assert.equal(m.ground.lock.depth, 2, "the lock did not sink");
+  assert.ok(!m.over);
+  // The chance: the better defender, the shallower lock and the fresher legs all help him.
+  const chance = (fn) => { const f = lockFight(1); fn?.(f); return lockResistChance(f); };
+  const base = chance();
+  assert.ok(base > 0.3 && base < 0.6, `base ${base}`);
+  assert.ok(chance((f) => { f.b.attrs = { ...f.b.attrs, submission: 99, grappleDef: 99 }; }) > base + 0.05, "skill helps");
+  assert.ok(chance((f) => { f.a.attrs = { ...f.a.attrs, submission: 99 }; }) < base - 0.03, "a better attacker lowers it");
+  assert.ok(chance((f) => { f.ground.lock.depth = 2; }) < base - 0.05, "deeper is harder");
+  assert.ok(chance((f) => { f.b.stamina = 10; }) < base - 0.1, "gas matters");
+  // The AI is rolled at exactly that chance.
+  let holds = 0;
+  const n = 1500;
+  for (let seed = 1; seed <= n; seed++) {
+    const f = lockFight(1);
+    f.rng = BigInt(seed * 7919);
+    if (resolveExchange(f, ["lk_tighten"], ["lk_turn"]).some((e) => e.kind === "lockResist")) holds++;
+  }
+  assert.ok(Math.abs(holds / n - base) < 0.05, `held ${holds / n} vs shown ${base}`);
+  // The screen can tell when a wrong guess is coming, to ask the human to resist.
+  assert.equal(lockGuessWrong(lockFight(1), ["lk_tighten"], ["lk_turn"]), true);
+  assert.equal(lockGuessWrong(lockFight(1), ["lk_tighten"], ["lk_handfight"]), false);
+});
+
+test("a signature that loses the triangle is not blocked: it still lands for a share of its power", () => {
+  const run = (cardA, cardB, seed) => {
+    const s = duel("mcgregor", "neutral", [cardA], [cardB], 1, seed);
+    s.a.momentum = 100;
+    s.a.hand = [cardA, "step_in", "step_back"];
+    s.b.hand = [cardB, "step_in", "step_back"];
+    return { s, ev: resolveExchange(s, [cardA], [cardB]) };
+  };
+  let landed = 0;
+  let full = 0;
+  let glanced = 0;
+  for (let seed = 1; seed <= 100; seed++) {
+    // The counter beats a strike. Without the rule the strike signature would be shut out entirely.
+    const lose = run("sig_mcgregor", "guard_counter", seed);
+    assert.equal(lose.ev.find((e) => e.kind === "verdict").winner, "b");
+    const mine = lose.ev.filter((e) => e.kind === "hit" && e.attacker === "a");
+    assert.ok(lose.ev.some((e) => e.kind === "glance"), "the signature is announced as glancing");
+    if (mine.length) { landed++; glanced += mine[0].damage; }
+    const win = run("sig_mcgregor", "step_in", seed);
+    full += win.ev.filter((e) => e.kind === "hit" && e.attacker === "a").reduce((x, e) => x + e.damage, 0);
+  }
+  assert.equal(landed, 100, "it lands every time");
+  assert.ok(glanced < full * 0.8 && glanced > full * 0.3, `glancing ${glanced} vs winning ${full}`);
+  // An ordinary strike that loses is still shut out.
+  const plain = duel("mcgregor", "neutral", ["cross"], ["guard_counter"], 1);
+  const ev = resolveExchange(plain, ["cross"], ["guard_counter"]);
+  assert.ok(!ev.some((e) => e.kind === "hit" && e.attacker === "a"));
+  // A grab signature that loses the triangle to a strike still pulls him into the clinch.
+  const grab = duel("khabib", "neutral", ["sig_khabib"], ["jab"], 2);
+  grab.a.hand = ["sig_khabib", "step_in", "step_back"];
+  grab.a.momentum = 100;
+  const g = resolveExchange(grab, ["sig_khabib"], ["jab"]);
+  assert.equal(g.find((e) => e.kind === "verdict").winner, "b");
+  assert.equal(grab.dist, data.rules.dist.clinch);
 });
 
 test("how deep a lock starts: skill gap, a tired victim, and the fighter's own ability", () => {

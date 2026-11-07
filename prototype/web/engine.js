@@ -383,6 +383,7 @@ function tierOdds(state, s, cards) {
     const card = state.cards[c];
     bonus += card.crit || 0;
     bonus += card.quality || 0;
+    if (card.signature) bonus += state.rules.signature.winCrit;
     // A card that follows a setup gets its bonus when the tag from last exchange is still on.
     for (const [tag, eff] of Object.entries(card.follow || {})) if (me.marks[tag]) bonus += (eff.crit || 0) + (eff.quality || 0);
   }
@@ -443,6 +444,32 @@ export function previewPlay(state, s, cards) {
     grazePct: Math.round(odds.graze * 100),
     budget: budget(state, s),
   };
+}
+
+/**
+ * When the man in the lock guesses wrong the lock does not always sink: he can still hold on. The chance is his skill (submission and
+ * takedown defence) against the attacker's, less the deeper the lock already is, less when he is gassed. The screen shows it, and a
+ * human defender plays it out as a timing bar (`resist` in the options of resolveExchange); the AI is simply rolled.
+ */
+export function lockResistChance(state) {
+  const lock = state.ground?.lock;
+  if (!lock) return 0;
+  const r = state.rules.lock.resist;
+  const atk = state[lock.attacker];
+  const def = state[opposite(lock.attacker)];
+  const skill = (def.attrs.submission + def.attrs.grappleDef) / 2;
+  let p = r.base + (skill - 75) * r.perSkill - (atk.attrs.submission - 75) * r.perAttacker - (lock.depth - 1) * r.perDepth;
+  if (def.stamina < state.rules.lock.lowStaminaAt) p += r.lowStamina;
+  return clamp(p, r.min, r.max);
+}
+
+/** Would these two lock moves be a wrong guess by the defender (so that he has to resist)? For the screen to know when to ask. */
+export function lockGuessWrong(state, playA, playB) {
+  const lock = state.ground?.lock;
+  if (!lock || !playA.length || !playB.length) return false;
+  const plays = { a: playA, b: playB };
+  const atk = lock.attacker;
+  return state.rules.lock.beats[state.cards[plays[atk][0]].lockMove] !== state.cards[plays[opposite(atk)][0]].lockMove;
 }
 
 /** Where a lock fight stands: the stage (1 to tapDepth - 1; reaching tapDepth is the tap), who holds it and what it is called. */
@@ -1123,7 +1150,7 @@ function winnerText(state, winType, loseType, ground, winnerSide, cards) {
  * One round of a lock fight. The attacker picked a move and the defender picked the answer; no energy, no dice, only the guess.
  * A right guess eases the lock a stage (past the first, he is out); a wrong one sinks it deeper, and the last stage is the tap.
  */
-function resolveLock(state, plays, events) {
+function resolveLock(state, plays, events, opts = {}) {
   const lock = state.ground.lock;
   const l = state.rules.lock;
   const atk = lock.attacker;
@@ -1146,8 +1173,15 @@ function resolveLock(state, plays, events) {
   }
   addMomentum(state, atk, state.rules.momentum.win);
   addMomentum(state, def, state.rules.momentum.lose);
-  lock.depth += 1;
   addStamina(state, def, -l.holdDrain);
+  // A wrong guess still has to sink the lock: the man in it may hold on.
+  const chance = lockResistChance(state);
+  const held = typeof opts.resist === "boolean" ? opts.resist : nextUnit(state) < chance;
+  if (held) {
+    events.push({ kind: "lockResist", side: def, name: lock.name, depth: lock.depth, chance });
+    return;
+  }
+  lock.depth += 1;
   score(state, atk, "grappling", state.rules.score.lockAttempt);
   if (lock.depth >= l.tapDepth) {
     events.push({ kind: "tap", attacker: atk, name: lock.name });
@@ -1256,7 +1290,35 @@ function applyAbilities(state, types, winner, startDist, startedOnGround, events
   }
 }
 
+/**
+ * A signature move that loses the triangle is not shut out: it still lands, glancing, for a share of its power
+ * (rules.signature.glanceMult), after the winner's own play. A signature that is only a grab (no damage) still pulls him into the clinch.
+ */
+function signatureGlance(state, l, w, lCards, events) {
+  if (state.over) return;
+  const sigId = lCards.find((c) => state.cards[c].signature);
+  if (!sigId) return;
+  const card = state.cards[sigId];
+  const R = state.rules;
+  events.push({ kind: "glance", side: l, name: card.name });
+  if (card.power) {
+    dealHit(state, l, [sigId], "clean", R.signature.glanceMult, events);
+    return;
+  }
+  if (state.ground) return;
+  addStamina(state, w, -(card.drain || 0) * R.signature.glanceMult);
+  if (state.dist < R.dist.clinch) {
+    setDist(state, R.dist.clinch, events, l);
+    events.push({ kind: "clinch", side: l, glance: true });
+  }
+}
+
 function resolveStandingWin(state, w, l, plays, events) {
+  resolveStandingWinCore(state, w, l, plays, events);
+  signatureGlance(state, l, w, plays[l], events);
+}
+
+function resolveStandingWinCore(state, w, l, plays, events) {
   const wCards = plays[w];
   const lCards = plays[l];
   const type = typeOfPlay(state, wCards);
@@ -1435,7 +1497,7 @@ function groundBottomWins(state, w, l, wCards, cat, tier, events) {
  * the man underneath guesses (frame beats pass, counter beats punch, escape beats lock, or the free cover).
  * In a lock fight both pick a move instead. rules.ground.matrix says who comes out ahead.
  */
-function resolveGroundExchange(state, playA, playB) {
+function resolveGroundExchange(state, playA, playB, opts = {}) {
   const R = state.rules;
   const g = state.ground;
   const events = [];
@@ -1488,7 +1550,7 @@ function resolveGroundExchange(state, playA, playB) {
       standUp(state, events, "referee");
     }
   } else {
-    resolveLock(state, plays, events);
+    resolveLock(state, plays, events, opts);
   }
   if (winner || lockFight) state.stall = 0;
   if (!lockFight) (g.hist ||= []).push({ a: cat.a, b: cat.b });
@@ -1574,14 +1636,14 @@ function resolveStandoff(state, plays, events) {
 }
 
 /** Resolves one simultaneous exchange. `playA` / `playB` are arrays of card ids. Returns the event list. */
-export function resolveExchange(state, playA, playB) {
+export function resolveExchange(state, playA, playB, opts = {}) {
   if (state.phase !== "exchange") throw new Error(`cannot resolve in phase ${state.phase}`);
   if (state.pending) throw new Error("a pending choice has to be resolved first");
   for (const [s, cards] of [["a", playA], ["b", playB]]) {
     const err = playError(state, s, cards);
     if (err) throw new Error(`${s} illegal play: ${err} (${cards.join(",")})`);
   }
-  if (state.ground) return resolveGroundExchange(state, playA, playB);
+  if (state.ground) return resolveGroundExchange(state, playA, playB, opts);
   const events = [];
   const order = (cards, s) => (cards.length ? arrange(state, cards, s) : ["brace"]);
   const plays = { a: order(playA, "a"), b: order(playB, "b") };

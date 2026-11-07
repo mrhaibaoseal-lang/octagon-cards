@@ -174,6 +174,10 @@ export class Stage {
     this.fx = [];
     this.flashAlpha = 0;
     this.shakeAmp = 0;
+    this.cam = { zoom: 1, side: null, target: 1 }; // signature close-up: zoom toward one fighter
+    this.dim = 0;
+    this.dimTarget = 0;
+    this.lines = 0; // speed lines, 0 to 1
     this.timeScale = 1;
     this.freezeUntil = 0;
     this.last = performance.now();
@@ -318,6 +322,14 @@ export class Stage {
     f.ty = FLOOR_Y;
   }
 
+  /** Signature close-up: darken the cage and push in on one fighter. `cinema(null)` puts the camera back. */
+  cinema(side, zoom = 1.4) {
+    if (side) this.cam.side = side;
+    this.cam.target = side ? zoom : 1;
+    this.dimTarget = side ? 0.62 : 0;
+    this.lines = side ? 1 : 0;
+  }
+
   floater(side, text, color, size = 22) {
     const f = this.fighters[side];
     this.fx.push({ x: f.x + (f.flip ? -20 : 20), y: f.y - 150, text, color, size, born: performance.now(), life: 900 });
@@ -343,6 +355,10 @@ export class Stage {
     this.time += dt;
     for (const f of Object.values(this.fighters)) this.updateFighter(f, dt, now);
     this.flashAlpha = Math.max(0, this.flashAlpha - realDt * 0.004);
+    const ease = 1 - Math.pow(0.002, realDt / 400);
+    this.cam.zoom += (this.cam.target - this.cam.zoom) * ease;
+    this.dim += (this.dimTarget - this.dim) * ease;
+    if (this.lines > 0 && this.cam.target === 1) this.lines = Math.max(0, this.lines - realDt * 0.004);
     this.shakeAmp = Math.max(0, this.shakeAmp - realDt * 0.05);
     this.draw(now);
     requestAnimationFrame((t) => this.frame(t));
@@ -415,6 +431,23 @@ export class Stage {
     x.globalAlpha = 1;
   }
 
+  /** Radial lines rushing out from the focus point, behind the hit. */
+  drawSpeedLines(x, fx, fy, now) {
+    x.save();
+    x.globalAlpha = 0.5 * this.lines;
+    x.strokeStyle = "#ffe9a8";
+    x.lineWidth = 2;
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + now / 900;
+      const inner = 150 + ((i * 53 + now / 3) % 90);
+      x.beginPath();
+      x.moveTo(fx + Math.cos(a) * inner, fy + Math.sin(a) * inner * 0.7);
+      x.lineTo(fx + Math.cos(a) * (inner + 160), fy + Math.sin(a) * (inner + 160) * 0.7);
+      x.stroke();
+    }
+    x.restore();
+  }
+
   /** A red glow along the fence the fighter is pinned against. */
   drawFence(x, now) {
     const left = this.cage === "a";
@@ -434,10 +467,25 @@ export class Stage {
     const sy = this.shakeAmp ? (Math.random() - 0.5) * this.shakeAmp : 0;
     x.save();
     x.translate(sx, sy);
+    // Close-up: scale around the fighter who is doing the signature.
+    const zoom = this.cam.zoom;
+    const focus = this.cam.side ? this.fighters[this.cam.side] : null;
+    const fx = focus ? focus.x + focus.ox : 422;
+    const fy = focus ? focus.y - 90 : 200;
+    if (zoom > 1.001) {
+      x.translate(fx, fy);
+      x.scale(zoom, zoom);
+      x.translate(-fx, -fy);
+    }
     x.drawImage(this.background, 0, 0);
     if (this.cage) this.drawFence(x, now);
+    if (this.dim > 0.01) {
+      x.fillStyle = `rgba(2, 3, 10, ${this.dim})`;
+      x.fillRect(-400, -300, 1650, 1000);
+    }
     const order = Object.values(this.fighters).sort((p, q) => p.z - q.z);
     for (const f of order) this.drawFighter(f, now);
+    if (this.lines > 0.01) this.drawSpeedLines(x, fx, fy, now);
     x.restore();
     x.textAlign = "center";
     this.fx = this.fx.filter((e) => now - e.born < e.life);

@@ -1,5 +1,5 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockStatus, groundOutcome, roleOf, cardCost } from "./engine.js";
+import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockStatus, lockResistChance, lockGuessWrong, groundOutcome, roleOf, cardCost } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +24,7 @@ let viewCage = null; // who the screen shows against the fence
 let viewDist = 1; // the distance as the screen currently shows it, which trails the engine during playback
 let viewGround = null; // the mat as the screen shows it: { top, pos } or null
 let viewLock = null; // who holds a lock on screen, if any
+let cinematic = false; // a signature close-up is running
 const groundTop = () => viewGround?.top ?? null;
 
 // ---------- Boot ----------
@@ -237,9 +238,10 @@ function renderAlert() {
   if (lock) {
     el.className = lock.attacker === "a" ? "swarm" : "";
     const stage = `第 ${lock.depth} 階（第 ${lock.tapDepth} 階拍墊）`;
+    const hold = Math.round(lockResistChance(state) * 100);
     el.innerHTML = lock.attacker === "a"
-      ? `你鎖住了：${lock.name}<br>${stage}<br>他猜錯就更深，猜中退一階`
-      : `被鎖住了：${lock.name}<br>${stage}<br>猜中他的招退一階，猜錯更深`;
+      ? `你鎖住了：${lock.name}<br>${stage}<br>他猜錯時有 <b>${hold}%</b> 撐住，猜中退一階`
+      : `被鎖住了：${lock.name}<br>${stage}<br>猜中退一階；猜錯要在綠區按下撐住（<b>${hold}%</b>）`;
   } else if (state.a.rocked) {
     el.className = "";
     el.innerHTML = `你被打暈了！<br>這手只有 1 能量，撐過去`;
@@ -514,6 +516,32 @@ function actionPoseFor(cardId) {
   return card?.kick ? "kick" : "punch";
 }
 
+/** The close-up: bars slide in, the cage goes dark, the camera pushes in on the fighter and the move's name crashes onto the screen. */
+async function signatureIntro(e) {
+  const big = e.name.replace(/^招牌[：:]/, "");
+  $("verdict").classList.add("hidden");
+  $("reveal").classList.add("hidden");
+  const el = $("cinema");
+  el.querySelector(".signame").innerHTML = `<small>SIGNATURE · ${fighterOf(e.side).short}</small><b>${big}</b>`;
+  el.classList.remove("on");
+  void el.offsetWidth;
+  el.classList.add("on");
+  stage.cinema(e.side, 1.45);
+  stage.flash(0.35);
+  stage.timeScale = 0.45;
+  cinematic = true;
+  await wait(1050);
+  stage.flash(0.2);
+}
+
+function endCinema() {
+  if (!cinematic) return;
+  cinematic = false;
+  stage.cinema(null);
+  stage.timeScale = 1;
+  $("cinema").classList.remove("on");
+}
+
 async function playEvents(events) {
   const damageLines = [];
   let verdictLine = "";
@@ -526,9 +554,18 @@ async function playEvents(events) {
         await wait(720);
         break;
       case "signature":
-        stage.flash(0.3);
-        showVerdict(e.name, `${nameOf(e.side)} 用出招牌技`, "#f5c542");
-        await wait(650);
+        await signatureIntro(e);
+        break;
+      case "glance":
+        showVerdict("被擋下一半", `${e.name} 仍然擦中`, "#ffd166");
+        await wait(520);
+        $("verdict").classList.add("hidden");
+        break;
+      case "lockResist":
+        stage.shake(6);
+        showVerdict("撐住了！", `${nameOf(e.side)} 沒被鎖更深（${Math.round(e.chance * 100)}%）`, "#5be49b");
+        await wait(680);
+        $("verdict").classList.add("hidden");
         break;
       case "verdict": {
         const who = e.winner ? `${nameOf(e.winner)}贏這手` : "互不相讓";
@@ -547,7 +584,8 @@ async function playEvents(events) {
         shown[def].hp = Math.max(0, shown[def].hp - e.damage);
         shown[def].pips[e.target] = Math.min(data.rules.debuff.maxPips, shown[def].pips[e.target] + 1);
         const crit = e.tier === "crit";
-        const dur = crit ? 460 : 340;
+        const isSig = Boolean(data.cards[e.card]?.signature);
+        const dur = isSig ? 620 : crit ? 460 : 340;
         const f = stage.fighters[e.attacker];
         const reach = REACH[viewDist];
         if (f.downed || stage.fighters[def].downed) {
@@ -557,9 +595,13 @@ async function playEvents(events) {
           stage.strike(e.attacker, actionPoseFor(e.card), reach, dur);
         }
         await wait(dur * 0.42);
-        stage.recoil(def, crit ? 34 : 18, dur);
-        stage.floater(def, `-${e.damage}${crit ? "!" : ""}`, crit ? "#ffd166" : "#ffffff", crit ? 34 : 24);
-        if (crit) {
+        stage.recoil(def, isSig ? 70 : crit ? 34 : 18, dur);
+        stage.floater(def, `-${e.damage}${crit || isSig ? "!" : ""}`, crit || isSig ? "#ffd166" : "#ffffff", isSig ? 46 : crit ? 34 : 24);
+        if (isSig) {
+          stage.hitStop(240);
+          stage.shake(30);
+          stage.flash(0.75);
+        } else if (crit) {
           stage.hitStop(90);
           stage.shake(16);
           stage.flash(0.32);
@@ -809,7 +851,14 @@ async function onFight() {
   const distBefore = state.dist;
   const cageBefore = state.cage?.side ?? null;
   const groundBefore = state.ground ? { ...state.ground } : null;
-  const events = resolveExchange(state, cards, ai);
+  // A human whose lock is about to sink gets to hold on with a timing bar; the AI is rolled by the engine.
+  const opts = {};
+  if (state.ground?.lock?.attacker === "b" && lockGuessWrong(state, cards, ai)) {
+    $("tray").classList.add("away");
+    $("intent").classList.add("hidden");
+    opts.resist = await askResist(lockResistChance(state));
+  }
+  const events = resolveExchange(state, cards, ai, opts);
   $("tray").classList.add("away");
   $("intent").classList.add("hidden");
   $("alert").className = "hidden";
@@ -823,6 +872,7 @@ async function onFight() {
   viewLock = groundBefore?.lock?.attacker ?? null;
   stage.setLayout({ dist: distBefore, ground: viewGround && { ...viewGround, lock: viewLock }, cage: cageBefore });
   await playEvents(events);
+  endCinema();
   if (state.pending) await settleChase();
   stage.timeScale = 1;
   $("skip").classList.add("hidden");
@@ -832,6 +882,49 @@ async function onFight() {
   if (state.phase === "corner") showCorner();
   else if (state.phase === "over") showResult();
   else beginTurn();
+}
+
+/** The reaction game: a needle sweeps the bar and the green zone is the chance to hold on. Stop it inside the zone. */
+function askResist(chance) {
+  return new Promise((resolve) => {
+    const box = $("resist");
+    const width = Math.round(chance * 100);
+    const left = Math.round(Math.random() * (100 - width));
+    box.classList.remove("hidden");
+    box.innerHTML = `<div class="box">
+      <h2>鎖要更深了！撐住！</h2>
+      <div class="note">指針經過綠區時按下（綠區 ${width}% 就是你撐住的機率）</div>
+      <div class="track"><div class="zone" style="left:${left}%;width:${width}%"></div><div class="needle"></div></div>
+      <div class="res"></div>
+      <button class="hit">撐！</button>
+    </div>`;
+    const needle = box.querySelector(".needle");
+    const start = performance.now();
+    const sweep = 1000; // one way across, in ms
+    let pos = 0;
+    let done = false;
+    const frame = (now) => {
+      if (done) return;
+      const t = ((now - start) % (2 * sweep)) / sweep;
+      pos = t < 1 ? t : 2 - t;
+      needle.style.left = `${pos * 100}%`;
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    const stop = async () => {
+      if (done) return;
+      done = true;
+      const ok = pos * 100 >= left && pos * 100 <= left + width;
+      const res = box.querySelector(".res");
+      res.textContent = ok ? "撐住了！" : "沒撐住…";
+      res.style.color = ok ? "#5be49b" : "#ff7b7f";
+      box.querySelector(".hit").disabled = true;
+      await new Promise((r) => setTimeout(r, 650));
+      box.classList.add("hidden");
+      resolve(ok);
+    };
+    box.querySelector(".hit").addEventListener("click", stop);
+  });
 }
 
 function tacticButtons(selected) {
