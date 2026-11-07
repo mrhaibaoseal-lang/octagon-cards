@@ -1,7 +1,7 @@
 # 選手姿勢表規格（M2）
 
 > 目標：用約 40 張圖做完約 32 位選手。生圖由使用者在 Gemini 執行。**圖不進 repo。**
-> 已有 McGregor、Dan Hooker（冷門選手，使用者確認像本人）、Cory Sandhagen（冷門選手，使用者確認像本人，也和 Hooker 分得開）。原圖在 `../ufc-hd-pixel-ios/Assets/Sprites/`。McGregor 的抱摔還要修掉多的那隻手。
+> 已有 McGregor、Dan Hooker（冷門選手，使用者確認像本人）、Cory Sandhagen（冷門選手，使用者確認像本人，也和 Hooker 分得開）。原圖在 `../ufc-hd-pixel-ios/Assets/Sprites/`。McGregor 的抱摔已修好（多的那隻手拿掉，兩手手套一致）。
 
 ## 第一批要測的 5 位
 | 選手 | 為什麼選他 |
@@ -60,6 +60,9 @@ uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.p
 ```
 
 工具會印出找到幾個人物。不是 6 個就會停下來，通常是人物互相碰到，或背景不夠純。
+
+## 裝備上不要有字（2026-11-07 試過）
+手套與腰帶上的 UFC 字樣，AI 會隨手臂轉向而鏡像、顛倒或變成亂碼（六格只有出拳那格正常），遊戲尺寸下也看不清。**決定：全表無字、無商標**，手套純黑，不要在裝備上畫字。生圖後仍要逐格看有沒有偷偷長出字。
 
 ## 還沒解決
 - **地面姿勢**：現在用「抱摔」疊在「倒地」上。上位與下位的專屬姿勢，要等 6 姿勢通過後再加一張表。
