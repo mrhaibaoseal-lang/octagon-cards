@@ -2,6 +2,12 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-08 · Claude Sonnet 5.5（M1.4a 站立戰鬥重構）
+- **做了什麼**：站立改成「走位（壓上／守中線／繞圈／後撤）→ 帶頭排 1～4 張連段 ／ 應對方事先押 → 反應力決定看不看得到慢招」；基本招常駐、牌組只放特殊技；基本規則在 `engine.js` 的新站立段，數值在 `rules/rules.json`（footwork、engage）、`rules/cards.json`、`rules/depth.json`；畫面（走位、連段、應對、看得到的慢招會停下來問）與 `GAME_DESIGN.md` 同步改寫。地面沿用 M1.3。
+- **驗證**：`node prototype/web/test/engine.test.js` 50 項全過；`node prototype/web/sim.js 1000 --gate`：單一走位使用率最高 34%（AI）／27%（看意圖），所有單一打法 ≤ 50%，亂出 19%，看意圖 64%（AI 鏡像 47%）；844×390 用瀏覽器打完整場（含地面、鎖技、慢招應對）沒有錯誤。
+- **要使用者確認**：玩幾場，看「走位預告」「連段面板」「應對八選一」「慢招停下來問」好不好懂、好不好玩；看意圖門檻我暫改為 60%（舊 75% 是三角相剋的）。
+- **下一步**：依使用者回饋調整；通過後做 M1.4b（地面與鎖技）。選手強弱（Adesanya 偏強、Gaethje／Hooker 偏弱）留給 M1.5。
+
 ## 2026-11-08 · Claude Opus 5.5（開工文件瘦身）
 - **做了什麼**：鐵則重點併進自動載入的 `AGENTS.md`；新增 `node docs/brief.js` 只印 TASKS「目前」＋ HANDOFF 最新一筆；TASKS 已完成細項與 M1.1～M1.3 規格搬到 `docs/archive/TASKS_ARCHIVE.md`；GAME_DESIGN 改成按章節讀。
 - **驗證**：開工要讀的量從約 45KB 降到約 2KB（brief 1.6KB）；未改程式碼與規則。
@@ -13,10 +19,3 @@
 - **驗證**：`node prototype/web/test/engine.test.js` 52 項全過；844×390 瀏覽器實際截圖檢查同量級（McGregor vs Khabib）與跨量級長文字（Holloway vs Makhachev）排版無裁切溢位。
 - **要使用者確認**：新版選角介面操作手感與視覺是否順手；M1.4 戰鬥重構是否開工。
 - **下一步**：等使用者試玩選角頁或點頭開工 M1.4。
-
-## 2026-11-08 · Gemini 4 Argon (High)（依真實身高與體重調整全部角色大小）
-- **做了什麼**：在 `rules/fighters.json` 為 15 位選手補上真實身高（170～193cm）與量級體重（135～215lb），並在選角頁顯示；`stage.js` 載入精靈圖時自動量測頭骨頂至腳底高度（排除 O'Malley 爆炸頭虛高）與腰寬比例，消除 Gemini 各表鏡頭遠近差異並依真實身高與 BMI 縮放角色與陰影（如 170cm/145lb 的 Topuria 從 116×198px 縮為 91×168px，193cm/205lb 的 Pereira 為 124×209px）。
-- **驗證**：`node prototype/web/test/engine.test.js` 52 項全過；844×390 瀏覽器實際截圖確認選角頁、Topuria vs Pereira、Topuria vs Holloway、O'Malley vs Jones 比例自然且不擋 HUD。
-- **要使用者確認**：各量級選手在場上的身高差與寬厚感是否順眼；M1.4 戰鬥重構是否開工。
-- **下一步**：等使用者確認體型比例或點頭開工 M1.4。
-

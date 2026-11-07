@@ -1,5 +1,5 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockStatus, lockResistChance, lockGuessWrong, groundOutcome, roleOf, cardCost } from "./engine.js";
+import { loadData, createMatch, resolveExchange, resolveFootwork, engageStart, engageStep, engageWaiting, stepOf, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseReaction, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, previewCombo, previewFootwork, footworkChoices, comboError, comboMax, counterCards, reactionOf, describeCard, playError, lockStatus, lockResistChance, lockGuessWrong, groundOutcome, roleOf, cardCost } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -7,7 +7,7 @@ const TYPES = ["S", "G", "C"];
 const ATTR_LABELS = [["power", "力量"], ["accuracy", "精準"], ["wrestling", "摔角"], ["grappleDef", "防摔"], ["submission", "柔術"], ["chin", "下巴"], ["cardio", "體能"]];
 const TARGET_NAMES = { head: "頭", body: "身", legs: "腿" };
 /** Reasons a second card cannot join the play, in which case clicking it starts a new play instead. */
-const REPLACES = ["mixed types", "fence cards go alone", "one card on the ground"];
+const REPLACES = [];
 
 let data;
 let assets;
@@ -42,8 +42,7 @@ async function boot() {
   window.addEventListener("resize", fit);
   $("fight").addEventListener("click", onFight);
   $("brace").addEventListener("click", onBrace);
-  $("step-in").addEventListener("click", () => onStep("step_in", $("step-in")));
-  $("step-back").addEventListener("click", () => onStep("step_back", $("step-back")));
+  $("pass").addEventListener("click", onPass);
   $("skip").addEventListener("click", () => {
     skipping = true;
     if (skipWake) skipWake();
@@ -122,7 +121,7 @@ function describeStaticCard(cardId) {
   const c = data.cards[cardId];
   if (!c) return { name: cardId, type: "S", cost: 1, fx: "" };
   let fx = "";
-  if (c.moveOnly) fx = c.move > 0 ? `進 ${c.move} 格` : `退 ${-c.move} 格`;
+  if (c.clinchEntry) fx = `貼進纏抱 · 扣敵${c.drain || 0}體力`;
   else if (c.type === "S") {
     fx = `傷害 ${c.power}${c.hits > 1 ? `×${c.hits}` : ""}`;
     if (c.crit >= 0.1) fx += ` · 爆擊+${Math.round(c.crit * 100)}%`;
@@ -136,7 +135,8 @@ function describeStaticCard(cardId) {
     else if (c.lockBottom || c.lockAnywhere) fx = `傷 ${c.power || 0} · 直接上鎖`;
     else fx = `反擊 ${c.power || 0}${c.crit >= 0.1 ? ` · 爆擊+${Math.round(c.crit * 100)}%` : ""}`;
   }
-  return { name: c.name.replace(/^招牌：/, ""), type: c.type, cost: c.cost ?? 1, fx };
+  const height = { high: "上段", mid: "中段", low: "下段", grab: "抱摔" }[c.height] || "";
+  return { name: c.name.replace(/^招牌：/, ""), type: c.type, cost: c.cost ?? 1, fx: `${fx}${c.speed ? ` · 速度 ${c.speed}` : ""}`, height };
 }
 
 function renderSelect() {
@@ -168,13 +168,13 @@ function renderSelect() {
         <div class="a-meta">
           <div class="a-role"><span class="corner-pill ${side}">${roleTitle}</span><span class="arch-pill t-${arch.cls}">${arch.label}</span></div>
           <div class="a-name">${f.short}${placeholder} <small>${f.nick}</small></div>
-          <div class="a-phys">${f.height}cm · ${f.weight}lb (${weightName(f.weight)}) · 擅長${preferRangeText(f)}</div>
+          <div class="a-phys">${f.height}cm · ${f.weight}lb (${weightName(f.weight)}) · 擅長${preferRangeText(f)} · 出手 ${f.speed} · 反應 ${f.reaction}</div>
         </div>
       </div>
       <div class="a-sum">${f.summary}</div>
       <div class="a-perks">
         ${f.ability ? `<div class="a-perk"><b>⚡ ${f.ability.name}</b>：${f.ability.desc}</div>` : ""}
-        <div class="a-perk sig"><b>★ 招牌・${sig.name}</b> (<span class="t-${sig.type}">${data.rules.typeNames[sig.type]} ${sig.cost}⚡</span>)：${sig.fx}</div>
+        <div class="a-perk sig"><b>★ 招牌・${sig.name}</b> (<span class="t-${sig.type}">${sig.height || data.rules.typeNames[sig.type]}</span>)：${sig.fx}</div>
       </div>
       <div class="a-stats">${miniStats}</div>
     </div>`;
@@ -206,7 +206,7 @@ function renderSelect() {
     <div class="sel-topbar">
       <div class="sel-brand">
         <b>OCTAGON CARDS</b>
-        <span class="sel-rule"><i class="t-S">打擊</i>克<i class="t-G">摔抱</i> · <i class="t-G">摔抱</i>克<i class="t-C">防反</i> · <i class="t-C">防反</i>克<i class="t-S">打擊</i></span>
+        <span class="sel-rule"><i class="t-S">走位</i>決定誰帶頭 · <i class="t-G">快招</i>看不到要預判 · <i class="t-C">慢招</i>看得到能應對</span>
       </div>
       <div class="sel-filters">
         ${WEIGHT_CLASSES.map(([w, lb]) => `<button class="w-pill ${selectUI.weight === w ? "on" : ""}" data-weight="${w}">${lb}</button>`).join("")}
@@ -306,7 +306,7 @@ function syncShown() {
   shown = {};
   for (const s of ["a", "b"]) {
     const me = state[s];
-    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks), pinned: state.cage?.side === s, tactic: me.tactic };
+    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks), pinned: state.cage?.side === s, tactic: me.tactic, leader: state.engage?.leader === s, edge: state.edge?.side === s };
   }
   viewDist = state.dist;
   viewCage = state.cage?.side ?? null;
@@ -325,9 +325,10 @@ function renderPanel(side) {
     const cls = n >= data.rules.debuff.threshold ? "full" : n > 0 ? "on" : "";
     return `<span>${TARGET_NAMES[t]}<span class="pip ${cls}">${"●".repeat(n)}${"○".repeat(data.rules.debuff.maxPips - n)}</span></span>`;
   }).join("");
-  const legHurt = v.pips.legs >= data.rules.debuff.threshold ? `<span class="tag leg">腿傷·步+${data.rules.debuff.legMoveCost}⚡</span>` : "";
+  const legHurt = v.pips.legs >= data.rules.debuff.threshold ? `<span class="tag leg">腿傷·走位+${data.rules.debuff.legFootCost}</span>` : "";
   const plan = v.tactic ? `<span class="tag tc" title="${data.rules.tactics[v.tactic].desc}">${data.rules.tactics[v.tactic].short}</span>` : "";
   const pinned = v.pinned ? '<span class="tag cage">背靠籠邊</span>' : "";
+  const lead = v.leader ? '<span class="tag lead">帶頭</span>' : v.edge ? '<span class="tag edge">佔上風</span>' : "";
   const markChips = v.marks.map((t) => `<span class="tag mk">${data.rules.tags[t]?.short || t}</span>`).join("");
   const el = $(`panel-${side}`);
   const pctOf = (hp) => (hp / state.maxHp) * 100;
@@ -336,7 +337,7 @@ function renderPanel(side) {
   el.innerHTML = `
     ${portraitHtml(f === undefined ? "" : state[side].id)}
     <div class="stats">
-      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${plan}${pinned}${legHurt}${markChips}<span class="pips">${pips}</span></div>
+      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${plan}${lead}${pinned}${legHurt}${markChips}<span class="pips">${pips}</span></div>
       <div class="barwrap"><div class="fill ghost" style="width:${pctOf(prevGhost)}%"></div><div class="fill hp ${pctOf(v.hp) <= 18 ? "low" : ""}" style="width:${pctOf(v.hp)}%"></div></div>
       <div class="thinrow">
         <div class="barwrap thin"><div class="fill stam ${v.stamina < data.rules.energy.tiredAt ? "low" : ""}" style="width:${v.stamina}%"></div></div>
@@ -375,22 +376,50 @@ function renderHud() {
   renderCenter();
 }
 
+const HEIGHT_COLORS = { high: "bg-high", mid: "bg-mid", low: "bg-low", grab: "bg-grab", feint: "bg-feint" };
+const GUARD_WORDS = { high: "高", mid: "中", low: "低" };
+const BET_LABELS = { high: "架高", mid: "架中", low: "架低", cover: "抱頭", evade: "閃身", counter: "反擊", shoot: "抱摔", preempt: "搶先" };
+const BET_HINTS = {
+  high: "擋頭部攻擊", mid: "擋身體攻擊", low: "擋腿部，也壓低防抱腿", cover: "全部減傷", evade: "慢招容易閃開", counter: "比他快就打斷", shoot: "對慢招抱腿反擊", preempt: "花大量體力搶先打",
+};
+const FW_COLORS = { press: "#e5484d", hold: "#3e8ef7", circle: "#30a46c", retreat: "#8f7be0" };
+const HEIGHT_SEG = { high: "#e5484d", mid: "#ff9f43", low: "#d4b106", grab: "#3e8ef7" };
+
+let fwPick = null; // the footwork chosen for this hand
+let combo = []; // card ids laid out for the combo, in order
+let bet = null; // the response chosen before the cards turn over
+let betNeedsCard = false; // counter / pre-empt: a card still to be picked
+
 function renderIntent() {
   const intent = getIntent(state, "b");
-  // One slim bar under his panel: the shares side by side. With blood in your eyes only the likeliest shows; the others read "?".
-  const opts = intent.ground ? intent.options : TYPES.map((t) => ({ id: t, label: data.rules.typeNames[t], type: t }));
-  const n = opts.filter((o) => intent.probs[o.id] > 0).length;
-  const segs = opts.filter((o) => intent.probs[o.id] > 0 || !intent.ground).map((o) => {
+  const el = $("intent");
+  el.classList.remove("hidden");
+  // Blood in your eyes: only the likeliest option shows, the others read "?".
+  const rows = intent.options.filter((o) => intent.probs[o.id] > 0);
+  const n = rows.length;
+  const segs = rows.map((o) => {
     const hidden = intent.blind && o.id !== intent.top;
     const p = Math.round(intent.probs[o.id] * 100);
     const width = hidden ? 8 : intent.blind ? 100 - 8 * (n - 1) : p;
-    return `<span class="seg bg-${o.type} ${hidden ? "hide" : ""}" style="flex:${Math.max(width, 1)}">${o.label} ${hidden ? "?" : `${p}%`}</span>`;
-  }).join("");
+    const color = intent.kind === "footwork" ? FW_COLORS[o.id] : intent.kind === "lead" ? HEIGHT_SEG[o.id] : null;
+    const cls = intent.ground ? `bg-${o.type}` : "";
+    return `<span class="seg ${cls} ${hidden ? "hide" : ""}" style="flex:${Math.max(width, 1)};${color ? `background:${color}` : intent.kind === "respond" ? "background:#4a5470" : ""}">${o.label} ${hidden ? "?" : `${p}%`}</span>`;
+  });
   const sig = intent.signatureReady ? '<b class="sig">⚡招牌</b>' : "";
-  const note = intent.blind ? "血流進眼睛，只看得清最可能的出招" : intent.tags.length ? intent.tags.join("・") : intent.tell;
-  $("intent").title = intent.tell;
-  $("intent").innerHTML = `<div class="bar3">${segs}${sig}</div><div class="note1">${note}</div>`;
-  $("intent").classList.remove("hidden");
+  let head = "";
+  let note;
+  if (intent.kind === "footwork") head = '<span class="kind">下一步走位</span>';
+  if (intent.kind === "lead" || intent.kind === "respond") {
+    head = `<span class="kind">${intent.kind === "lead" ? "他的第一招打哪裡" : "他準備怎麼應對"}</span>`;
+    if (!intent.detail) {
+      // Only a jab that landed shows this layer. Until then the bar stays covered.
+      el.innerHTML = `${head}<div class="bar3 covered"><span class="seg cover-note">用刺拳打中他之後，才看得清這一層</span></div><div class="note1">${intent.tags.length ? intent.tags.join("・") : ""}</div>`;
+      return;
+    }
+  }
+  note = intent.blind ? "血流進眼睛，只看得清最可能的選項" : intent.tags.length ? intent.tags.join("・") : intent.tell;
+  el.title = intent.tell;
+  el.innerHTML = `${head}<div class="bar3">${segs.join("")}${sig}</div><div class="note1">${note}</div>`;
 }
 
 function renderAlert() {
@@ -406,22 +435,23 @@ function renderAlert() {
       : `被鎖住了：${lock.name}<br>${stage}<br>猜中退一階；猜錯要在綠區按下撐住（<b>${hold}%</b>）`;
   } else if (state.a.rocked) {
     el.className = "";
-    el.innerHTML = `你被打暈了！<br>這手只有 1 能量，撐過去`;
+    el.innerHTML = `你被打暈了！<br>${state.ground ? "這手只有 1 能量，撐過去" : "只能出一招，也看不到慢招"}`;
   } else if (state.b.rocked) {
     el.className = "swarm";
-    el.innerHTML = `他被打暈了！追擊！<br>多 1 能量，傷害 +25%`;
+    el.innerHTML = state.ground ? `他被打暈了！追擊！<br>多 1 能量，傷害 +25%` : `他被打暈了！追擊！<br>他看不到慢招，傷害 +25%`;
   }
   // Situations that are not emergencies are listed under whatever is already shown.
   const notes = [];
   if (state.cage && !state.ground) {
-    notes.push(state.cage.side === "a" ? "你被逼到籠邊！不能後退、易被摔<br>用推籠或轉身脫離" : "他被逼到籠邊！他不能後退，摔他更容易");
+    notes.push(state.cage.side === "a" ? "你被逼到籠邊！不能後退、易被摔<br>用繞圈脫離（他壓上就逃不掉）" : "他被逼到籠邊！他不能後退，摔他更容易");
   }
   if (state.ground && !lock) {
     notes.push(state.ground.top === "a"
       ? "你在上位：選動作，他來猜<br>穩壓免費、專抓逃脫"
       : "你在下位：猜他的動作<br>撐架剋過位・反制剋砸拳・逃脫剋鎖技");
   }
-  if (isFinal(state)) notes.push("回合最後一手！雙方 +1 能量，裁判更重視");
+  if (!state.ground && state.edge && !lock) notes.push(state.edge.side === "a" ? "你佔上風：沒被走位搶走，這手由你帶頭" : "他佔上風：這手他容易帶頭");
+  if (isFinal(state)) notes.push("回合最後一手！連段多 1 張，裁判更重視");
   if (notes.length) {
     const body = notes.join("<br>");
     if (el.className === "hidden") {
@@ -450,29 +480,231 @@ function linkHtml(d) {
   return "";
 }
 
+/** Hides every tray piece, then the step shows what it needs. */
+function clearTray() {
+  for (const id of ["fwpanel", "combo", "bets", "counterpick", "pass"]) $(id).classList.add("hidden");
+  $("hand").innerHTML = "";
+  $("hand").className = "";
+  $("basics").classList.add("hidden");
+  $("energy").innerHTML = "";
+}
+
 function renderHand() {
+  clearTray();
+  const mode = liveCtx ? "respond" : state.ground ? "ground" : stepOf(state) === "footwork" ? "footwork" : state.engage.leader === "a" ? "lead" : "respond";
+  $("tray").dataset.mode = mode;
+  $("tray").dataset.pick = mode === "respond" && bet && betNeedsCard ? "1" : "";
+  if (mode === "respond") return renderRespond();
+  if (mode === "ground") return renderGroundHand();
+  return mode === "footwork" ? renderFootwork() : renderLead();
+}
+
+// ---------- Footwork ----------
+
+const distShort = (d) => data.rules.dist.names[d];
+
+/** One line on what his step would do, from the preview table. */
+function outcomeText(r) {
+  const lead = r.pYouLead >= 0.995 ? "你帶頭" : r.pYouLead <= 0.005 ? "他帶頭" : `搶先手 ${Math.round(r.pYouLead * 100)}%`;
+  const bits = [lead, distShort(r.dist)];
+  if (r.mine.counterSpeed >= 4) bits.push("你反擊快");
+  if (r.theirs.counterSpeed >= 4) bits.push("他反擊快");
+  if (r.mine.evade >= 0.1) bits.push("你易閃");
+  if (r.theirs.evade >= 0.1) bits.push("他易閃");
+  if (r.theirs.dmgIn > 1.05) bits.push("他挨打重");
+  if (r.mine.dmgIn > 1.05) bits.push("你挨打重");
+  if (r.heGivesGround) bits.push("逼他後退");
+  if (r.youGiveGround) bits.push("你讓地盤");
+  return bits.join(" · ");
+}
+
+function renderFootwork() {
+  const R = data.rules.footwork;
+  const choices = footworkChoices(state, "a");
+  if (fwPick && choices.find((c) => c.id === fwPick)?.disabled) fwPick = null;
+  const panel = $("fwpanel");
+  panel.classList.remove("hidden");
+  const buttons = choices.map((c) => `<button class="fwbtn ${fwPick === c.id ? "sel" : ""} ${c.disabled ? "dim" : ""}" data-id="${c.id}" style="--c:${FW_COLORS[c.id]}">
+      <b>${c.label}</b><small>${c.disabled ? c.reason : c.desc}</small><i>${c.cost > 0 ? `體力 -${c.cost}` : "回 1 體力"}</i></button>`).join("");
+  let chips = '<div class="fwchips"><div class="fwhint">選一個走位，看他各種走位會變成什麼局面</div></div>';
+  if (fwPick) {
+    const rows = previewFootwork(state, "a", fwPick);
+    const intent = getIntent(state, "b");
+    chips = `<div class="fwchips">${rows.map((r) => {
+      const hidden = intent.blind && r.his !== intent.top;
+      return `<div class="fwchip" style="--c:${FW_COLORS[r.his]}"><b>他${R.moves[r.his].label} ${hidden ? "?" : `${Math.round(r.prob * 100)}%`}</b><span>${outcomeText(r)}</span></div>`;
+    }).join("")}</div>`;
+  }
+  panel.innerHTML = chips + `<div class="fwbtns">${buttons}</div>`;
+  panel.querySelectorAll(".fwbtn").forEach((el) => el.addEventListener("click", () => {
+    if (el.classList.contains("dim")) return;
+    fwPick = el.dataset.id;
+    renderHand();
+  }));
+  $("choice").innerHTML = fwPick ? `<b>${R.moves[fwPick].label}</b>：${R.moves[fwPick].desc}` : "每一手先走位：雙方同時選，揭曉後決定誰帶頭、距離變幾格";
+  $("energy").innerHTML = `體力 <b>${Math.round(state.a.stamina)}</b>`;
+  $("fight").textContent = "走位";
+  $("fight").disabled = !fwPick;
+}
+
+// ---------- Leading ----------
+
+function tileHtml(i, mode) {
+  const c = state.a.hand[i];
+  const card = data.cards[c];
+  const d = describeCard(state, "a", c);
+  const name = card.name.replace(/^招牌[：:]/, "");
+  const picked = mode === "lead" && combo.includes(c) && !card.basic;
+  const test = mode === "lead" ? comboError(state, "a", [...combo, c]) : null;
+  const dim = mode === "lead" && Boolean(test);
+  const seen = mode === "lead" && d.seenByFoe ? '<span class="seen" title="他的反應力看得到這招">慢·會被看到</span>' : mode === "lead" && !card.counterOnly ? '<span class="quick">快·看不到</span>' : "";
+  return `<button class="tile ${HEIGHT_COLORS[d.height] || ""} ${card.signature ? "signature" : ""} ${picked ? "sel" : ""} ${dim && !picked ? "dim" : ""} ${d.unusable ? "far" : ""}" data-i="${i}">
+      <div class="th"><span class="hb">${d.heightName || (card.counterOnly ? "反" : "")}</span><span class="sp">速${d.speed}</span></div>
+      <div class="tn">${name}</div>
+      <div class="tf">${d.effect}</div>
+      ${linkHtml(d)}
+      <div class="tr">${d.unusable ? `<span class="bad">要在${d.rangeText || "別的距離"}</span>` : d.rangeText ? `<span>${d.rangeText}</span>` : "<span></span>"}<span>-${Math.round(d.cost)}</span></div>
+      ${seen}
+    </button>`;
+}
+
+function renderLead() {
+  const hand = state.a.hand;
+  const order = hand.map((c, i) => i).filter((i) => !data.cards[hand[i]].counterOnly);
+  order.sort((x, y) => Number(data.cards[hand[x]].basic || 0) - Number(data.cards[hand[y]].basic || 0));
+  const pv = previewCombo(state, "a", combo);
+  const max = comboMax(state, "a");
+  $("hand").className = "tiles";
+  $("hand").innerHTML = order.map((i) => tileHtml(i, "lead")).join("");
+  $("hand").querySelectorAll(".tile").forEach((el) => el.addEventListener("click", () => onLeadCard(Number(el.dataset.i), el)));
+  const combobar = $("combo");
+  combobar.classList.remove("hidden");
+  const slots = [];
+  for (let k = 0; k < max; k++) {
+    const c = combo[k];
+    slots.push(c ? `<button class="slot full" data-k="${k}">${k + 1} ${data.cards[c].name.replace(/^招牌[：:]/, "")}</button>` : `<span class="slot">${k + 1}</span>`);
+  }
+  combobar.innerHTML = `<span class="lbl">連段 ${combo.length}/${max}</span>${slots.join('<i>→</i>')}`;
+  combobar.querySelectorAll(".slot.full").forEach((el) => el.addEventListener("click", () => {
+    combo.splice(Number(el.dataset.k), 1);
+    renderHand();
+  }));
+  const sees = combo.filter((c) => describeCard(state, "a", c).seenByFoe).map((c) => data.cards[c].name);
+  const dmg = combo.length ? ` · 全中約 <b>${pv.damage}</b> · 體力 -${pv.cost}${pv.endDist !== state.dist ? ` · 出手後${distShort(pv.endDist)}` : ""}` : "";
+  const warn = sees.length ? ` · <span class="bad">慢招他會看到：${sees.join("、")}</span>` : "";
+  const reaction = Math.round(reactionOf(state, "b"));
+  $("choice").innerHTML = combo.length
+    ? `你帶頭：<b>${combo.map((c) => data.cards[c].name).join(" → ")}</b>${dmg}${warn}`
+    : `你帶頭：點招式排連段（最多 ${max} 張）· 他的反應力 <b>${reaction}</b>：速度比這低的招他看得到、能當場應對`;
+  $("energy").innerHTML = `體力 <b>${pv.stamina}</b> · 連段 ≤ ${max}`;
+  $("fight").textContent = "出手";
+  $("fight").disabled = !combo.length;
+  $("pass").classList.remove("hidden");
+  $("pass").textContent = "試探";
+}
+
+function onLeadCard(i, el) {
+  const c = state.a.hand[i];
+  const err = comboError(state, "a", [...combo, c]);
+  if (err) {
+    el.classList.remove("deny");
+    void el.offsetWidth;
+    el.classList.add("deny");
+    return;
+  }
+  const card = data.cards[c];
+  if (!card.basic && combo.includes(c)) {
+    combo = combo.filter((x) => x !== c);
+  } else combo.push(c);
+  renderHand();
+}
+
+// ---------- Responding ----------
+
+function betChoices() {
+  const strikers = counterCards(state, "a");
+  const rocked = state.a.rocked;
+  return ["high", "mid", "low", "cover", "evade", "counter", "shoot", "preempt"].map((id) => {
+    let off = "";
+    if (rocked && !["high", "mid", "low", "cover"].includes(id)) off = "被打暈";
+    else if ((id === "counter" || id === "preempt") && !strikers.length) off = "沒有招能出";
+    else if (id === "preempt" && state.a.stamina < data.rules.engage.preempt.cost) off = "體力不夠";
+    return { id, label: BET_LABELS[id], hint: BET_HINTS[id], off };
+  });
+}
+
+function betPlan() {
+  if (!bet || bet.kind === "keep") return null;
+  if (["high", "mid", "low"].includes(bet.kind)) return { kind: "guard", height: bet.kind };
+  if (bet.kind === "counter" || bet.kind === "preempt") return { kind: bet.kind, card: bet.card };
+  return { kind: bet.kind };
+}
+
+function renderRespond() {
+  const live = liveCtx;
+  const choices = betChoices();
+  if (live) {
+    choices.splice(choices.findIndex((c) => c.id === "preempt"), 1, { id: "keep", label: "照原計畫", hint: "不改，照事先押的", off: "" });
+  }
+  const bar = $("bets");
+  bar.classList.remove("hidden");
+  bar.innerHTML = choices.map((c) => `<button class="bet ${bet?.kind === c.id ? "sel" : ""} ${c.off ? "dim" : ""}" data-id="${c.id}"><b>${c.label}</b><small>${c.off || c.hint}</small></button>`).join("");
+  bar.querySelectorAll(".bet").forEach((el) => el.addEventListener("click", () => {
+    if (el.classList.contains("dim")) return;
+    const id = el.dataset.id;
+    bet = { kind: id };
+    betNeedsCard = id === "counter" || id === "preempt";
+    if (betNeedsCard) {
+      const list = counterCards(state, "a");
+      // A counter wants the quickest card that reaches; the pre-emptive strike wants the heaviest. Tap another to change.
+      bet.card = id === "counter" ? list.reduce((b, c) => (data.cards[c].speed > data.cards[b].speed ? c : b)) : list.reduce((b, c) => (data.cards[c].power > data.cards[b].power ? c : b));
+    }
+    renderHand();
+  }));
+  const pick = $("counterpick");
+  if (bet && betNeedsCard) {
+    pick.classList.remove("hidden");
+    const list = counterCards(state, "a");
+    pick.innerHTML = `<span class="lbl">${bet.kind === "counter" ? "用哪一招反擊（越快越能搶先）" : "用哪一招搶先打"}</span>` + list.map((c) => {
+      const card = data.cards[c];
+      return `<button class="chip ${bet.card === c ? "sel" : ""}" data-c="${c}">${card.name.replace(/^招牌[：:]/, "")}<small>速${Math.round(cardSpeedOf(c))}</small></button>`;
+    }).join("");
+    pick.querySelectorAll(".chip").forEach((el) => el.addEventListener("click", () => {
+      bet.card = el.dataset.c;
+      renderHand();
+    }));
+  }
+  const foe = fighterOf("b");
+  const intent = getIntent(state, "b");
+  const speedNote = `你的反應力 <b>${Math.round(reactionOf(state, "a"))}</b>：他出的招速度比這低你才看得到`;
+  const sel = bet ? `<b>${BET_LABELS[bet.kind] || "照原計畫"}</b>${bet.card ? `：${data.cards[bet.card].name}` : ""} — ${BET_HINTS[bet.kind] || "不改，照事先押的"}` : "選你的應對：事先押一個，快招你看不到，只能靠這個";
+  $("choice").innerHTML = live ? `他出【${data.cards[live.card].name}】<b>慢招，你看到了！</b>速度 ${live.speed} &lt; 你的反應力 ${live.reaction}：現在選怎麼應對` : `${foe.short}帶頭 · ${sel} · ${speedNote}`;
+  $("energy").innerHTML = `體力 <b>${Math.round(state.a.stamina)}</b>`;
+  $("fight").textContent = live ? "應對" : "準備";
+  $("fight").disabled = !(bet && (!betNeedsCard || bet.card));
+}
+
+function cardSpeedOf(c) {
+  return describeCard(state, "a", c).speed;
+}
+
+// ---------- Mat ----------
+
+function renderGroundHand() {
   const b = budget(state, "a");
   const cards = selectedCards();
   const spent = cards.reduce((sum, c) => sum + cardCost(state, "a", c), 0);
-  // Dimmed means clicking it would not add to the current play: wrong distance, or not enough energy left.
+  // Dimmed means clicking it would not add to the current play: wrong position, or not enough energy left.
   const look = (i) => {
     const c = state.a.hand[i];
     const isSel = selected.includes(i);
-    // Clicking a card that does not go with the current play starts a new play with it, so only the alone check matters then.
     const together = playError(state, "a", [...cards, c]);
     const ok = together === null || (REPLACES.includes(together) && playError(state, "a", [c]) === null);
     const d = describeCard(state, "a", c);
-    // A card out of range now may still be thrown after the step that comes with it.
-    if (d.unusable && cards.length && !isSel && together === null) d.unusable = false;
     return { card: data.cards[c], d, isSel, affordable: isSel || ok };
   };
-  const drawn = state.a.hand.map((c, i) => i).filter((i) => !data.cards[state.a.hand[i]].basic);
-  const fence = state.a.hand.map((c, i) => i).filter((i) => data.cards[state.a.hand[i]].cageOnly);
-  $("cagebtns").innerHTML = fence.map((i) => {
-    const { card, d, isSel, affordable } = look(i);
-    return `<button class="cg bg-${card.type} ${isSel ? "sel" : ""} ${affordable ? "" : "dim"}" data-i="${i}">${card.name}<small>${"⚡".repeat(d.cost)} ${d.effect}</small></button>`;
-  }).join("");
-  $("cagebtns").querySelectorAll(".cg").forEach((el) => el.addEventListener("click", () => onCard(Number(el.dataset.i), el)));
+  const drawn = state.a.hand.map((c, i) => i);
+  $("hand").className = "";
   $("hand").innerHTML = drawn.map((i) => {
     const { card, d, isSel, affordable } = look(i);
     const label = d.action || data.rules.typeNames[card.type];
@@ -491,21 +723,12 @@ function renderHand() {
   let energy = "";
   for (let i = 0; i < b; i++) energy += i < spent ? "⚡" : '<span class="off">⚡</span>';
   $("energy").innerHTML = energy;
-  const mat = Boolean(state.ground);
-  const fixed = mat ? [] : [["step_in", $("step-in"), "前進"], ["step_back", $("step-back"), "後退"]];
-  for (const el of [$("step-in"), $("step-back")]) el.classList.toggle("hidden", mat);
-  for (const [id, el, label] of fixed) {
-    const i = state.a.hand.indexOf(id);
-    const { isSel, affordable } = look(i);
-    const dc = describeCard(state, "a", id);
-    el.innerHTML = `${label}<small>${dc.blocked || "⚡".repeat(dc.cost)}</small>`;
-    el.className = `${isSel ? "sel" : ""} ${affordable ? "" : "dim"}`;
-  }
-  // The free play: bracing on his feet, the hold on top, covering up underneath. Not an option in a lock fight.
-  const free = mat ? (roleOf(state, "a") === "top" ? ["穩壓", "抓逃脫"] : ["抱頭", "砸拳減半"]) : ["硬撐", "⚡0"];
-  $("brace").innerHTML = `${free[0]}<small>${mat ? `⚡0 ${free[1]}` : free[1]}</small>`;
+  // The free play: the hold on top, covering up underneath. Not an option in a lock fight.
+  const free = roleOf(state, "a") === "top" ? ["穩壓", "抓逃脫"] : ["抱頭", "砸拳減半"];
+  $("basics").classList.toggle("hidden", Boolean(state.ground?.lock));
+  $("brace").innerHTML = `${free[0]}<small>⚡0 ${free[1]}</small>`;
   $("brace").className = bracing ? "sel" : "";
-  $("brace").classList.toggle("hidden", Boolean(state.ground?.lock));
+  $("fight").textContent = "出手";
   $("fight").disabled = !(cards.length || (bracing && !state.ground?.lock));
   renderChoice();
 }
@@ -516,31 +739,10 @@ function renderChoice() {
   if (!cards.length && !bracing) {
     const mine = fighterOf("a").ability;
     if (state.ground?.lock) el.innerHTML = state.ground.lock.attacker === "a" ? "選一招進攻：被對應的防守擋住就退一階，其餘讓鎖更深" : "選一招防守：猜中他的進攻就退一階，退完就逃脫";
-    else if (state.ground) el.innerHTML = `地面一手只出一張牌，或用右邊免費的${roleOf(state, "a") === "top" ? "穩壓" : "抱頭"}${mine ? ` · 能力「${mine.name}」` : ""}`;
-    else el.innerHTML = `選牌：同一類可多張；前進／後退可搭配出手（先移動再出牌）${mine ? ` · 能力「${mine.name}」` : ""}`;
+    else el.innerHTML = `地面一手只出一張牌，或用右邊免費的${roleOf(state, "a") === "top" ? "穩壓" : "抱頭"}${mine ? ` · 能力「${mine.name}」` : ""}`;
     return;
   }
-  if (state.ground) {
-    renderGroundChoice(cards);
-    return;
-  }
-  const preview = previewPlay(state, "a", cards);
-  const t = preview.type;
-  const tri = data.rules.triangle;
-  const beats = tri[t];
-  const losesTo = TYPES.find((x) => tri[x] === t);
-  const intent = getIntent(state, "b");
-  const probs = intent.probs;
-  const pct = (x) => (intent.blind && x !== intent.top ? "?" : `${Math.round(probs[x] * 100)}%`);
-  const n = data.rules.typeNames;
-  const extra = Math.max(0, preview.cost - 1);
-  const rate = t === "G" ? data.rules.damage.shootOvercommit : data.rules.damage.overcommitPerEnergy;
-  const risk = extra ? ` · 猜錯多吃 ${Math.round(extra * rate * 100)}%` : "";
-  const hurts = cards.some((c) => data.cards[c].power);
-  const dmg = !hurts ? "" : ` · 贏了造成約 <b>${preview.damage}</b> · 爆擊 ${preview.critPct}%`;
-  const moves = preview.endDist !== null && preview.endDist !== state.dist ? ` · 出手後 <b>${data.rules.dist.names[preview.endDist]}</b>` : "";
-  const seq = preview.order.length > 1 && preview.order.some((c) => data.cards[c].moveOnly) ? `<b>${preview.order.map((c) => data.cards[c].name).join(" → ")}</b> · ` : "";
-  el.innerHTML = `${seq}<b class="t-${t}">${n[t]}</b>：贏 ${n[beats]} <b>${pct(beats)}</b> · 平 ${n[t]} <b>${pct(t)}</b> · 輸 ${n[losesTo]} <b>${pct(losesTo)}</b>${dmg}${moves}${risk}`;
+  renderGroundChoice(cards);
 }
 
 /** What the pick risks on the mat, from the shown tendencies: which of his options beat it, how likely, and what a win does. */
@@ -583,36 +785,21 @@ function renderGroundChoice(cards) {
 }
 
 function onCard(i, el) {
-  const card = data.cards[state.a.hand[i]];
   bracing = false;
   if (selected.includes(i)) {
     selected = selected.filter((x) => x !== i);
     renderHand();
     return;
   }
-  let next = [...selected, i].map((x) => state.a.hand[x]);
-  const together = playError(state, "a", next);
-  if (REPLACES.includes(together)) {
-    selected = [];
-    next = [state.a.hand[i]];
-  }
+  const next = [state.a.hand[i]];
   if (playError(state, "a", next)) {
-    if (playError(state, "a", [state.a.hand[i]])) {
-      el.classList.remove("deny");
-      void el.offsetWidth;
-      el.classList.add("deny");
-      return;
-    }
-    selected = [i];
-  } else {
-    selected = [...selected, i];
+    el.classList.remove("deny");
+    void el.offsetWidth;
+    el.classList.add("deny");
+    return;
   }
+  selected = [i];
   renderHand();
-}
-
-function onStep(id, el) {
-  const i = state.a.hand.indexOf(id);
-  if (i >= 0) onCard(i, el);
 }
 
 function onBrace() {
@@ -621,9 +808,19 @@ function onBrace() {
   renderHand();
 }
 
+async function onPass() {
+  if (state.ground || stepOf(state) !== "lead" || state.engage.leader !== "a" || liveCtx) return;
+  combo = [];
+  await onEngage();
+}
+
 function beginTurn() {
   selected = [];
   bracing = false;
+  fwPick = null;
+  combo = [];
+  bet = null;
+  betNeedsCard = false;
   stage.setLayout(state);
   syncShown();
   renderHud();
@@ -636,6 +833,7 @@ function beginTurn() {
   $("verdict").classList.add("hidden");
   $("skip").classList.add("hidden");
 }
+
 
 // ---------- Exchange playback ----------
 
@@ -672,6 +870,26 @@ function renderReveal(e) {
   $("reveal").innerHTML = flip("a") + flip("b");
   $("reveal").classList.remove("hidden");
 }
+
+/** A footwork as a card turned over: its name and what it does. */
+function footworkFlip(side, id) {
+  const m = data.rules.footwork.moves[id];
+  return `<div class="flip"><div class="head" style="background:${FW_COLORS[id]}">${m.label}</div><div class="body">${m.desc}</div><div class="who">${side === "a" ? "你" : fighterOf("b").short}</div></div>`;
+}
+
+/** One card of the combo turning over, with how the other man meets it. */
+function cardFlip(e) {
+  const card = data.cards[e.card];
+  const L = e.side;
+  const R = L === "a" ? "b" : "a";
+  const reply = e.reply;
+  const label = { guard: `架${GUARD_WORDS[reply.height] || ""}`, cover: "抱頭", evade: "閃身", counter: `反擊：${data.cards[reply.card]?.name || ""}`, shoot: "抱腿反擊", preempt: "搶先" }[reply.kind] || "";
+  const how = e.visible ? "看到了，當場應對" : "事先押的";
+  const name = card.name.replace(/^招牌[：:]/, "");
+  return `<div class="flip"><div class="head ${HEIGHT_COLORS[card.height] || ""}">${heightWord(card.height)} · 速${e.speed}</div><div class="body">${name}<br><small>第 ${e.index + 1}/${e.of} 張</small></div><div class="who">${nameOf(L)}</div></div>
+    <div class="flip reply"><div class="head" style="background:#4a5470">${label}</div><div class="body"><small>${how}</small></div><div class="who">${nameOf(R)}</div></div>`;
+}
+const heightWord = (h) => ({ high: "上段", mid: "中段", low: "下段", grab: "抱摔", feint: "假動作" }[h] || "");
 
 function actionPoseFor(cardId) {
   const card = data.cards[cardId];
@@ -744,6 +962,13 @@ async function playEvents(events) {
       case "hit": {
         const def = e.attacker === "a" ? "b" : "a";
         shown[def].hp = Math.max(0, shown[def].hp - e.damage);
+        if (e.chip) {
+          stage.recoil(def, 8, 180, "idle");
+          if (e.damage > 0) stage.floater(def, `-${e.damage}`, "#9aa4bd", 16);
+          renderPanel(def);
+          await wait(220);
+          break;
+        }
         shown[def].pips[e.target] = Math.min(data.rules.debuff.maxPips, shown[def].pips[e.target] + 1);
         const crit = e.tier === "crit";
         const isSig = Boolean(data.cards[e.card]?.signature);
@@ -959,6 +1184,107 @@ async function playEvents(events) {
       case "tap":
         stage.flash(0.3);
         break;
+      case "footwork":
+        $("reveal").innerHTML = footworkFlip("a", e.a) + footworkFlip("b", e.b);
+        $("reveal").classList.remove("hidden");
+        showVerdict(e.text.length > 20 ? "走位揭曉" : e.text, e.text.length > 20 ? e.text : "", "#9be7ff");
+        await wait(1100);
+        $("reveal").classList.add("hidden");
+        $("verdict").classList.add("hidden");
+        break;
+      case "lead": {
+        const sub = e.chance === null ? "走位決定了誰先出手" : `搶先手：你 ${Math.round((e.side === "a" ? e.chance : 1 - e.chance) * 100)}%`;
+        showVerdict(`${nameOf(e.side)}帶頭`, e.edge ? `${sub} · 上一手的優勢` : sub, e.side === "a" ? "#5be49b" : "#ff7b7f");
+        shown.a.leader = e.side === "a";
+        shown.b.leader = e.side === "b";
+        renderPanel("a");
+        renderPanel("b");
+        await wait(760);
+        $("verdict").classList.add("hidden");
+        break;
+      }
+      case "engage":
+        if (e.n === 0) {
+          showVerdict(`${nameOf(e.leader)}沒有出手`, "試探一下", "#9fe2bf");
+          await wait(420);
+          $("verdict").classList.add("hidden");
+        }
+        break;
+      case "card":
+        $("reveal").innerHTML = cardFlip(e);
+        $("reveal").classList.remove("hidden");
+        await wait(e.visible ? 760 : 620);
+        break;
+      case "block":
+        stage.recoil(e.side, 10, 220, "idle");
+        stage.floater(e.side, "擋住!", "#5be49b", 24);
+        showVerdict("擋住了！", `${nameOf(e.side)}架${GUARD_WORDS[e.height]}，連段中斷`, "#5be49b");
+        await wait(640);
+        $("reveal").classList.add("hidden");
+        $("verdict").classList.add("hidden");
+        break;
+      case "evade":
+        stage.recoil(e.side, 30, 300, "idle");
+        stage.floater(e.side, "閃開!", "#5be49b", 26);
+        showVerdict("閃開了！", `${nameOf(e.side)}閃過去（機會 ${Math.round(e.chance * 100)}%），對方露出破綻`, "#5be49b");
+        await wait(700);
+        $("reveal").classList.add("hidden");
+        $("verdict").classList.add("hidden");
+        break;
+      case "evadeFail":
+        stage.floater(e.side, "沒閃掉", "#ffd166", 20);
+        await wait(240);
+        break;
+      case "counter":
+        showVerdict(e.catch ? "勒住他的脖子" : e.first ? "反擊搶先！" : "反擊太慢", e.catch ? "他抱腿，斷頭台等著" : `${e.name}（${e.speed} 對 ${e.vs}）`, e.first ? "#5be49b" : "#ffd166");
+        stage.strike(e.side, data.cards[e.card]?.kick ? "kick" : "punch", REACH[viewDist] || 40, 300);
+        await wait(e.first ? 620 : 520);
+        $("verdict").classList.add("hidden");
+        break;
+      case "counterWrong":
+        stage.floater(e.side, "反錯了", "#ffd166", 20);
+        await wait(320);
+        break;
+      case "interrupted":
+        stage.stagger(e.side, 360);
+        showVerdict("被打斷！", `${nameOf(e.side)}的連段中斷，主動權易手`, "#ff9f43");
+        await wait(640);
+        $("reveal").classList.add("hidden");
+        $("verdict").classList.add("hidden");
+        break;
+      case "preempt":
+        showVerdict("搶先出手！", `${nameOf(e.side)}用${e.name}搶在前面`, "#f5c542");
+        stage.strike(e.side, data.cards[e.card]?.kick ? "kick" : "punch", REACH[viewDist] || 40, 320);
+        await wait(640);
+        $("verdict").classList.add("hidden");
+        break;
+      case "shoot":
+        stage.strike(e.side, "shoot", 90, 340);
+        showVerdict(e.caught ? "抱腿反擊！" : "抱腿失敗", e.caught ? `${nameOf(e.side)}鑽進慢招的空檔` : `${nameOf(e.side)}撞上快招`, e.caught ? "#7cb7ff" : "#ffd166");
+        await wait(640);
+        $("verdict").classList.add("hidden");
+        break;
+      case "sprawl":
+        stage.floater(e.side, "壓低重心", "#7cb7ff", 18);
+        await wait(300);
+        break;
+      case "feintWin":
+        stage.floater(e.side === "a" ? "b" : "a", "上當了!", "#ffd166", 24);
+        showVerdict("假動作成功！", `${nameOf(e.side === "a" ? "b" : "a")}吃了假動作，下一招更容易中`, "#f5c542");
+        await wait(700);
+        $("reveal").classList.add("hidden");
+        $("verdict").classList.add("hidden");
+        break;
+      case "feintWasted":
+        stage.floater(e.side, "假動作沒用", "#9aa4bd", 16);
+        await wait(300);
+        break;
+      case "comboDone":
+        showVerdict("連段打完！", `${e.n} 張全部出手 · ${nameOf(e.side)}掌握主動，對手體力在掉`, "#f5c542");
+        await wait(640);
+        $("reveal").classList.add("hidden");
+        $("verdict").classList.add("hidden");
+        break;
       case "finish":
         await playFinish(e);
         break;
@@ -1008,32 +1334,23 @@ async function playFinish(e) {
 
 async function onFight() {
   if ($("fight").disabled) return;
-  const cards = selectedCards();
-  const ai = chooseAI(state, "b").cards;
-  const distBefore = state.dist;
-  const cageBefore = state.cage?.side ?? null;
-  const groundBefore = state.ground ? { ...state.ground } : null;
-  // A human whose lock is about to sink gets to hold on with a timing bar; the AI is rolled by the engine.
-  const opts = {};
-  if (state.ground?.lock?.attacker === "b" && lockGuessWrong(state, cards, ai)) {
-    $("tray").classList.add("away");
-    $("intent").classList.add("hidden");
-    opts.resist = await askResist(lockResistChance(state));
-  }
-  const events = resolveExchange(state, cards, ai, opts);
+  if (liveCtx) return answerLive();
+  if (state.ground) return onGroundFight();
+  return stepOf(state) === "footwork" ? onFootwork() : onEngage();
+}
+
+/** Hides the tray and starts a playback. */
+function beginPlayback() {
   $("tray").classList.add("away");
   $("intent").classList.add("hidden");
   $("alert").className = "hidden";
   $("last").innerHTML = "";
   $("skip").classList.remove("hidden");
   skipping = false;
-  // Keep showing the situation as it was until the playback moves it.
-  viewDist = distBefore;
-  viewCage = cageBefore;
-  viewGround = groundBefore ? { top: groundBefore.top, pos: groundBefore.pos } : null;
-  viewLock = groundBefore?.lock?.attacker ?? null;
-  stage.setLayout({ dist: distBefore, ground: viewGround && { ...viewGround, lock: viewLock }, cage: cageBefore });
-  await playEvents(events);
+}
+
+/** Everything a hand leaves behind once it has played: a choice to follow him down, the corner, the result, or the next hand. */
+async function afterHand() {
   endCinema();
   if (state.pending) await settleChase();
   stage.timeScale = 1;
@@ -1045,6 +1362,106 @@ async function onFight() {
   else if (state.phase === "over") showResult();
   else beginTurn();
 }
+
+/** Step one of a stand-up hand: both pick a footwork, it plays out, and then the lead is settled. */
+async function onFootwork() {
+  const mine = fwPick;
+  const his = chooseFootwork(state, "b");
+  const distBefore = state.dist;
+  const cageBefore = state.cage?.side ?? null;
+  const events = resolveFootwork(state, mine, his);
+  beginPlayback();
+  viewDist = distBefore;
+  viewCage = cageBefore;
+  viewGround = null;
+  viewLock = null;
+  stage.setLayout({ dist: distBefore, cage: cageBefore });
+  await playEvents(events);
+  stage.timeScale = 1;
+  $("skip").classList.add("hidden");
+  $("reveal").classList.add("hidden");
+  $("verdict").classList.add("hidden");
+  syncShown();
+  beginTurn();
+}
+
+/** Step two: the leader's combo against the other man's bet, a card at a time. A card he can see coming asks the human responder for an answer. */
+async function onEngage() {
+  const E = state.engage;
+  const iLead = E.leader === "a";
+  const comboCards = iLead ? combo.slice() : chooseCombo(state, "b");
+  const plan = iLead ? choosePlan(state, "b") : betPlan();
+  beginPlayback();
+  viewDist = state.dist;
+  viewCage = state.cage?.side ?? null;
+  viewGround = null;
+  viewLock = null;
+  stage.setLayout({ dist: state.dist, cage: viewCage });
+  let events = engageStart(state, comboCards, plan);
+  await playEvents(events);
+  while (state.engage) {
+    const w = engageWaiting(state);
+    let reaction = null;
+    if (w?.visible) reaction = iLead ? chooseReaction(state, "b", w) : await askReaction(w);
+    events = engageStep(state, reaction);
+    await playEvents(events);
+  }
+  await afterHand();
+}
+
+let liveCtx = null; // a card the human can see coming: the answer is being asked for
+let liveResolve = null;
+
+/** A slow card turns over and he can see it: the tray comes back for one answer. */
+function askReaction(w) {
+  return new Promise((resolve) => {
+    $("skip").classList.add("hidden");
+    liveCtx = w;
+    liveResolve = resolve;
+    bet = null;
+    betNeedsCard = false;
+    syncShown();
+    renderHud();
+    renderHand();
+    $("tray").classList.remove("away");
+  });
+}
+
+function answerLive() {
+  const plan = bet?.kind === "keep" ? null : betPlan();
+  const resolve = liveResolve;
+  liveCtx = null;
+  liveResolve = null;
+  bet = null;
+  betNeedsCard = false;
+  $("tray").classList.add("away");
+  $("skip").classList.remove("hidden");
+  resolve(plan);
+}
+
+/** One exchange on the mat: pick a card, or the free option. A human whose lock is about to sink holds on with a timing bar. */
+async function onGroundFight() {
+  const cards = selectedCards();
+  const ai = chooseAI(state, "b").cards;
+  const groundBefore = { ...state.ground };
+  const opts = {};
+  if (state.ground.lock?.attacker === "b" && lockGuessWrong(state, cards, ai)) {
+    $("tray").classList.add("away");
+    $("intent").classList.add("hidden");
+    opts.resist = await askResist(lockResistChance(state));
+  }
+  const events = resolveExchange(state, cards, ai, opts);
+  beginPlayback();
+  // Keep showing the situation as it was until the playback moves it.
+  viewDist = state.dist;
+  viewCage = null;
+  viewGround = { top: groundBefore.top, pos: groundBefore.pos };
+  viewLock = groundBefore.lock?.attacker ?? null;
+  stage.setLayout({ dist: state.dist, ground: { ...viewGround, lock: viewLock }, cage: null });
+  await playEvents(events);
+  await afterHand();
+}
+
 
 /** The reaction game: a needle sweeps the bar and the green zone is the chance to hold on. Stop it inside the zone. */
 function askResist(chance) {

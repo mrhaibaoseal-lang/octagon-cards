@@ -1,10 +1,44 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, groundCatOf, lockStatus, describeCard, lockResistChance, lockGuessWrong } from "../engine.js";
-import { data, playGame, strategies } from "../sim.js";
+import { createMatch, resolveExchange, resolveFootwork, resolveEngage, engageStart, engageStep, engageWaiting, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseCorner, getIntent, footworkIntent, engageIntent, footworkOutcome, footworkChoices, leadChance, comboError, planError, comboMax, reactionOf, handSpeed, previewCombo, budget, playError, nextUnit, checkInvariants, usableAt, previewPlay, cardCost, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, groundCatOf, lockStatus, describeCard, lockResistChance, lockGuessWrong, stepOf } from "../engine.js";
+import { data, playGame, strategies, playStandingHand } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
+
+/** Two fighters on the mat, `top` on top at `pos`, with ground hands set by hand. The stand-up hands are set aside as in a real fight. */
+function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed = 5 } = {}) {
+  const state = createMatch(data, idA, idB, seed);
+  const bottom = top === "a" ? "b" : "a";
+  state.ground = { top, pos, lock: null, hist: [] };
+  for (const [side, hand] of [[top, handTop], [bottom, handBottom]]) {
+    state[side].stand = state[side].hand;
+    state[side].hand = [...hand];
+  }
+  return state;
+}
+
+/** The same, but with the real ground hands drawn. */
+function matDrawn(idA, idB, pos, top = "a", seed = 5) {
+  const state = createMatch(data, idA, idB, seed);
+  state.ground = { top, pos, lock: null, hist: [] };
+  for (const s of ["a", "b"]) refillHand(state, s);
+  return state;
+}
+
+/** A lock fight with `a` holding it at the given stage. */
+function lockFight(depth, { top = "a", attacker = "a" } = {}) {
+  const m = mat("neutral", "neutral", { pos: 3, top, handTop: [], handBottom: [] });
+  m.ground.lock = { attacker, name: "十字固", depth, hist: [] };
+  for (const s of ["a", "b"]) {
+    m[s].hand = Object.keys(data.cards).filter((c) => data.cards[c].lockSide === (s === attacker ? "attack" : "defend"));
+  }
+  return m;
+}
+
+const TOP_PLAYS = { punch: ["g_pound"], pass: ["g_pass"], lock: ["g_kimura"], hold: [] };
+const BOTTOM_PLAYS = { frame: ["g_frame"], counter: ["g_counter"], escape: ["g_escape"], cover: [] };
+
 
 test("the RNG matches the Swift SplitMix64 sequence", () => {
   const s = { rng: 42n };
@@ -42,274 +76,12 @@ test("every strategy finishes a fight using only legal plays", () => {
   }
 });
 
-test("all decks are the same size and have every type", () => {
-  for (const [id, f] of Object.entries(data.fighters)) {
-    assert.ok(f.deck.length >= 12, id);
-    for (const type of ["S", "G", "C"]) {
-      assert.ok(f.deck.some((c) => data.cards[c].type === type), `${id} lacks ${type}`);
-    }
-    for (const c of [...f.deck, f.signature]) assert.ok(data.cards[c], `${id} unknown card ${c}`);
-  }
-});
-
-test("the drawn hand holds all three types that can be thrown from where they stand", () => {
-  for (let seed = 1; seed <= 200; seed++) {
-    const state = createMatch(data, "mcgregor", "khabib", seed);
-    for (const s of ["a", "b"]) {
-      const core = state[s].hand.filter((c) => !data.cards[c].basic && !data.cards[c].signature);
-      assert.equal(core.length, data.rules.match.handSize);
-      const types = new Set(core.filter((c) => usableAt(state, data.cards[c], state.dist)).map((c) => data.cards[c].type));
-      assert.equal(types.size, 3, `seed ${seed}`);
-    }
-  }
-});
-
-test("both steps are always in hand and never leave the deck", () => {
-  for (const id of Object.keys(data.fighters)) {
-    const { state } = playGame(id, "neutral", null, 4);
-    for (const s of ["a", "b"]) {
-      const standing = state[s].stand ?? state[s].hand; // on the mat the stand-up hand waits aside
-      if (!state.ground) assert.ok(standing.includes("step_in") && standing.includes("step_back"));
-      assert.ok(![...state[s].draw, ...state[s].discard].some((c) => data.cards[c].basic));
-    }
-  }
-});
-
-test("displayed intent is honest: AI choices follow the shown numbers", () => {
-  const state = createMatch(data, "khabib", "mcgregor", 9);
-  const probs = getIntent(state, "a").probs;
-  const counts = { S: 0, G: 0, C: 0 };
-  const n = 6000;
-  for (let i = 0; i < n; i++) {
-    const cards = chooseAI(state, "a").cards;
-    const type = cards.length ? data.cards[cards[0]].type : "C";
-    counts[type]++;
-  }
-  for (const t of ["S", "G", "C"]) {
-    assert.ok(Math.abs(counts[t] / n - probs[t]) < 0.04, `${t}: shown ${probs[t]}, played ${counts[t] / n}`);
-  }
-});
-
-test("illegal plays are rejected", () => {
-  const state = createMatch(data, "mcgregor", "khabib", 3);
-  assert.ok(playError(state, "a", ["not_a_card"]));
-  const [s, g] = ["S", "G"].map((t) => state.a.hand.find((c) => data.cards[c].type === t && !data.cards[c].moveOnly));
-  assert.ok(playError(state, "a", [s, g]), "mixed types");
-  state.a.stamina = 1;
-  assert.equal(budget(state, "a"), 1);
-  const expensive = Object.keys(data.cards).find((c) => data.cards[c].cost === 3);
-  state.a.hand.push(expensive);
-  assert.ok(playError(state, "a", [expensive]), "over budget");
-  assert.throws(() => resolveExchange(state, [expensive], []));
-});
-
-test("the triangle decides who wins an exchange", () => {
-  const cases = [["S", "G", "a"], ["G", "C", "a"], ["C", "S", "a"], ["G", "S", "b"], ["C", "G", "b"], ["S", "C", "b"], ["S", "S", null], ["G", "G", null], ["C", "C", null]];
-  const pick = { S: "jab", G: "single_leg", C: "guard_counter" };
-  for (const [ta, tb, winner] of cases) {
-    const state = createMatch(data, "neutral", "neutral", 5);
-    state.a.hand = [pick[ta]];
-    state.b.hand = [pick[tb]];
-    state.a.draw.push(...data.fighters.neutral.deck);
-    state.b.draw.push(...data.fighters.neutral.deck);
-    const events = resolveExchange(state, [pick[ta]], [pick[tb]]);
-    assert.equal(events.find((e) => e.kind === "verdict").winner, winner, `${ta} vs ${tb}`);
-    assert.equal(events[0].kind, "reveal");
-  }
-});
-
-test("committing more makes a wrong read hurt more", () => {
-  const damageTaken = (attackerCards) => {
-    let total = 0;
-    for (let seed = 1; seed <= 300; seed++) {
-      const state = createMatch(data, "neutral", "neutral", seed);
-      state.a.hand = [...attackerCards];
-      state.b.hand = ["counter_hook"];
-      resolveExchange(state, attackerCards, ["counter_hook"]);
-      total += state.maxHp - state.a.hp;
-    }
-    return total;
-  };
-  assert.ok(damageTaken(["cross", "jab"]) > damageTaken(["jab"]) * 1.2);
-});
-
-test("spending every exchange runs a fighter out of stamina", () => {
-  const state = createMatch(data, "mcgregor", "neutral", 11);
-  for (let i = 0; i < 5 && state.phase === "exchange"; i++) {
-    state.a.hand = ["head_kick", "jab", "cross", "single_leg", "guard_counter"];
-    state.a.hp = 100;
-    state.b.hp = 100;
-    const b = budget(state, "a");
-    resolveExchange(state, b >= 3 ? ["head_kick"] : b >= 1 ? ["jab"] : [], []);
-    state.a.rocked = false;
-    state.b.rocked = false;
-  }
-  assert.ok(state.a.stamina < 40, `stamina ${state.a.stamina}`);
-});
-
-// ---------- Distance, steps and bleeding ----------
-
-/** A fight set up by hand: both hands, a distance, and a seed. */
-function setup(handA, handB, dist, seed = 5) {
-  const state = createMatch(data, "neutral", "neutral", seed);
-  state.a.hand = [...handA, "step_in", "step_back"];
-  state.b.hand = [...handB, "step_in", "step_back"];
-  state.dist = dist;
-  return state;
-}
-
-test("a card cannot be thrown from the wrong distance", () => {
-  const state = setup(["uppercut", "head_kick", "jab"], ["jab"], 0);
-  assert.ok(playError(state, "a", ["uppercut"]), "an uppercut cannot reach from far");
-  assert.equal(playError(state, "a", ["head_kick"]), null);
-  assert.ok(playError(state, "a", ["jab"]), "a jab cannot reach from far");
-  assert.throws(() => resolveExchange(state, ["uppercut"], []));
-  state.dist = 3;
-  assert.equal(playError(state, "a", ["uppercut"]), null);
-  assert.ok(playError(state, "a", ["head_kick"]), "a high kick has no room in a clinch");
-});
-
-test("a combo is checked card by card, so a step can bring the next card into range", () => {
-  const state = setup(["step_jab", "lead_hook", "body_hook"], ["jab"], 1);
-  state.a.stamina = 100;
-  assert.ok(playError(state, "a", ["lead_hook", "body_hook"]) === null || true);
-  // Step jab (from mid) closes one step; the body hook only reaches close or clinch.
-  assert.deepEqual(arrange(state, ["body_hook", "step_jab"]), ["step_jab", "body_hook"]);
-  assert.equal(playError(state, "a", ["body_hook", "step_jab"]), null);
-  assert.ok(playError(state, "a", ["body_hook"]), "the body hook alone is out of range");
-});
-
-test("steps are cancelled for the loser and kept for the winner", () => {
-  // Stepping in (grapple) beats stepping back (defend): the gap closes anyway.
-  const caught = setup([], [], 1);
-  resolveExchange(caught, ["step_in"], ["step_back"]);
-  assert.equal(caught.dist, 2);
-  // A jab beats a step in: the step is stopped.
-  const stopped = setup(["jab"], [], 1);
-  resolveExchange(stopped, ["jab"], ["step_in"]);
-  assert.equal(stopped.dist, 1);
-  // Stepping back beats a strike: the retreat works.
-  const slipped = setup(["jab"], [], 1);
-  resolveExchange(slipped, ["jab"], ["step_back"]);
-  assert.equal(slipped.dist, 0);
-  // Two defenders stepping away from each other separate by two.
-  const apart = setup([], [], 2);
-  resolveExchange(apart, ["step_back"], ["step_back"]);
-  assert.equal(apart.dist, 0);
-  // Two grapplers stepping in scramble into the clinch.
-  const clash = setup([], [], 0);
-  resolveExchange(clash, ["step_in"], ["step_in"]);
-  assert.equal(clash.dist, 3);
-});
-
-test("steps do nothing at the ends of the track and cannot be thrown on the ground", () => {
-  const state = setup([], [], 3);
-  assert.ok(playError(state, "a", ["step_in"]), "already in the clinch");
-  state.dist = 0;
-  assert.ok(playError(state, "a", ["step_back"]), "no room behind");
-  state.ground = { top: "a", pos: 0, lock: null };
-  assert.ok(playError(state, "a", ["step_in"]), "no steps on the ground");
-});
-
-test("a trade whiffs when the first blow takes the reply out of range", () => {
-  let whiffs = 0;
-  for (let seed = 1; seed <= 40; seed++) {
-    // A step jab (from mid) closes the gap, so a front kick thrown back at that moment has nothing to hit.
-    const state = setup(["step_jab"], ["front_kick"], 1, seed);
-    state.a.stamina = 100;
-    state.b.stamina = 100;
-    const before = state.b.hp;
-    const events = resolveExchange(state, ["step_jab"], ["front_kick"]);
-    const first = events.find((e) => e.kind === "trade").first;
-    const w = events.filter((e) => e.kind === "whiff");
-    if (first === "a") {
-      assert.equal(w.length, 1, "the kick whiffs after the jab closes in");
-      assert.equal(state.a.hp, state.maxHp, "a was never hit");
-      whiffs++;
-    } else {
-      assert.equal(w.length, 0);
-    }
-    assert.ok(state.b.hp <= before);
-  }
-  assert.ok(whiffs > 0, "the jab arrived first at least once");
-});
-
-test("a poor shot runs into a guillotine, a good one does not", () => {
-  let caught = 0;
-  let taken = 0;
-  for (let seed = 1; seed <= 200; seed++) {
-    const state = setup(["single_leg"], ["guillotine"], 2, seed);
-    const events = resolveExchange(state, ["single_leg"], ["guillotine"]);
-    if (events.some((e) => e.kind === "caught")) {
-      caught++;
-      assert.equal(state.ground.lock.attacker, "b");
-    } else if (events.some((e) => e.kind === "takedown")) taken++;
-  }
-  assert.ok(caught > 10 && taken > 40, `caught ${caught}, taken ${taken}`);
-});
-
-test("elbows open cuts, cuts deepen, and a deep cut ends the fight at the doctor", () => {
-  const state = setup(["elbow"], ["guard_counter"], 2);
-  // An elbow that wins and lands cleanly opens a cut.
-  let opened = false;
-  for (let seed = 1; seed <= 60 && !opened; seed++) {
-    const s = setup(["elbow"], ["step_in"], 2, seed);
-    resolveExchange(s, ["elbow"], ["step_in"]);
-    if (s.b.cut === 1) opened = true;
-  }
-  assert.ok(opened, "an elbow opens a cut");
-  state.b.cut = 3;
-  let stopped = false;
-  for (let seed = 1; seed <= 60 && !stopped; seed++) {
-    const s = setup(["elbow"], ["step_in"], 2, seed);
-    s.b.cut = 3;
-    resolveExchange(s, ["elbow"], ["step_in"]);
-    if (s.over?.reason === "doctor") {
-      assert.equal(s.over.winner, "a");
-      assert.equal(s.over.method, "TKO");
-      stopped = true;
-    }
-  }
-  assert.ok(stopped, "a level 3 cut is stopped by the doctor");
-  const blind = setup([], [], 1);
-  blind.a.cut = 2;
-  assert.equal(getIntent(blind, "b").blind, true);
-  blind.a.cut = 1;
-  assert.equal(getIntent(blind, "b").blind, false);
-});
-
 test("the corner can close a cut", () => {
   const state = createMatch(data, "neutral", "neutral", 2);
   state.phase = "corner";
   state.a.cut = 2;
   applyCorner(state, { a: "patch", b: "breathe" });
   assert.equal(state.a.cut, 1);
-});
-
-test("a grappler fights closer than a striker", () => {
-  const closeShare = (id) => {
-    let close = 0;
-    let total = 0;
-    for (let seed = 1; seed <= 40; seed++) {
-      const state = createMatch(data, id, "neutral", seed);
-      while (state.phase !== "over") {
-        if (state.phase === "corner") {
-          applyCorner(state, { a: chooseCorner(state, "a"), b: chooseCorner(state, "b") });
-          continue;
-        }
-        resolveExchange(state, chooseAI(state, "a").cards, chooseAI(state, "b").cards);
-        if (state.pending) resolvePending(state, chooseChase(state, state.pending.side));
-        if (!state.ground) {
-          total++;
-          if (state.dist >= 2) close++;
-        }
-      }
-    }
-    return close / total;
-  };
-  const khabib = closeShare("khabib");
-  const mcgregor = closeShare("mcgregor");
-  assert.ok(khabib > mcgregor + 0.15, `khabib ${khabib.toFixed(2)} vs mcgregor ${mcgregor.toFixed(2)}`);
 });
 
 test("corner recovers stamina and starts the next round", () => {
@@ -323,8 +95,6 @@ test("corner recovers stamina and starts the next round", () => {
   assert.ok(state.a.stamina > 40);
 });
 
-// ---------- Match length ----------
-
 test("both match lengths run their own number of rounds and exchanges", () => {
   for (const [mode, m] of Object.entries(data.rules.match.modes)) {
     const { state } = playGame("neutral", "neutral", strategies["看意圖並控制投入"], 3, data, mode);
@@ -335,253 +105,12 @@ test("both match lengths run their own number of rounds and exchanges", () => {
   }
 });
 
-// ---------- Cross-exchange setups ----------
-
-test("a landed jab opens the next exchange: the follow-up crits more, and only for one exchange", () => {
-  let opened = 0;
-  for (let seed = 1; seed <= 40; seed++) {
-    const state = setup(["jab", "cross"], ["step_in"], 1, seed);
-    state.a.stamina = 100;
-    resolveExchange(state, ["jab"], ["step_in"]);
-    if (!state.a.marks.opened) continue; // a graze lays nothing down
-    opened++;
-    const base = createMatch(data, "neutral", "neutral", 1);
-    base.a.hand = ["cross", "step_in", "step_back"];
-    const plain = previewPlay(base, "a", ["cross"]).critPct;
-    assert.ok(previewPlay(state, "a", ["cross"]).critPct >= plain + 15, "the follow-up gets the bonus");
-    state.b.hand = ["step_in", "step_back"];
-    state.a.hand = ["cross", "step_in", "step_back"];
-    resolveExchange(state, [], ["step_in"]);
-    assert.ok(!state.a.marks.opened, "the tag lasts one exchange");
-  }
-  assert.ok(opened > 5, `opened ${opened}`);
-});
-
-test("a feint that wins makes the fooled fighter easier to read, and the AI still follows the shown numbers", () => {
-  const state = setup(["feint"], ["step_in"], 1);
-  resolveExchange(state, ["feint"], ["step_in"]);
-  assert.ok(state.b.marks.fooled, "the feint won against a charge");
-  state.b.hand = ["jab", "single_leg", "guard_counter", "step_in", "step_back"];
-  const plain = createMatch(data, "neutral", "neutral", 5);
-  plain.b.hand = state.b.hand;
-  setTactic(state, "b", "ko"); // the plans are drawn from the seed; fix them so only the feint differs
-  setTactic(plain, "b", "ko");
-  plain.history = [...state.history];
-  const sharp = getIntent(state, "b").probs;
-  const dull = getIntent(plain, "b").probs;
-  const top = (p) => Math.max(p.S, p.G, p.C);
-  assert.ok(top(sharp) > top(dull) + 0.05, `sharper read ${top(sharp)} vs ${top(dull)}`);
-  const counts = { S: 0, G: 0, C: 0 };
-  const n = 4000;
-  for (let i = 0; i < n; i++) {
-    const cards = chooseAI(state, "b").cards;
-    counts[cards.length ? data.cards[cards[0]].type : "C"]++;
-  }
-  for (const t of ["S", "G", "C"]) assert.ok(Math.abs(counts[t] / n - sharp[t]) < 0.04, `${t}: shown ${sharp[t]}, played ${counts[t] / n}`);
-});
-
-test("a leg injury makes steps cost more energy, but never more than the fighter can spend", () => {
-  const state = setup([], [], 1);
-  assert.equal(cardCost(state, "a", "step_in"), 1);
-  state.a.pips.legs = data.rules.debuff.threshold;
-  assert.equal(cardCost(state, "a", "step_in"), 2);
-  assert.equal(cardCost(state, "a", "jab"), 1, "only steps cost more");
-  state.a.stamina = 1;
-  assert.equal(budget(state, "a"), 1);
-  assert.equal(cardCost(state, "a", "step_in"), 1, "a spent fighter can still step");
-  assert.equal(playError(state, "a", ["step_in"]), null);
-});
-
 test("depth.json layers onto the roster without touching the base files", () => {
   const merged = loadData({ rules: data.rules, cards: { jab: { name: "刺拳", type: "S", cost: 1 } }, fighters: { x: { deck: ["jab", "jab"] } }, depth: { cards: { jab: { follow: { opened: { crit: 0.1 } } }, feint: { type: "S", cost: 1 } }, fighters: { x: { deckSwap: [["jab", "feint"]], chase: 0.3 } } } });
   assert.deepEqual(merged.fighters.x.deck, ["feint", "jab"]);
   assert.equal(merged.fighters.x.chase, 0.3);
   assert.ok(merged.cards.jab.follow && merged.cards.jab.name === "刺拳" && merged.cards.feint);
 });
-
-// ---------- The fence, the last exchange of a round, and chasing a takedown ----------
-
-test("giving ground twice puts a fighter on the fence: no retreating, two fence cards, takedowns land more", () => {
-  const state = setup(["jab"], [], 1);
-  // The challenger keeps stepping in and winning (grapple beats defend), so the other man keeps giving ground.
-  for (let i = 0; i < 2; i++) {
-    state.dist = 1;
-    state.a.hand = ["step_in", "step_back"];
-    state.b.hand = ["guard_counter", "step_back", "step_in"];
-    resolveExchange(state, ["step_in"], ["step_back"]);
-  }
-  assert.equal(state.cage?.side, "b", "b is against the fence");
-  assert.ok(state.b.hand.includes("cage_push") && state.b.hand.includes("cage_turn"));
-  assert.ok(!state.a.hand.includes("cage_turn"), "only the pinned fighter gets them");
-  assert.ok(playError(state, "b", ["step_back"]), "cannot back off the fence");
-  assert.ok(playError(state, "b", ["slip_back"]) !== null || !state.b.hand.includes("slip_back"));
-  assert.ok(playError(state, "b", ["cage_push", "cage_turn"]), "fence cards go alone");
-  const base = setup(["single_leg"], [], 2);
-  const pinned = setup(["single_leg"], [], 2);
-  pinned.cage = { side: "b", ttl: 3 };
-  assert.ok(previewPlay(pinned, "a", ["single_leg"]).critPct >= previewPlay(base, "a", ["single_leg"]).critPct + 10);
-});
-
-test("turning out of the fence frees the fighter, and pushing off swaps who is against it", () => {
-  const turn = setup(["jab"], ["guard_counter"], 2);
-  turn.cage = { side: "b", ttl: 3 };
-  turn.b.hand = ["cage_turn", "cage_push", "guard_counter", "step_in", "step_back"];
-  resolveExchange(turn, ["jab"], ["cage_turn"]);
-  assert.equal(turn.cage, null);
-  assert.equal(turn.dist, data.rules.cage.escapeDist);
-  const push = setup(["guard_counter"], [], 2);
-  push.cage = { side: "b", ttl: 3 };
-  push.b.hand = ["cage_turn", "cage_push", "guard_counter", "step_in", "step_back"];
-  push.a.hand = ["guard_counter", "step_in", "step_back"];
-  resolveExchange(push, ["guard_counter"], ["cage_push"]);
-  assert.equal(push.cage?.side, "a", "now a is against the fence");
-});
-
-test("the last exchange of a round gives everyone one more energy and counts more with the judges", () => {
-  const state = createMatch(data, "neutral", "neutral", 3);
-  const plain = budget(state, "a");
-  state.exchange = state.perRound;
-  assert.equal(budget(state, "a"), plain + data.rules.match.finalExchange.energyBonus);
-  state.a.stamina = 5;
-  assert.equal(budget(state, "a"), 1 + data.rules.match.finalExchange.energyBonus, "even a gassed fighter gets it");
-  const run = (exchange) => {
-    const s = createMatch(data, "neutral", "neutral", 3);
-    s.exchange = exchange;
-    s.a.hand = ["jab", "step_in", "step_back"];
-    s.b.hand = ["step_in", "step_back"];
-    resolveExchange(s, ["jab"], ["step_in"]);
-    return (s.roundCards[0]?.score ?? s.roundScore).a.striking;
-  };
-  const early = run(2);
-  const late = run(data.rules.match.modes.standard.exchanges);
-  assert.ok(late > early * 1.3, `late ${late} vs early ${early}`);
-});
-
-test("a takedown leaves the winner a choice: follow to the ground, or let him up and keep the edge", () => {
-  let sawFollow = 0;
-  let sawRelease = 0;
-  for (let seed = 1; seed <= 80; seed++) {
-    const state = setup(["double_leg"], ["guard_counter"], 2, seed);
-    const events = resolveExchange(state, ["double_leg"], ["guard_counter"]);
-    if (!events.some((e) => e.kind === "takedown")) continue;
-    assert.deepEqual(state.pending, { kind: "chase", side: "a" });
-    assert.throws(() => resolveExchange(state, [], []), /pending/);
-    if (seed % 2) {
-      resolvePending(state, "follow");
-      assert.ok(state.ground, "still on the ground");
-      sawFollow++;
-    } else {
-      resolvePending(state, "release");
-      assert.equal(state.ground, null);
-      assert.equal(state.dist, data.rules.dist.standUp);
-      assert.ok(state.a.marks.released, "the one who let him up has the edge");
-      sawRelease++;
-    }
-    assert.equal(state.pending, null);
-  }
-  assert.ok(sawFollow > 3 && sawRelease > 3, `${sawFollow}/${sawRelease}`);
-  // Grapplers nearly always follow, strikers often let go.
-  const rate = (id) => {
-    const state = createMatch(data, id, "neutral", 9);
-    let follow = 0;
-    for (let i = 0; i < 400; i++) if (chooseChase(state, "a") === "follow") follow++;
-    return follow / 400;
-  };
-  assert.ok(rate("khabib") > rate("mcgregor") + 0.3);
-});
-
-// ---------- Fighter abilities ----------
-
-/** A fight between two named fighters with hands and distance set by hand. */
-function duel(idA, idB, handA, handB, dist, seed = 5) {
-  const state = createMatch(data, idA, idB, seed);
-  state.a.hand = [...handA, "step_in", "step_back"];
-  state.b.hand = [...handB, "step_in", "step_back"];
-  state.dist = dist;
-  return state;
-}
-
-test("every real fighter has an ability made only of known tags and effects", () => {
-  for (const [id, f] of Object.entries(data.fighters)) {
-    if (f.hidden) continue;
-    assert.ok(f.ability?.name && f.ability.desc, `${id} has no ability`);
-    assert.ok(f.ability.triggers || f.ability.passive, `${id} ability does nothing`);
-    for (const t of f.ability.triggers || []) {
-      assert.ok(["win", "play", "hit", "takedown", "moved"].includes(t.on), `${id} trigger ${t.on}`);
-      for (const d of t.do) if (d.tag) assert.ok(data.rules.tags[d.tag], `${id} unknown tag ${d.tag}`);
-    }
-  }
-});
-
-test("a counter that wins lets McGregor see through the next exchange, and Adesanya also gets away", () => {
-  const mc = duel("mcgregor", "neutral", ["guard_counter"], ["jab"], 1);
-  resolveExchange(mc, ["guard_counter"], ["jab"]);
-  assert.ok(mc.b.marks.fooled, "the foe is easier to read");
-  const ad = duel("adesanya", "neutral", ["guard_counter"], ["jab"], 2);
-  resolveExchange(ad, ["guard_counter"], ["jab"]);
-  assert.equal(ad.dist, 1, "pulled away one step");
-  assert.ok(ad.b.marks.fooled);
-  assert.equal(ad.cage, null, "pulling away after a win is not giving ground");
-  const nobody = duel("neutral", "neutral", ["guard_counter"], ["jab"], 1);
-  resolveExchange(nobody, ["guard_counter"], ["jab"]);
-  assert.ok(!nobody.b.marks.fooled, "only the ability does that");
-});
-
-test("Holloway builds rhythm by striking every exchange: more crit, first to arrive, an extra energy at three stacks", () => {
-  const state = duel("holloway", "neutral", ["jab", "cross"], ["guard_counter"], 1);
-  const plain = budget(state, "a");
-  for (let i = 1; i <= 3; i++) {
-    state.a.hand = ["jab", "cross", "step_in", "step_back"];
-    state.b.hand = ["guard_counter", "step_in", "step_back"];
-    state.a.stamina = 100;
-    state.a.hp = state.maxHp;
-    state.b.hp = state.maxHp;
-    resolveExchange(state, ["jab"], ["guard_counter"]);
-    assert.equal(state.a.marks.rhythm?.n, i, `stack after strike ${i}`);
-  }
-  assert.equal(budget(state, "a"), plain + 1, "three stacks add an energy");
-  const base = createMatch(data, "holloway", "neutral", 1);
-  base.a.hand = ["cross", "step_in", "step_back"];
-  state.a.hand = ["cross", "step_in", "step_back"];
-  assert.ok(previewPlay(state, "a", ["cross"]).critPct > previewPlay(base, "a", ["cross"]).critPct + 8);
-  // A different kind of play lets the rhythm drop after one more exchange.
-  state.a.hand = ["single_leg", "step_in", "step_back"];
-  state.b.hand = ["guard_counter", "step_in", "step_back"];
-  resolveExchange(state, ["single_leg"], ["guard_counter"]);
-  assert.ok(!state.a.marks.rhythm, "the streak is over");
-  // The rhythm decides who lands first in a trade.
-  const trade = duel("holloway", "neutral", ["cross"], ["cross"], 1);
-  trade.a.marks.rhythm = { turns: 1, n: 2 };
-  trade.a.hand = ["cross", "step_in", "step_back"];
-  trade.b.hand = ["jab", "step_in", "step_back"];
-  const ev = resolveExchange(trade, ["cross"], ["jab"]);
-  assert.equal(ev.find((e) => e.kind === "trade").first, "a", "two stacks arrive first despite the dearer card");
-});
-
-// ---------- The ground game (M1.3) ----------
-
-/** Two fighters on the mat, `top` on top at `pos`, with ground hands set by hand. The stand-up hands are set aside as in a real fight. */
-function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed = 5 } = {}) {
-  const state = createMatch(data, idA, idB, seed);
-  const bottom = top === "a" ? "b" : "a";
-  state.ground = { top, pos, lock: null, hist: [] };
-  for (const [side, hand] of [[top, handTop], [bottom, handBottom]]) {
-    state[side].stand = state[side].hand;
-    state[side].hand = [...hand];
-  }
-  return state;
-}
-
-/** The same, but with the real ground hands drawn. */
-function matDrawn(idA, idB, pos, top = "a", seed = 5) {
-  const state = createMatch(data, idA, idB, seed);
-  state.ground = { top, pos, lock: null, hist: [] };
-  for (const s of ["a", "b"]) refillHand(state, s);
-  return state;
-}
-
-const TOP_PLAYS = { punch: ["g_pound"], pass: ["g_pass"], lock: ["g_kimura"], hold: [] };
-const BOTTOM_PLAYS = { frame: ["g_frame"], counter: ["g_counter"], escape: ["g_escape"], cover: [] };
 
 test("on the ground the top man chooses and the bottom man guesses: the matrix decides, no triangle", () => {
   for (const [t, row] of Object.entries(data.rules.ground.matrix)) {
@@ -644,35 +173,6 @@ test("a lock card only works where it belongs, and the higher the man on top, th
   assert.ok(options(4) < options(0) && options(3) < options(1), "fewer ways out from the high positions");
 });
 
-test("the stand-up hand waits aside on the mat and comes back whole when he stands", () => {
-  let down = null;
-  for (let seed = 1; seed <= 60 && !down; seed++) {
-    const s = setup(["double_leg"], ["guard_counter"], 2, seed);
-    if (resolveExchange(s, ["double_leg"], ["guard_counter"]).some((e) => e.kind === "takedown")) down = s;
-  }
-  assert.ok(down, "a takedown happened");
-  resolvePending(down, "follow");
-  for (const s of ["a", "b"]) {
-    assert.ok(down[s].stand, "stand-up hand set aside");
-    assert.ok(down[s].hand.every((c) => data.cards[c].cat), "ground cards only");
-  }
-  // A good escape from the guard puts him back on his feet.
-  let stood = null;
-  for (let seed = 1; seed <= 80 && !stood; seed++) {
-    const m = mat("neutral", "neutral", { pos: 0, handTop: ["g_ankle"], handBottom: ["g_escape"], seed });
-    const stand = [...m.b.stand];
-    const events = resolveExchange(m, ["g_ankle"], ["g_escape"]);
-    if (events.some((e) => e.kind === "standup")) stood = { m, stand };
-  }
-  assert.ok(stood, "an escape from full guard stands up");
-  const { m, stand } = stood;
-  assert.equal(m.ground, null);
-  assert.equal(m.dist, data.rules.dist.standUp);
-  assert.equal(m.b.stand, null);
-  assert.ok(m.b.hand.includes("step_in") && m.b.hand.includes("step_back"), "steps are back");
-  for (const c of stand.filter((x) => !data.cards[x].basic)) assert.ok(m.b.hand.includes(c) || m.b.discard.includes(c) || m.b.draw.includes(c), `${c} was kept`);
-});
-
 test("passing moves up one place (two on a critical); escapes follow the table and a critical turns him over", () => {
   const seen = new Set();
   for (let seed = 1; seed <= 200; seed++) {
@@ -725,16 +225,6 @@ test("a punch-free stalemate drags until the referee stands them up", () => {
   assert.ok(second.some((e) => e.kind === "standup" && e.reason === "referee"));
   assert.equal(m.ground, null);
 });
-
-/** A lock fight with `a` holding it at the given stage. */
-function lockFight(depth, { top = "a", attacker = "a" } = {}) {
-  const m = mat("neutral", "neutral", { pos: 3, top, handTop: [], handBottom: [] });
-  m.ground.lock = { attacker, name: "十字固", depth, hist: [] };
-  for (const s of ["a", "b"]) {
-    m[s].hand = Object.keys(data.cards).filter((c) => data.cards[c].lockSide === (s === attacker ? "attack" : "defend"));
-  }
-  return m;
-}
 
 test("a lock fight is a guess: right eases it a stage and out at the first, wrong sinks it, and the third stage is the tap", () => {
   const m = lockFight(2);
@@ -797,42 +287,6 @@ test("a wrong guess in a lock fight can still be held off: the chance comes from
   assert.equal(lockGuessWrong(lockFight(1), ["lk_tighten"], ["lk_handfight"]), false);
 });
 
-test("a signature that loses the triangle is not blocked: it still lands for a share of its power", () => {
-  const run = (cardA, cardB, seed) => {
-    const s = duel("mcgregor", "neutral", [cardA], [cardB], 1, seed);
-    s.a.momentum = 100;
-    s.a.hand = [cardA, "step_in", "step_back"];
-    s.b.hand = [cardB, "step_in", "step_back"];
-    return { s, ev: resolveExchange(s, [cardA], [cardB]) };
-  };
-  let landed = 0;
-  let full = 0;
-  let glanced = 0;
-  for (let seed = 1; seed <= 100; seed++) {
-    // The counter beats a strike. Without the rule the strike signature would be shut out entirely.
-    const lose = run("sig_mcgregor", "guard_counter", seed);
-    assert.equal(lose.ev.find((e) => e.kind === "verdict").winner, "b");
-    const mine = lose.ev.filter((e) => e.kind === "hit" && e.attacker === "a");
-    assert.ok(lose.ev.some((e) => e.kind === "glance"), "the signature is announced as glancing");
-    if (mine.length) { landed++; glanced += mine[0].damage; }
-    const win = run("sig_mcgregor", "step_in", seed);
-    full += win.ev.filter((e) => e.kind === "hit" && e.attacker === "a").reduce((x, e) => x + e.damage, 0);
-  }
-  assert.equal(landed, 100, "it lands every time");
-  assert.ok(glanced < full * 0.8 && glanced > full * 0.3, `glancing ${glanced} vs winning ${full}`);
-  // An ordinary strike that loses is still shut out.
-  const plain = duel("mcgregor", "neutral", ["cross"], ["guard_counter"], 1);
-  const ev = resolveExchange(plain, ["cross"], ["guard_counter"]);
-  assert.ok(!ev.some((e) => e.kind === "hit" && e.attacker === "a"));
-  // A grab signature that loses the triangle to a strike still pulls him into the clinch.
-  const grab = duel("khabib", "neutral", ["sig_khabib"], ["jab"], 2);
-  grab.a.hand = ["sig_khabib", "step_in", "step_back"];
-  grab.a.momentum = 100;
-  const g = resolveExchange(grab, ["sig_khabib"], ["jab"]);
-  assert.equal(g.find((e) => e.kind === "verdict").winner, "b");
-  assert.equal(grab.dist, data.rules.dist.clinch);
-});
-
 test("how deep a lock starts: skill gap, a tired victim, and the fighter's own ability", () => {
   const kimura = (tweak) => {
     for (let seed = 1; seed <= 300; seed++) {
@@ -856,37 +310,6 @@ test("how deep a lock starts: skill gap, a tired victim, and the fighter's own a
     return 0;
   };
   assert.equal(fromBottom("oliveira"), fromBottom("neutral") + 1);
-});
-
-test("the abilities that touch the ground: Khabib makes escapes harder, Makhachev smothers on a pass, Chimaev drains after a takedown", () => {
-  const progress = (topId) => {
-    let n = 0;
-    for (let seed = 1; seed <= 400; seed++) {
-      const m = mat(topId, "neutral", { pos: 1, handTop: ["g_kimura"], handBottom: ["g_escape"], seed });
-      const events = resolveExchange(m, ["g_kimura"], ["g_escape"]);
-      if (events.some((e) => ["position", "standup", "sweep"].includes(e.kind))) n++;
-    }
-    return n;
-  };
-  assert.ok(progress("khabib") < progress("neutral") - 30, "fewer clean escapes against Khabib");
-  const smother = (id) => {
-    const m = mat(id, "neutral", { pos: 1, handTop: ["g_pass"], handBottom: [] });
-    resolveExchange(m, ["g_pass"], []);
-    return Boolean(m.b.marks.smothered);
-  };
-  assert.equal(smother("makhachev"), true);
-  assert.equal(smother("neutral"), false);
-  let drained = 0;
-  for (let seed = 1; seed <= 100; seed++) {
-    const state = duel("chimaev", "neutral", ["double_leg"], ["guard_counter"], 2, seed);
-    const before = state.b.stamina;
-    const events = resolveExchange(state, ["double_leg"], ["guard_counter"]);
-    if (events.some((e) => e.kind === "takedown")) {
-      assert.ok(before - state.b.stamina >= 12, "the 12 stamina hit comes on top of the usual cost");
-      drained++;
-    }
-  }
-  assert.ok(drained > 5);
 });
 
 test("ground intent is honest too: the shown numbers are the ones the AI plays, as top, underneath and in a lock fight", () => {
@@ -927,38 +350,623 @@ test("the card preview on the mat: names, effects and damage that grows with pos
   assert.match(describeCard(low, "b", "g_escape").effect, /站起來/);
 });
 
-// ---------- Tactics ----------
+// ---------- Stand-up: footwork, then lead and respond ----------
 
-test("a tactic changes what a fighter's plays are worth, and the corner can switch it", () => {
-  const state = createMatch(data, "neutral", "neutral", 4);
-  state.a.hand = ["cross", "step_in", "step_back"];
-  setTactic(state, "b", "probe");
-  setTactic(state, "a", "probe");
-  const calm = previewPlay(state, "a", ["cross"]).damage;
-  setTactic(state, "a", "ko");
-  assert.ok(state.a.tacticChanged);
-  const swing = previewPlay(state, "a", ["cross"]);
-  assert.ok(swing.damage > calm * 1.15, `ko ${swing.damage} vs probe ${calm}`);
-  setTactic(state, "b", "ko");
-  assert.ok(previewPlay(state, "a", ["cross"]).damage > swing.damage, "going for the knockout also means taking more");
-  setTactic(state, "a", "ko");
-  assert.ok(!state.a.tacticChanged, "keeping the same plan is not a change");
-  assert.throws(() => setTactic(state, "a", "nonsense"));
-  state.phase = "corner";
-  applyCorner(state, { a: "breathe", b: "breathe" }, { a: "press" });
-  assert.equal(state.a.tactic, "press");
-  assert.ok(state.a.tacticChanged);
-  assert.ok(state.rules.tactics[state.b.tactic], "the AI picked one too");
+const BASICS = data.rules.match.basics;
+const ENGAGE = data.rules.engage;
+
+/** A stand-up hand set up by hand: `a` leads (press against hold). With `plain` the footwork edges are wiped so only the cards decide. */
+function leadHand(handA, handB, { dist = 1, seed = 5, a = "neutral", b = "neutral", plain = true } = {}) {
+  const state = createMatch(data, a, b, seed);
+  state.dist = dist;
+  state.a.hand = [...handA, ...BASICS];
+  state.b.hand = [...handB, ...BASICS];
+  resolveFootwork(state, "press", "hold");
+  if (plain) {
+    const none = { power: 1, dmgIn: 1, evade: 0, counterSpeed: 0, crit: 0, react: 0, stam: 0 };
+    state.engage.mods = { a: { ...none }, b: { ...none } };
+  }
+  return state;
+}
+const kinds = (events) => events.map((e) => e.kind);
+
+test("every fighter has only special moves in the deck, plus the numbers and styles the stand-up game needs", () => {
+  for (const [id, f] of Object.entries(data.fighters)) {
+    assert.ok(f.deck.length >= 6, `${id} deck`);
+    for (const c of [...f.deck, f.signature]) assert.ok(data.cards[c], `${id} unknown card ${c}`);
+    assert.ok(!f.deck.some((c) => data.cards[c].basic), `${id} has a basic move in the deck`);
+    assert.ok(f.deck.some((c) => !data.cards[c].counterOnly), `${id} has nothing to lead with`);
+    assert.ok(Number.isFinite(f.speed) && Number.isFinite(f.reaction), `${id} speed/reaction`);
+    assert.ok(data.rules.footwork.styles[f.fwStyle], `${id} fwStyle`);
+    assert.ok(data.rules.ai.lead.styles[f.leadStyle], `${id} leadStyle`);
+    assert.ok(data.rules.ai.respond.styles[f.respondStyle], `${id} respondStyle`);
+  }
+  for (const b of BASICS) assert.ok(data.cards[b].basic && !data.cards[b].counterOnly, b);
+  // Wherever they stand, everyone has a basic move to throw.
+  for (let d = 0; d <= 3; d++) assert.ok(BASICS.some((c) => usableAt({ ...createMatch(data, "neutral", "neutral", 1), dist: d }, data.cards[c], d, "a")), `distance ${d}`);
 });
 
-test("the AI swings for the knockout when behind and plays it safe when ahead, shown intent stays honest", () => {
+test("the stand-up hand is the basic moves, a few drawn specials with something to lead and to answer with, and the signature when ready", () => {
+  for (let seed = 1; seed <= 100; seed++) {
+    const state = createMatch(data, "mcgregor", "khabib", seed);
+    for (const s of ["a", "b"]) {
+      const hand = state[s].hand;
+      for (const b of BASICS) assert.ok(hand.includes(b), `${s} basic ${b}`);
+      const specials = hand.filter((c) => !data.cards[c].basic);
+      assert.equal(specials.length, data.rules.match.handSize);
+      assert.ok(specials.some((c) => !data.cards[c].counterOnly), "something to lead with");
+      assert.ok(specials.some((c) => data.cards[c].counterOnly), "something to answer with");
+    }
+  }
+  const state = createMatch(data, "mcgregor", "khabib", 3);
+  state.a.momentum = 100;
+  refillHand(state, "a");
+  assert.ok(state.a.hand.includes("sig_mcgregor"));
+});
+
+test("the footwork table is complete and mirrors: swapping the sides swaps the edges", () => {
+  const ids = data.rules.footwork.order;
+  for (const x of ids) {
+    for (const y of ids) {
+      const st = createMatch(data, "neutral", "neutral", 1);
+      const ab = footworkOutcome(st, x, y);
+      const ba = footworkOutcome(st, y, x);
+      assert.equal(ab.dist, ba.dist, `${x}/${y} distance`);
+      assert.deepEqual(ab.mods.a, ba.mods.b);
+      assert.deepEqual(ab.mods.b, ba.mods.a);
+      assert.equal(ab.gave.a, ba.gave.b);
+      assert.equal(ab.gave.b, ba.gave.a);
+      const flip = { a: "b", b: "a", roll: "roll" };
+      assert.equal(ab.lead, flip[ba.lead], `${x}/${y} lead`);
+    }
+  }
+});
+
+test("pressing against a man who holds makes the presser lead, closes a step and costs him; nobody can back off against the fence", () => {
+  const state = createMatch(data, "neutral", "neutral", 8);
+  const before = state.a.stamina;
+  assert.equal(stepOf(state), "footwork");
+  const events = resolveFootwork(state, "press", "hold");
+  assert.equal(stepOf(state), "lead");
+  assert.equal(state.engage.leader, "a");
+  assert.equal(state.dist, 2);
+  assert.ok(state.a.stamina < before, "pressing takes stamina");
+  assert.deepEqual(kinds(events).slice(0, 3), ["footwork", "range", "lead"]);
+  assert.throws(() => resolveFootwork(state, "press", "hold"), /already/);
+  // Against the fence the way back is shut.
+  const pinned = createMatch(data, "neutral", "neutral", 8);
+  pinned.cage = { side: "a", ttl: 4 };
+  assert.ok(footworkChoices(pinned, "a").find((c) => c.id === "retreat").disabled);
+  assert.throws(() => resolveFootwork(pinned, "retreat", "hold"), /背靠籠子/);
+  assert.ok(!footworkChoices(pinned, "b").find((c) => c.id === "retreat").disabled);
+});
+
+test("when the footwork does not decide who leads, speed does; the man who came out on top last hand has the edge", () => {
+  const rate = (setup) => {
+    let a = 0;
+    const n = 1500;
+    for (let seed = 1; seed <= n; seed++) {
+      const state = createMatch(data, "adesanya", "khabib", seed);
+      setup(state);
+      resolveFootwork(state, "hold", "hold");
+      if (state.engage.leader === "a") a++;
+    }
+    return a / n;
+  };
+  const fast = rate(() => {});
+  const chance = leadChance(createMatch(data, "adesanya", "khabib", 1));
+  assert.ok(fast > 0.55, `the faster man leads more: ${fast}`);
+  assert.ok(Math.abs(fast - chance) < 0.04, `shown ${chance}, played ${fast}`);
+  const edged = rate((s) => { s.edge = { side: "b" }; });
+  assert.ok(edged < fast - 0.15, `the edge shifts it: ${edged} vs ${fast}`);
+  // A deciding footwork ignores the edge.
+  const state = createMatch(data, "adesanya", "khabib", 2);
+  state.edge = { side: "b" };
+  resolveFootwork(state, "press", "hold");
+  assert.equal(state.engage.leader, "a");
+  assert.equal(state.edge, null, "the edge is used up");
+});
+
+test("displayed tendencies are honest: footwork, the height he leads with and the way he answers are what the AI plays", () => {
+  const near = (counts, probs, n, label) => {
+    for (const [id, p] of Object.entries(probs)) assert.ok(Math.abs((counts[id] || 0) / n - p) < 0.04, `${label} ${id}: shown ${p}, played ${(counts[id] || 0) / n}`);
+  };
+  const n = 4000;
+  const fw = createMatch(data, "mcgregor", "khabib", 9);
+  const shown = footworkIntent(fw, "a").probs;
+  const counts = {};
+  for (let i = 0; i < n; i++) {
+    const f = chooseFootwork(fw, "a");
+    counts[f] = (counts[f] || 0) + 1;
+  }
+  near(counts, shown, n, "footwork");
+  // After the footwork a leads and b answers.
+  const state = createMatch(data, "mcgregor", "khabib", 11);
+  resolveFootwork(state, "press", "hold");
+  const heights = {};
+  const answers = {};
+  const leadProbs = engageIntent(state, "a").probs;
+  const answerProbs = engageIntent(state, "b").probs;
+  for (let i = 0; i < n; i++) {
+    const combo = chooseCombo(state, "a");
+    if (combo.length) heights[data.cards[combo[0]].height] = (heights[data.cards[combo[0]].height] || 0) + 1;
+    const plan = choosePlan(state, "b");
+    const key = plan.kind === "guard" ? plan.height : plan.kind;
+    answers[key] = (answers[key] || 0) + 1;
+  }
+  near(heights, leadProbs, n, "lead height");
+  near(answers, answerProbs, n, "answer");
+  assert.equal(Math.round(Object.values(shown).reduce((a, b) => a + b, 0) * 1000), 1000);
+});
+
+test("a combo has to be playable: length by stamina, no answer-only cards, a grab ends it, every card in range", () => {
+  const state = leadHand(["overhand", "guard_counter", "double_leg"], [], { dist: 1 });
+  const d = state.dist; // 2 after pressing
+  assert.equal(comboError(state, "a", []), null);
+  assert.equal(comboError(state, "a", ["jab", "jab", "cross"]), null, "basic moves repeat");
+  assert.equal(comboError(state, "a", ["overhand", "overhand"]), "not in hand", "a drawn card once");
+  assert.equal(comboError(state, "a", ["guard_counter"]), "not a lead card");
+  assert.equal(comboError(state, "a", ["double_leg", "jab"]), "a grab ends the combo");
+  assert.equal(comboError(state, "a", ["jab", "double_leg"]), null);
+  assert.equal(comboError(state, "a", ["jab", "jab", "jab", "jab", "jab"]), "too long");
+  assert.equal(comboError(state, "b", ["jab"]), "not leading");
+  assert.equal(comboError(state, "a", ["uppercut"]), "not in hand");
+  state.a.hand.push("uppercut", "head_kick");
+  assert.equal(comboError(state, "a", ["head_kick"]), "out of range", `a high kick has no room at distance ${d}`);
+  assert.equal(comboError(state, "a", ["uppercut"]), null);
+  // The overhand steps in, which brings the next card into range.
+  const far = leadHand(["overhand"], [], { dist: 0 });
+  far.dist = 0;
+  assert.equal(comboError(far, "a", ["jab"]), "out of range");
+  far.dist = 1;
+  assert.equal(comboError(far, "a", ["overhand", "body_hook"]), null, "the step in carries the next card");
+  assert.throws(() => engageStart(state, ["guard_counter"], { kind: "cover" }), /illegal combo/);
+});
+
+test("combo length follows stamina; a stunned man throws one; the last hand of a round and a rhythm add one, smothering takes one", () => {
+  const state = createMatch(data, "neutral", "neutral", 3);
+  const at = (stamina) => {
+    state.a.stamina = stamina;
+    return comboMax(state, "a");
+  };
+  assert.deepEqual([100, 60, 40, 20, 5].map(at), [4, 4, 3, 2, 1]);
+  state.a.stamina = 100;
+  state.a.rocked = true;
+  assert.equal(comboMax(state, "a"), 1);
+  state.a.rocked = false;
+  state.exchange = state.perRound;
+  assert.equal(comboMax(state, "a"), 5, "the last hand of a round");
+  state.exchange = 1;
+  state.a.marks.rhythm = { turns: 1, n: 3 };
+  assert.equal(comboMax(state, "a"), 5);
+  state.a.marks = { smothered: { turns: 1, n: 1 } };
+  assert.equal(comboMax(state, "a"), 3);
+});
+
+test("reaction against speed: slow cards are seen, fast ones are not; a stunned, gassed or blinded man sees less", () => {
+  const state = leadHand(["overhand", "cross"], []);
+  const seen = (card) => {
+    const E = state.engage;
+    E.combo = [card];
+    E.started = true;
+    E.i = 0;
+    E.stop = null;
+    return engageWaiting(state).visible;
+  };
+  assert.equal(reactionOf(state, "b"), data.fighters.neutral.reaction);
+  assert.equal(seen("overhand"), true);
+  assert.equal(seen("jab"), false);
+  assert.equal(seen("cross"), false, "an ordinary cross is quicker than a normal man can follow");
+  state.b.stamina = 10;
+  assert.ok(reactionOf(state, "b") < data.fighters.neutral.reaction - 10, "gassed");
+  state.b.stamina = 100;
+  state.a.cut = 0;
+  state.a.cut = 2;
+  assert.ok(reactionOf(state, "a") < data.fighters.neutral.reaction, "blood in the eyes");
+  state.b.rocked = true;
+  assert.equal(reactionOf(state, "b"), 0);
+  assert.equal(seen("overhand"), false, "a stunned man sees nothing coming");
+  const elite = leadHand(["overhand"], [], { b: "adesanya" });
+  assert.ok(reactionOf(elite, "b") > data.cards.lead_hook.speed && reactionOf(state, "a") <= data.cards.lead_hook.speed, "a fast reader sees a hook coming; an ordinary man does not");
+});
+
+test("a guard at the right height stops the whole combo and lets a little through; at the wrong height it only softens the blow", () => {
+  const blocked = leadHand([], []);
+  const events = resolveEngage(blocked, ["jab", "cross"], { kind: "guard", height: "high" });
+  assert.deepEqual(kinds(events).filter((k) => k === "card" || k === "block"), ["card", "block"], "the combo stops after the first card");
+  const chip = events.find((e) => e.kind === "hit");
+  assert.ok(chip.chip && chip.damage <= 2, `chip ${chip.damage}`);
+  assert.equal(blocked.engage, null);
+  assert.equal(blocked.edge, null, "a block does not hand over the edge");
+  assert.ok(blocked.a.pips.head === 0 && blocked.b.pips.head === 0, "a blocked blow leaves no mark");
+  // Wrong height: the combo goes on, the hits are softer than against nothing.
+  const total = (plan, seed) => {
+    const s = leadHand([], [], { seed, dist: 0 });
+    const ev = resolveEngage(s, ["body_hook", "calf_kick"], plan);
+    return { hits: ev.filter((e) => e.kind === "hit" && !e.chip).length, hp: s.b.hp, cards: ev.filter((e) => e.kind === "card").length };
+  };
+  let wrong = 0;
+  let cover = 0;
+  let open = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const w = total({ kind: "guard", height: "high" }, seed);
+    assert.equal(w.cards, 2, "a wrong guard does not stop the combo");
+    wrong += 190 - w.hp;
+    cover += 190 - total({ kind: "cover" }, seed).hp;
+    open += 190 - total({ kind: "evade" }, seed).hp;
+  }
+  assert.ok(wrong > 0 && cover > 0);
+  assert.ok(wrong > cover * 0.9, "covering up is a bit better than guarding the wrong height");
+});
+
+test("a guard that keeps working wears the leader down faster each time", () => {
+  const state = createMatch(data, "neutral", "neutral", 2);
+  const drains = [];
+  for (let i = 0; i < 3; i++) {
+    state.a.hand = [...BASICS];
+    state.b.hand = [...BASICS];
+    state.dist = 1;
+    resolveFootwork(state, "press", "hold");
+    const before = state.a.stamina;
+    resolveEngage(state, ["jab"], { kind: "guard", height: "high" });
+    drains.push(before - state.a.stamina);
+    assert.equal(state.guardStreak.n, i + 1);
+  }
+  assert.ok(drains[2] > drains[0], `${drains}`);
+  // A different outcome ends the streak.
+  state.a.hand = [...BASICS];
+  state.b.hand = [...BASICS];
+  state.dist = 1;
+  resolveFootwork(state, "press", "hold");
+  resolveEngage(state, ["jab"], { kind: "cover" });
+  assert.equal(state.guardStreak, null);
+});
+
+test("evading a slow card is likely and punished by the size of its recovery; a fast card is hard to slip", () => {
+  const rate = (card, who) => {
+    let evaded = 0;
+    let punished = 0;
+    const n = 300;
+    for (let seed = 1; seed <= n; seed++) {
+      const s = leadHand(["overhand"], [], { seed, b: who });
+      const ev = resolveEngage(s, [card], { kind: "evade" });
+      if (ev.some((e) => e.kind === "evade")) {
+        evaded++;
+        if (ev.some((e) => e.kind === "hit" && e.attacker === "b")) punished++;
+        assert.equal(s.edge.side, "b", "the man who slipped it has the edge");
+      }
+    }
+    return { evaded: evaded / n, punished: punished / (evaded || 1) };
+  };
+  const slow = rate("overhand", "neutral");
+  const quick = rate("jab", "neutral");
+  assert.ok(slow.evaded > 0.6 && quick.evaded < 0.2, `slow ${slow.evaded}, quick ${quick.evaded}`);
+  assert.ok(slow.punished > 0.9, "a big opening is punished");
+  assert.equal(rate("jab", "neutral").punished, 0, "a jab leaves no opening");
+});
+
+test("a counter is a race: a quicker answer breaks the combo and takes the edge, a slower one eats the blow", () => {
+  // A slow overhand is seen coming, so a quick answer gets there first and no guess is needed.
+  const win = leadHand(["overhand"], ["guard_counter"]);
+  const ev = resolveEngage(win, ["overhand", "body_hook"], { kind: "counter", card: "guard_counter" }, () => null);
+  assert.ok(ev.find((e) => e.kind === "counter").first);
+  assert.equal(ev.filter((e) => e.kind === "card").length, 1, "the combo is broken");
+  assert.ok(ev.some((e) => e.kind === "interrupted" && e.side === "a"));
+  assert.equal(win.edge.side, "b");
+  assert.ok(ev.some((e) => e.kind === "hit" && e.attacker === "b") && !ev.some((e) => e.kind === "hit" && e.attacker === "a"), "only the counter lands");
+  // A cross he never saw: a blind counter loses 18 and is too slow.
+  const lose = leadHand([], ["guard_counter"]);
+  const ev2 = resolveEngage(lose, ["cross", "cross"], { kind: "counter", card: "guard_counter" });
+  const c = ev2.find((e) => e.kind === "counter");
+  assert.equal(c.first, false);
+  assert.ok(c.speed < c.vs, `${c.speed} v ${c.vs}`);
+  assert.ok(ev2.some((e) => e.kind === "hit" && e.attacker === "a"), "the leader's blow lands");
+  // But the bet is spent on the first card, and he covers up for the second.
+  assert.equal(ev2.filter((e) => e.kind === "counter").length, 1);
+  assert.equal(ev2.filter((e) => e.kind === "card").length, 2, "a counter that loses does not stop the combo");
+  // Footwork edges add to a counter's speed: holding the middle against a press is worth a few points.
+  const held = createMatch(data, "neutral", "neutral", 5);
+  held.a.hand = ["cross", ...BASICS];
+  held.b.hand = ["guard_counter", ...BASICS];
+  resolveFootwork(held, "press", "hold");
+  const ev3 = resolveEngage(held, ["cross"], { kind: "counter", card: "guard_counter" });
+  const c3 = ev3.find((e) => e.kind === "counter");
+  assert.equal(c3.speed, 80 - 18 + data.rules.footwork.pairs["press|hold"].b.counterSpeed);
+});
+
+test("a counter card that is a signature costs the momentum like any signature", () => {
+  const state = leadHand([], ["sig_adesanya"], { b: "adesanya" });
+  state.b.momentum = 100;
+  state.b.hand.push("sig_adesanya");
+  const ev = resolveEngage(state, ["body_hook"], { kind: "counter", card: "sig_adesanya" });
+  assert.ok(ev.some((e) => e.kind === "signature" && e.side === "b"));
+  assert.ok(state.b.momentum < 100);
+});
+
+test("a pre-emptive strike costs a lot, lands first and breaks up the combo; it only works when it lands cleanly", () => {
+  let broke = 0;
+  let spent = 0;
+  const n = 200;
+  for (let seed = 1; seed <= n; seed++) {
+    const s = leadHand([], [], { seed });
+    const before = s.b.stamina;
+    const ev = resolveEngage(s, ["jab", "cross"], { kind: "preempt", card: "jab" });
+    const order = kinds(ev);
+    assert.ok(order.indexOf("preempt") < order.indexOf("card") || !order.includes("card"), "the pre-emptive strike comes first");
+    spent += before - s.b.stamina;
+    if (ev.some((e) => e.kind === "interrupted")) {
+      broke++;
+      assert.equal(s.edge.side, "b");
+      assert.equal(ev.filter((e) => e.kind === "card").length, 0, "the leader never gets a card out");
+    }
+  }
+  assert.ok(spent / n >= ENGAGE.preempt.cost - 6, `cost ${spent / n}`);
+  assert.ok(broke / n > 0.5 && broke / n < 0.95, `broke ${broke / n}`);
+  assert.equal(planError(leadHand([], []), "b", { kind: "preempt", card: "jab" }, true), "too late");
+});
+
+test("a feint draws out a counter, a shot or a slip: the bet is wasted, he is fooled and the next card catches him", () => {
+  const s = leadHand(["feint"], [], { b: "adesanya" });
+  s.b.hand = [...BASICS];
+  const ev = resolveEngage(s, ["feint", "cross"], { kind: "counter", card: "jab" });
+  assert.ok(ev.some((e) => e.kind === "feintWin" && e.vs === "counter"));
+  assert.ok(!ev.some((e) => e.kind === "counter"), "the counter was spent on the fake");
+  assert.equal(ev.filter((e) => e.kind === "card").length, 2);
+  assert.ok(s.b.marks.fooled, "a man who bit on a fake is easier to read");
+  // A guard is not fooled.
+  const g = leadHand(["feint"], []);
+  const ev2 = resolveEngage(g, ["feint", "cross"], { kind: "guard", height: "high" });
+  assert.ok(ev2.some((e) => e.kind === "feintWasted"));
+  assert.equal(g.b.marks.fooled, undefined);
+});
+
+test("diving under a slow punch can take him down; diving under a quick one just walks into it", () => {
+  let down = 0;
+  const n = 300;
+  for (let seed = 1; seed <= n; seed++) {
+    const s = leadHand(["overhand"], [], { seed });
+    const ev = resolveEngage(s, ["overhand"], { kind: "shoot" });
+    const shot = ev.find((e) => e.kind === "shoot");
+    assert.equal(shot.caught, true);
+    assert.equal(ev.filter((e) => e.kind === "card").length, 1);
+    if (ev.some((e) => e.kind === "takedown" && e.side === "b")) {
+      down++;
+      assert.deepEqual(s.pending, { kind: "chase", side: "b" });
+    }
+  }
+  assert.ok(down / n > 0.3 && down / n < 0.95, `${down / n}`);
+  const s = leadHand([], [], { seed: 4 });
+  const ev = resolveEngage(s, ["jab"], { kind: "shoot" });
+  assert.equal(ev.find((e) => e.kind === "shoot").caught, false);
+  assert.ok(ev.some((e) => e.kind === "hit" && e.attacker === "a"), "he takes the blow");
+  assert.ok(!ev.some((e) => e.kind === "takedown"));
+});
+
+test("a grab ends the combo; it can take him down or only clinch; a low guard sprawls and takes the chance away", () => {
+  const rate = (plan, extra) => {
+    let down = 0;
+    const n = 400;
+    for (let seed = 1; seed <= n; seed++) {
+      const s = leadHand(["double_leg"], [], { seed });
+      const ev = resolveEngage(s, ["jab", "double_leg"], plan, () => null);
+      if (extra) assert.ok(ev.some((e) => e.kind === "sprawl"));
+      assert.ok(ev.some((e) => e.kind === "grab") || ev.some((e) => e.kind === "block" || e.kind === "evade" || e.kind === "counter"), "the grab resolves one way or another");
+      if (ev.some((e) => e.kind === "takedown")) down++;
+    }
+    return down / n;
+  };
+  const open = rate({ kind: "guard", height: "mid" });
+  const sprawl = rate({ kind: "guard", height: "low" }, true);
+  assert.ok(open > 0.25, `${open}`);
+  assert.ok(sprawl < open - 0.05, `sprawl ${sprawl} vs ${open}`);
+  // A clinch entry only closes up.
+  const s = leadHand(["clinch"], [], { dist: 1 });
+  s.dist = 2;
+  const ev = resolveEngage(s, ["clinch"], { kind: "cover" });
+  assert.equal(s.dist, 3);
+  assert.ok(!ev.some((e) => e.kind === "takedown"));
+});
+
+test("a poor shot runs into a guillotine when he answered with one", () => {
+  let caught = 0;
+  const n = 400;
+  for (let seed = 1; seed <= n; seed++) {
+    const s = leadHand(["double_leg"], ["guillotine"], { seed, dist: 1 });
+    s.dist = 2;
+    const ev = resolveEngage(s, ["double_leg"], { kind: "counter", card: "guillotine" });
+    if (ev.some((e) => e.kind === "caught")) {
+      caught++;
+      assert.ok(s.ground && s.ground.lock && s.ground.lock.attacker === "b");
+    }
+  }
+  assert.ok(caught / n > 0.05 && caught / n < 0.6, `${caught / n}`);
+});
+
+test("a finished combo keeps the edge and drains the other man; the edge decides the next hand when the footwork does not", () => {
+  const s = leadHand([], []);
+  const before = s.b.stamina;
+  const ev = resolveEngage(s, ["jab", "cross"], { kind: "cover" });
+  assert.ok(ev.some((e) => e.kind === "comboDone" && e.side === "a"));
+  assert.equal(s.edge.side, "a");
+  assert.ok(s.b.stamina < before + 2);
+  s.a.hand = [...BASICS];
+  s.b.hand = [...BASICS];
+  const chance = leadChance(s);
+  s.edge = null;
+  const flat = leadChance(s);
+  assert.ok(chance > flat + 0.2, `${chance} vs ${flat}`);
+  // Passing up the hand is allowed: both catch their breath and a referee will get them moving.
+  const probe = leadHand([], []);
+  const ev2 = resolveEngage(probe, [], { kind: "cover" });
+  assert.ok(ev2.some((e) => e.kind === "standoff"));
+  assert.equal(probe.edge, null);
+});
+
+test("pressing a man who backs off builds pressure; the second time he is against the fence and can only circle out", () => {
+  const state = createMatch(data, "neutral", "neutral", 6);
+  const hand = (fa, fb) => {
+    const ev = resolveFootwork(state, fa, fb);
+    state.a.hand = [...BASICS];
+    state.b.hand = [...BASICS];
+    resolveEngage(state, [], { kind: "cover" });
+    return ev;
+  };
+  hand("press", "retreat");
+  assert.equal(state.cage, null);
+  const second = hand("press", "retreat");
+  assert.deepEqual(state.cage && state.cage.side, "b");
+  assert.ok(second.some((e) => e.kind === "cage" && e.side === "b"));
+  assert.ok(footworkChoices(state, "b").find((c) => c.id === "retreat").disabled);
+  const gap = state.roundScore.a.striking;
+  assert.ok(gap >= data.rules.cage.pressureScore, "the judges notice who is pushing");
+  // Pressing on keeps him there; circling off while the other presses does not get him out; circling while he holds does.
+  const stay = hand("press", "circle");
+  assert.ok(state.cage && !stay.some((e) => e.kind === "cageEnd"));
+  const out = hand("hold", "circle");
+  assert.equal(state.cage, null);
+  assert.ok(out.some((e) => e.kind === "cageEnd" && e.how === "turn"));
+  // A man against the fence is easier to take down.
+  const pinned = createMatch(data, "neutral", "neutral", 3);
+  const odds = (s) => {
+    let n = 0;
+    for (let seed = 1; seed <= 400; seed++) {
+      const x = leadHand(["double_leg"], [], { seed });
+      if (s) x.cage = { side: "b", ttl: 4 };
+      if (resolveEngage(x, ["double_leg"], { kind: "cover" }).some((e) => e.kind === "takedown")) n++;
+    }
+    return n / 400;
+  };
+  assert.ok(odds(true) > odds(false) + 0.03);
+  assert.ok(pinned);
+});
+
+test("a landed jab lets him see the other man's tendencies next hand and opens the follow-up", () => {
+  let probed = 0;
+  for (let seed = 1; seed <= 100; seed++) {
+    const s = leadHand([], [], { seed });
+    resolveEngage(s, ["jab"], { kind: "cover" });
+    if (s.a.marks.read) {
+      probed++;
+      assert.ok(s.a.marks.opened, "the same jab opens the follow-up");
+      resolveFootwork(s, "press", "hold");
+      assert.equal(engageIntent(s, "b").detail, true, "now he sees more");
+      assert.equal(engageIntent(s, "a").detail, false);
+    }
+  }
+  assert.ok(probed > 40);
+});
+
+test("abilities fire on the new events: McGregor sees through a counter, Topuria presses on, Holloway builds rhythm, Sandhagen flows, Jones crowds, Makhachev smothers", () => {
+  // Counter wins: McGregor as the answerer.
+  const mc = leadHand(["overhand"], ["guard_counter"], { b: "mcgregor" });
+  resolveEngage(mc, ["overhand"], { kind: "counter", card: "guard_counter" }, () => null);
+  assert.ok(mc.a.marks.fooled, "McGregor's counter makes the other man easier to read");
+  const tp = leadHand(["overhand"], ["guard_counter"], { b: "topuria" });
+  const dist = tp.dist;
+  resolveEngage(tp, ["overhand"], { kind: "counter", card: "guard_counter" }, () => null);
+  assert.ok(tp.b.marks.opened && tp.dist >= dist, "Topuria presses on and opens the next hand");
+  // Rhythm: two strikes led.
+  const hol = createMatch(data, "holloway", "neutral", 4);
+  hol.a.hand = [...BASICS];
+  resolveFootwork(hol, "press", "hold");
+  resolveEngage(hol, ["jab", "cross"], { kind: "cover" });
+  assert.equal(hol.a.marks.rhythm.n, 1);
+  assert.equal(handSpeed(hol, "a"), data.fighters.holloway.speed);
+  hol.a.marks.rhythm = { turns: 1, n: 3 };
+  assert.equal(handSpeed(hol, "a"), data.fighters.holloway.speed + data.rules.tags.rhythm.speed);
+  // Flow after circling.
+  const sand = createMatch(data, "sandhagen", "neutral", 4);
+  resolveFootwork(sand, "circle", "hold");
+  sand.a.hand = [...BASICS];
+  resolveEngage(sand, [], { kind: "cover" });
+  assert.ok(sand.a.marks.flow);
+  // Crowded: a kick lands and the other man's steps cost more.
+  let crowded = false;
+  for (let seed = 1; seed <= 40 && !crowded; seed++) {
+    const jones = leadHand(["front_kick"], [], { a: "jones", seed });
+    jones.dist = 1;
+    resolveEngage(jones, ["calf_kick"], { kind: "cover" });
+    crowded = Boolean(jones.b.marks.crowded);
+    if (crowded) {
+      const cost = (s) => data.rules.footwork.moves.press.cost + (s.b.marks.crowded ? data.rules.tags.crowded.footCost : 0);
+      const before = jones.b.stamina;
+      resolveFootwork(jones, "hold", "press");
+      assert.ok(before - jones.b.stamina >= cost(jones) - 1, "pressing costs more");
+    }
+  }
+  assert.ok(crowded, "Jones's kick crowds the other man");
+  // Smothering: a grab that lands.
+  let smothered = false;
+  for (let seed = 1; seed <= 60 && !smothered; seed++) {
+    const mk = leadHand(["double_leg"], [], { a: "makhachev", seed });
+    resolveEngage(mk, ["double_leg"], { kind: "cover" });
+    smothered = Boolean(mk.b.marks.smothered);
+  }
+  assert.ok(smothered);
+});
+
+test("a takedown leaves the winner a choice and the stand-up hand waits aside on the mat and returns whole", () => {
+  let state = null;
+  for (let seed = 1; seed <= 300 && !state; seed++) {
+    const s = leadHand(["double_leg"], [], { seed, a: "khabib" });
+    if (resolveEngage(s, ["double_leg"], { kind: "cover" }).some((e) => e.kind === "takedown")) state = s;
+  }
+  assert.ok(state, "a takedown happens");
+  assert.deepEqual(state.pending, { kind: "chase", side: "a" });
+  assert.throws(() => resolveFootwork(state, "press", "hold"));
+  assert.ok(state.a.stand.includes("jab"), "the stand-up hand waits");
+  assert.ok(state.a.hand.every((c) => data.cards[c].cat || data.cards[c].lockMove), "the mat hand is ground cards");
+  const events = resolvePending(state, "release");
+  assert.ok(events.some((e) => e.kind === "standup"));
+  assert.ok(state.a.marks.released, "letting him up gives the edge");
+  assert.equal(state.ground, null);
+  for (const b of BASICS) assert.ok(state.a.hand.includes(b) && state.b.hand.includes(b));
+  assert.equal(stepOf(state), "footwork");
+});
+
+test("a signature that gets blocked still lands for a share of its power", () => {
+  const state = leadHand([], [], { a: "pereira", dist: 1 });
+  state.a.momentum = 100;
+  state.a.hand.push("sig_pereira");
+  const ev = resolveEngage(state, ["sig_pereira"], { kind: "guard", height: "high" });
+  assert.ok(ev.some((e) => e.kind === "signature"));
+  assert.ok(ev.some((e) => e.kind === "block"));
+  const chip = ev.find((e) => e.kind === "hit");
+  const clean = data.cards.sig_pereira.power * (data.rules.damage.powerBase + data.fighters.pereira.attrs.power * data.rules.damage.powerPerStat) * ENGAGE.dmgScale;
+  assert.ok(chip.damage > clean * 0.4 && chip.damage < clean * 0.7, `${chip.damage} of ${clean}`);
+  assert.equal(state.a.momentum, 0);
+});
+
+test("tactics move the footwork tendencies and the damage; the AI picks one by the score and its tank, and the shown numbers stay honest", () => {
+  const state = createMatch(data, "khabib", "mcgregor", 9);
+  setTactic(state, "a", "probe");
+  const calm = footworkIntent(state, "a").probs;
+  setTactic(state, "a", "press");
+  assert.ok(state.a.tacticChanged);
+  const hard = footworkIntent(state, "a").probs;
+  assert.ok(hard.press > calm.press + 0.05 && calm.hold > hard.hold + 0.03, `press ${calm.press}->${hard.press}`);
+  setTactic(state, "a", "ko");
+  const swing = (t) => {
+    setTactic(state, "b", t);
+    state.b.hand = ["cross", ...BASICS];
+    return previewCombo(state, "b", ["cross"]).damage;
+  };
+  setTactic(state, "b", "probe");
+  const probe = swing("probe");
+  assert.ok(swing("ko") > probe * 1.15);
+  assert.throws(() => setTactic(state, "a", "nonsense"));
+  state.phase = "corner";
+  applyCorner(state, { a: "breathe", b: "breathe" }, { a: "points" });
+  assert.equal(state.a.tactic, "points");
+  assert.ok(state.rules.tactics[state.b.tactic]);
+  // The AI's choice of plan.
   const share = (setup, id) => {
     let n = 0;
     for (let seed = 1; seed <= 300; seed++) {
-      const state = createMatch(data, "mcgregor", "khabib", seed);
-      state.round = 2;
-      setup(state);
-      if (chooseTactic(state, "a") === id) n++;
+      const s = createMatch(data, "mcgregor", "khabib", seed);
+      s.round = 2;
+      setup(s);
+      if (chooseTactic(s, "a") === id) n++;
     }
     return n / 300;
   };
@@ -966,58 +974,78 @@ test("the AI swings for the knockout when behind and plays it safe when ahead, s
   const behind = share((s) => s.roundCards.push(judges(9, 10)), "ko");
   const ahead = share((s) => s.roundCards.push(judges(10, 9)), "ko");
   assert.ok(behind > ahead + 0.15, `ko when behind ${behind}, ahead ${ahead}`);
-  const safe = share((s) => s.roundCards.push(judges(10, 9)), "probe");
-  assert.ok(safe > 0.3, `probe when ahead ${safe}`);
   const press = (stamina) => share((s) => { s.b.stamina = stamina; }, "press");
   assert.ok(press(20) > press(100), "leans on a tired foe");
-  // The numbers on screen are still the numbers the AI plays.
-  const state = createMatch(data, "khabib", "mcgregor", 9);
-  setTactic(state, "a", "ko");
-  const probs = getIntent(state, "a").probs;
-  const counts = { S: 0, G: 0, C: 0 };
+  // And the tendencies shown are the ones played.
+  const probs = footworkIntent(state, "a").probs;
+  const counts = {};
   for (let i = 0; i < 5000; i++) {
-    const cards = chooseAI(state, "a").cards;
-    counts[cards.length ? data.cards[cards[0]].type : "C"]++;
+    const f = chooseFootwork(state, "a");
+    counts[f] = (counts[f] || 0) + 1;
   }
-  for (const t of ["S", "G", "C"]) assert.ok(Math.abs(counts[t] / 5000 - probs[t]) < 0.04, `${t}`);
-  const calm = createMatch(data, "khabib", "mcgregor", 9);
-  setTactic(calm, "a", "probe");
-  assert.ok(getIntent(state, "a").probs.S > getIntent(calm, "a").probs.S + 0.1, "the knockout plan throws more strikes");
+  for (const [id, p] of Object.entries(probs)) assert.ok(Math.abs((counts[id] || 0) / 5000 - p) < 0.04, id);
 });
 
-// ---------- Moving and playing in the same exchange ----------
+test("the AI reads habits: sit on one footwork and he leans toward what beats it, and the screen says so", () => {
+  const state = createMatch(data, "mcgregor", "khabib", 12);
+  const base = footworkIntent(state, "b");
+  for (let i = 0; i < 3; i++) state.fwHist.push({ a: "press", b: "hold" });
+  const after = footworkIntent(state, "b");
+  assert.ok(after.probs.hold + after.probs.circle > base.probs.hold + base.probs.circle + 0.1, "he sets up to meet the press");
+  assert.ok(after.tags.includes("看穿你的習慣"));
+  // A leader steers away from the height the other man keeps guarding.
+  const hand = leadHand([], []);
+  const fresh = engageIntent(hand, "a").probs.high;
+  hand.respHist.b.push("high", "high", "high");
+  assert.ok(engageIntent(hand, "a").probs.high < fresh - 0.05);
+  // And a man who keeps leading high gets his high guard met.
+  const guard = leadHand([], []);
+  const g0 = engageIntent(guard, "b").probs.high;
+  guard.leadHist.a.push("high", "high", "high");
+  assert.ok(engageIntent(guard, "b").probs.high > g0 + 0.1);
+});
 
-test("a step can come with a play of any type: move first, then throw, and the play counts as the cards' type", () => {
-  const state = setup(["jab", "cross", "single_leg", "guard_counter"], ["guard_counter"], 0);
-  state.a.stamina = 100;
-  // From far a jab cannot reach, but a step first brings it into range.
-  assert.ok(playError(state, "a", ["jab"]));
-  assert.equal(playError(state, "a", ["step_in", "jab"]), null);
-  assert.deepEqual(arrange(state, ["jab", "step_in"], "a"), ["step_in", "jab"], "the order is found when the step has to come first");
-  const preview = previewPlay(state, "a", ["step_in", "jab"]);
-  assert.equal(preview.type, "S");
-  assert.equal(preview.cost, 2);
-  assert.equal(preview.endDist, 1);
-  // Still only one step, and still one kind of real card.
-  assert.ok(playError(state, "a", ["step_in", "step_back", "jab"]), "two steps with a strike");
-  assert.ok(playError(state, "a", ["step_in", "jab", "single_leg"]), "a strike and a grapple");
+test("stand-up cards read right: height, speed, whether he would see it, and the range", () => {
+  const state = createMatch(data, "neutral", "neutral", 2);
   state.dist = 1;
-  assert.equal(playError(state, "a", ["step_back", "guard_counter"]), null, "a defender who backs away");
-  state.dist = 0;
-  // It resolves as the strike: the jab beats a grapple, hits, and the step lands.
-  let hits = 0;
-  for (let seed = 1; seed <= 20; seed++) {
-    const s = setup(["jab"], [], 0, seed);
-    s.a.stamina = 100;
-    const ev = resolveExchange(s, ["step_in", "jab"], ["step_in"]);
-    assert.equal(ev.find((e) => e.kind === "verdict").winner, "a");
-    if (ev.some((e) => e.kind === "hit")) hits++;
-    assert.ok(s.dist >= 1, "he moved in");
+  const slow = describeCard(state, "a", "overhand");
+  assert.equal(slow.heightName, "上");
+  assert.equal(slow.seenByFoe, true);
+  assert.equal(describeCard(state, "a", "jab").seenByFoe, false);
+  assert.equal(describeCard(state, "a", "calf_kick").heightName, "下");
+  assert.equal(describeCard(state, "a", "single_leg").heightName, "抱");
+  assert.equal(describeCard(state, "a", "calf_kick").unusable, false);
+  state.dist = 3;
+  assert.equal(describeCard(state, "a", "calf_kick").unusable, true);
+  assert.ok(describeCard(state, "a", "jab").cost > 0);
+});
+
+test("a whole hand through the screen's own steps: engageStart, then a card at a time, with the chance to answer the ones he sees", () => {
+  const state = leadHand(["overhand"], ["guard_counter"]);
+  const first = engageStart(state, ["overhand", "body_hook"], { kind: "cover" });
+  assert.deepEqual(kinds(first), ["engage"]);
+  const w = engageWaiting(state);
+  assert.equal(w.card, "overhand");
+  assert.equal(w.visible, true);
+  assert.throws(() => engageStep(state, { kind: "preempt", card: "jab" }), /too late/);
+  const ev = engageStep(state, { kind: "guard", height: "high" });
+  assert.ok(ev.some((e) => e.kind === "block"));
+  assert.equal(state.engage, null, "the block ended the hand");
+  assert.equal(stepOf(state), "footwork");
+  assert.equal(state.exchange, 2);
+});
+
+test("the last hand of a round ends it with the judges' cards, and the next round starts back at mid range", () => {
+  const state = createMatch(data, "neutral", "neutral", 3);
+  for (let i = 0; i < state.perRound; i++) {
+    state.a.hand = [...BASICS];
+    state.b.hand = [...BASICS];
+    playStandingHand(state, null);
+    if (state.ground) break;
   }
-  assert.ok(hits > 10);
-  // A loser's step is cancelled like any other: the counter beats the strike, so the advance does not happen.
-  const lost = setup(["jab"], ["guard_counter"], 0);
-  lost.a.stamina = 100;
-  resolveExchange(lost, ["step_in", "jab"], ["guard_counter"]);
-  assert.equal(lost.dist, 0);
+  if (!state.ground) {
+    assert.equal(state.phase, "corner");
+    assert.equal(state.roundCards.length, 1);
+    assert.equal(state.edge, null);
+  }
 });

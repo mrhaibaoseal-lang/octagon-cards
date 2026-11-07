@@ -23,14 +23,22 @@ export function loadData({ rules, cards, fighters, depth = {}, ground = {} }) {
   for (const [id, extra] of Object.entries(depth.fighters || {})) {
     const base = merged.fighters[id];
     if (!base) continue;
-    const { deckSwap = [], ...rest } = extra;
-    const deck = [...base.deck];
+    const { deckSwap = [], deck: fixedDeck, ...rest } = extra;
+    // M1.4: a fighter's deck is only his special moves; the basic moves everyone has come from rules.match.basics.
+    const deck = fixedDeck ? [...fixedDeck] : [...base.deck];
     for (const [from, to] of deckSwap) {
       const i = deck.indexOf(from);
       if (i >= 0) deck[i] = to;
       else deck.push(to);
     }
     merged.fighters[id] = { ...base, ...rest, deck };
+  }
+  // Where a stand-up card lands decides what guards it: the target gives the height, a grab is its own height.
+  const byTarget = { head: "high", body: "mid", legs: "low" };
+  for (const [id, c] of Object.entries(merged.cards)) {
+    if (c.cat || c.lockMove || c.height) continue;
+    const height = c.type === "G" ? "grab" : byTarget[c.target];
+    if (height) merged.cards[id] = { ...c, height };
   }
   return merged;
 }
@@ -74,6 +82,12 @@ export function createMatch(data, idA, idB, seed = 1, mode = "standard") {
     ground: null,
     cage: null, // { side, ttl }: the fighter whose back is to the fence
     pending: null, // a choice the winner of a takedown still has to make
+    engage: null, // the stand-up hand in progress once the footwork is in: { leader, resp, combo, plan, ... }
+    edge: null, // { side }: who came out of the last hand on top; they lead the next one unless the footwork says otherwise
+    guardStreak: null, // { side, n }: how many hands in a row a fighter has blocked a combo
+    fwHist: [], // every pair of footwork picks, for the AI to read habits from
+    respHist: { a: [], b: [] }, // what each side answered with (guard height or response kind)
+    leadHist: { a: [], b: [] }, // the height each side led with
     round: 1,
     exchange: 1,
     stall: 0,
@@ -135,54 +149,8 @@ function drawOne(state, s) {
   return me.draw.pop();
 }
 
-const BASIC_STEPS = ["step_in", "step_back"];
-const CAGE_CARDS = ["cage_push", "cage_turn"];
 const isBasic = (state, c) => Boolean(state.cards[c].basic);
 
-/** Draws up to a full hand, then adds the permanent steps and, when the fighter has the momentum, the signature. */
-export function refillHand(state, s) {
-  const me = state[s];
-  if (state.ground) return refillGround(state, s);
-  if (me.stand) {
-    // Back on his feet: the unplayed ground cards go back to the pile and the stand-up hand returns.
-    me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat));
-    me.hand = me.stand;
-    me.stand = null;
-  }
-  const size = state.rules.match.handSize;
-  const sig = state.fighters[me.id].signature;
-  const core = me.hand.filter((c) => c !== sig && !isBasic(state, c));
-  while (core.length < size && me.draw.length + me.discard.length > 0) core.push(drawOne(state, s));
-  // The drawn cards always hold all three types that can be played from where the fighters stand now,
-  // so every read can be acted on. A type the deck cannot play from here at all is skipped.
-  const playable = (c, t) => state.cards[c].type === t && usableAt(state, state.cards[c], state.dist, s);
-  const holds = (list, t) => list.some((c) => playable(c, t));
-  for (const t of TYPES) {
-    if (holds(core, t)) continue;
-    let pool = me.draw;
-    let idx = pool.findIndex((c) => playable(c, t));
-    if (idx < 0) {
-      pool = me.discard;
-      idx = pool.findIndex((c) => playable(c, t));
-    }
-    if (idx < 0) continue;
-    // Swap out a card whose removal leaves every type that is currently covered still covered. Dead cards go first.
-    const covered = TYPES.filter((x) => holds(core, x));
-    const order = core.map((c, i) => i).sort((i, j) => Number(usableAt(state, state.cards[core[i]], state.dist, s)) - Number(usableAt(state, state.cards[core[j]], state.dist, s)));
-    const swapAt = order.find((i) => {
-      const rest = core.filter((_, k) => k !== i);
-      return covered.every((x) => holds(rest, x));
-    });
-    if (swapAt === undefined) continue;
-    const taken = pool.splice(idx, 1)[0];
-    pool.unshift(core[swapAt]);
-    core[swapAt] = taken;
-  }
-  me.hand = [...core, ...BASIC_STEPS];
-  // Up against the fence a fighter gets two ways out.
-  if (state.cage?.side === s && !state.ground) me.hand.push(...CAGE_CARDS);
-  if (me.momentum >= state.rules.momentum.signatureCost) me.hand.push(sig);
-}
 
 // ---------- Ground hand ----------
 
@@ -304,73 +272,22 @@ const clampDist = (state, d) => clamp(d, 0, state.rules.dist.names.length - 1);
 
 /** Can this card be thrown from distance `d`? On the ground distance does not apply, but steps do not exist there. */
 export function usableAt(state, card, d, s) {
-  // Fence cards exist only for the fighter who is up against it. A fighter against the fence has nowhere to back off to.
-  if (card.cageOnly) return Boolean(s) && !state.ground && state.cage?.side === s;
   if (state.ground) {
     // On the mat only ground cards work, and only the ones that fit this role and position. In a lock fight only the lock moves.
     if (card.lockMove) return Boolean(state.ground.lock) && (!s || card.lockSide === (state.ground.lock.attacker === s ? "attack" : "defend"));
     return Boolean(s) && groundCardUsable(state, s, card);
   }
   if (card.cat || card.lockMove) return false;
-  if (s && state.cage?.side === s && card.type === "C" && card.move < 0) return false;
+  // A fighter against the fence has nowhere to back off to.
+  if (s && state.cage?.side === s && card.move < 0) return false;
   return !card.range || (d >= card.range[0] && d <= card.range[1]);
 }
 
-/** Net distance change a set of cards asks for (positive closes in). */
-const moveOf = (state, cards) => (state.ground ? 0 : cards.reduce((sum, c) => sum + (state.cards[c].move || 0), 0));
 
-/** Cards are thrown in order and each one is checked where the previous ones left the fighters. */
-function sequenceError(state, cards, s) {
-  let d = state.dist;
-  for (const c of cards) {
-    const card = state.cards[c];
-    if (!usableAt(state, card, d, s)) return "out of range";
-    if (!state.ground) d = clampDist(state, d + (card.move || 0));
-  }
-  return null;
-}
 
-/** A legal order for these cards (the given order when it works), or null when none exists. */
-export function arrange(state, cards, s) {
-  if (cards.length <= 1) return sequenceError(state, cards, s) ? null : [...cards];
-  const permute = (rest, done) => {
-    if (!rest.length) return sequenceError(state, done, s) ? null : done;
-    for (let i = 0; i < rest.length; i++) {
-      const found = permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...done, rest[i]]);
-      if (found) return found;
-    }
-    return null;
-  };
-  if (!sequenceError(state, cards, s)) return [...cards];
-  return permute(cards, []);
-}
 
-/** Returns an error string, or null when the play is legal. An empty play means bracing (free, counts as defend). */
-export function playError(state, s, cards) {
-  if (cards.length === 0) return state.ground?.lock ? "choose a move" : null;
-  const counts = {};
-  for (const c of state[s].hand) counts[c] = (counts[c] || 0) + 1;
-  for (const c of cards) {
-    if (!counts[c]) return "not in hand";
-    counts[c]--;
-  }
-  // On the mat a hand is one card (one move in a lock fight), and a lock fight cannot be sat out.
-  if (state.ground) {
-    if (cards.length > 1) return "one card on the ground";
-    if (state.ground.lock && cards.length !== 1) return "choose a move";
-  }
-  // One kind of play, except that a single step may come with it: "step in, then jab".
-  const real = cards.filter((c) => !state.cards[c].moveOnly);
-  const steps = cards.filter((c) => state.cards[c].moveOnly);
-  const kinds = (list) => new Set(list.map((c) => state.cards[c].type)).size;
-  if (kinds(cards) > 1 && !(real.length && steps.length === 1 && kinds(real) === 1)) return "mixed types";
-  if (cards.length > 1 && cards.some((c) => state.cards[c].cageOnly)) return "fence cards go alone";
-  if (costOf(state, cards, s) > budget(state, s)) return "over budget";
-  if (!arrange(state, cards, s)) return "out of range";
-  return null;
-}
 
-function tierOdds(state, s, cards) {
+function tierOdds(state, s, cards, extra = 0) {
   const t = state.rules.tiers;
   const me = state[s];
   const opp = state[opposite(s)];
@@ -378,7 +295,7 @@ function tierOdds(state, s, cards) {
   let diff;
   if (type === "G") diff = (state.ground && state.ground.top !== s ? (me.attrs.wrestling + me.attrs.submission) / 2 : me.attrs.wrestling) - opp.attrs.grappleDef;
   else diff = me.attrs.accuracy - opp.attrs.accuracy;
-  let bonus = 0;
+  let bonus = extra;
   for (const c of cards) {
     const card = state.cards[c];
     bonus += card.crit || 0;
@@ -401,8 +318,8 @@ function tierOdds(state, s, cards) {
   };
 }
 
-function rollTier(state, s, cards) {
-  const odds = tierOdds(state, s, cards);
+function rollTier(state, s, cards, extra = 0) {
+  const odds = tierOdds(state, s, cards, extra);
   const r = nextUnit(state);
   if (r < odds.crit) return "crit";
   if (r < odds.crit + odds.graze) return "graze";
@@ -424,27 +341,6 @@ function cardDamage(state, side, cardId) {
   return dmg;
 }
 
-/** What the UI shows before committing: clean-hit damage and tier chances. */
-export function previewPlay(state, s, cards) {
-  const type = typeOfPlay(state, cards.length ? cards : ["brace"]);
-  const list = cards.length ? cards : ["brace"];
-  const odds = tierOdds(state, s, list);
-  const base = list.reduce((sum, c) => sum + cardDamage(state, s, c), 0);
-  const d = state.rules.damage;
-  let winMult = type === "S" ? d.winStrikeBonus : d.counterMult;
-  if (state.ground) winMult = state.ground.top === s ? d.winStrikeBonus * d.groundPositionMult[state.ground.pos] : d.bottomCounterMult;
-  const order = arrange(state, cards, s) || cards;
-  return {
-    type,
-    order,
-    cost: costOf(state, cards, s),
-    endDist: state.ground ? null : clampDist(state, state.dist + moveOf(state, order)),
-    damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1) * (tactic(state, opposite(s)).dmgIn || 1)),
-    critPct: Math.round(odds.crit * 100),
-    grazePct: Math.round(odds.graze * 100),
-    budget: budget(state, s),
-  };
-}
 
 /**
  * When the man in the lock guesses wrong the lock does not always sink: he can still hold on. The chance is his skill (submission and
@@ -479,47 +375,6 @@ export function lockStatus(state) {
   return { attacker: lock.attacker, name: lock.name, depth: lock.depth, tapDepth: state.rules.lock.tapDepth };
 }
 
-/** How a card reads right now: the action name and a one-line effect. */
-export function describeCard(state, s, cardId) {
-  const card = state.cards[cardId];
-  const g = state.ground;
-  const role = g ? (g.top === s ? "top" : "bottom") : null;
-  const dmg = Math.round(cardDamage(state, s, cardId) * (card.type === "S" ? state.rules.damage.winStrikeBonus : state.rules.damage.counterMult));
-  let action = "";
-  let effect = "";
-  if (g?.lock) {
-    const l = state.rules.lock;
-    action = card.lockSide === "attack" ? "進攻" : "防守";
-    effect = card.lockSide === "attack" ? `被${l.defend[l.beats[card.lockMove]]}擋住就退一階` : `猜中${l.attack[Object.keys(l.beats).find((k) => l.beats[k] === card.lockMove)]}就退一階`;
-  } else if (g) {
-    const cat = state.rules.ground.cats[card.cat];
-    action = cat.label;
-    const gm = state.rules.damage.groundPositionMult[g.pos];
-    const gdmg = Math.round(cardDamage(state, s, cardId) * (role === "top" ? state.rules.damage.winStrikeBonus * gm : state.rules.damage.bottomCounterMult));
-    const names = state.rules.positions;
-    if (card.cat === "punch") effect = `傷害 ${gdmg}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
-    else if (card.cat === "pass") effect = g.pos >= names.length - 1 ? "已在最高位" : `→ ${names[Math.min(names.length - 1, g.pos + 1)]}`;
-    else if (card.cat === "lock") effect = `鎖技：${card.lock}`;
-    else if (card.cat === "frame") effect = g.pos > 0 ? `擋過位 · 退到${names[g.pos - 1]}` : "擋過位";
-    else if (card.cat === "counter") effect = card.lockBottom ? `鎖技：${card.lock}` : `反擊 ${gdmg}`;
-    else {
-      const to = state.rules.ground.escapeTo[g.pos];
-      effect = to < 0 ? "站起來" : `退到${names[to]}`;
-    }
-  } else if (card.cage) {
-    effect = card.cage === "turn" ? "贏了：脫離籠邊" : "贏了：和他換位置";
-  } else if (card.moveOnly) {
-    effect = card.move > 0 ? `靠近 ${card.move} 格` : `拉開 ${-card.move} 格`;
-  } else if (card.type === "S") effect = `傷害 ${dmg}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
-  else if (card.type === "C") effect = card.catchShot ? "他摔不好就勒住" : card.power ? `反擊 ${dmg}` : "硬撐";
-  else if (card.pullGuard) effect = "拉進地面，你在下位";
-  else effect = `摔倒 → ${state.rules.positions[card.landing || 0]}`;
-  if (!g && card.move && !card.moveOnly) effect += card.move > 0 ? ` · 進 ${card.move}` : ` · 退 ${-card.move}`;
-  // Setups this card lays down, and the ones it can follow (live when the tag is on).
-  const setups = (card.setup || []).map((st) => ({ tag: st.tag, label: state.rules.tags[st.tag]?.label || st.tag, when: st.when, to: st.to || "self" }));
-  const follows = Object.entries(card.follow || {}).map(([tag, eff]) => ({ tag, label: state.rules.tags[tag]?.label || tag, bonus: Math.round(((eff.crit || 0) + (eff.quality || 0)) * 100), live: Boolean(state[s].marks[tag]) }));
-  return { action, effect, cost: cardCost(state, s, cardId), unusable: !usableAt(state, card, state.dist, s), blocked: !g && state.cage?.side === s && card.type === "C" && card.move < 0 ? "背靠籠子" : "", rangeText: g ? posText(state, card) : rangeText(state, card), setups, follows };
-}
 
 /** "任何位置", "騎乘" or "半防守~側控" for a ground card. */
 export function posText(state, card) {
@@ -538,13 +393,7 @@ export function rangeText(state, card) {
 
 // ---------- AI ----------
 
-const beaterOf = (triangle, t) => TYPES.find((x) => triangle[x] === t);
 
-function typeAvailable(state, s, type) {
-  if (type === "C") return true; // bracing is always possible
-  const b = budget(state, s);
-  return state[s].hand.some((c) => state.cards[c].type === type && cardCost(state, s, c) <= b && usableAt(state, state.cards[c], state.dist, s));
-}
 
 /** How far outside their comfortable range a fighter stands (0 when inside it). */
 function distGap(state, s, d) {
@@ -670,125 +519,10 @@ function groundIntent(state, s) {
   };
 }
 
-/** The opponent's honest tendencies. The UI shows these same numbers and chooseAI samples from them. */
-export function getIntent(state, s) {
-  if (state.ground) return groundIntent(state, s);
-  const ai = state.rules.ai;
-  const me = state[s];
-  const oppSide = opposite(s);
-  const style = state.fighters[me.id].style[phaseOf(state, s)];
-  const plan = tactic(state, s);
-  const w = { S: style.S + (plan.style?.S || 0), G: style.G + (plan.style?.G || 0), C: style.C + (plan.style?.C || 0) };
-  const tags = [];
 
-  // Having been fooled makes the other side read you better.
-  let readBoost = 1;
-  for (const tag of Object.keys(state[oppSide].marks)) readBoost *= state.rules.tags[tag]?.readBoost || 1;
-  const recent = state.history.slice(-ai.adapt.window).map((h) => h[oppSide]);
-  for (const t of recent) w[beaterOf(state.rules.triangle, t)] += ai.adapt.perMatch * readBoost;
-  if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2]) {
-    w[beaterOf(state.rules.triangle, recent[recent.length - 1])] += ai.adapt.repeatBonus;
-    tags.push("看穿你的習慣");
-  }
-  if (me.rocked) { w.C += ai.rockedCounter; tags.push("被打暈，想撐過去"); }
-  if (state[oppSide].rocked) { w.S += ai.swarmStrike; tags.push("要衝上來追擊"); }
-  if (me.stamina < ai.lowStaminaAt) { w.C += ai.lowStaminaCounter; tags.push("快沒力了"); }
-  if (state.cage && !state.ground) {
-    const c = state.rules.cage;
-    if (state.cage.side === s) { w.C += c.pinnedC; w.G += c.pinnedG; tags.push("背靠籠子，想脫離"); }
-    else { w.G += c.pinnerG; tags.push("把你逼在籠邊，想摔"); }
-  }
-  if (!state.ground) {
-    const [lo, hi] = state.fighters[me.id].prefer;
-    if (state.dist < lo) { w.G += ai.wantClose; tags.push("想拉近距離"); }
-    else if (state.dist > hi) { w.C += ai.wantOut; tags.push("想拉開距離"); }
-  }
 
-  // A fighter caught out by a feint (or any tag that sharpens) shows his hand: the likely type gets likelier.
-  for (const [tag] of Object.entries(me.marks)) {
-    const def = state.rules.tags[tag];
-    if (!def?.sharpen) continue;
-    for (const t of TYPES) w[t] = w[t] ** def.sharpen;
-    tags.push(def.label);
-  }
-  for (const t of TYPES) {
-    if (!typeAvailable(state, s, t)) w[t] = 0;
-    else w[t] = Math.max(w[t], ai.minWeight);
-  }
-  const total = w.S + w.G + w.C;
-  const probs = { S: w.S / total, G: w.G / total, C: w.C / total };
-  const top = TYPES.reduce((best, t) => (probs[t] > probs[best] ? t : best), "S");
-  const tells = ai.tells[top];
-  return {
-    probs,
-    top,
-    tell: tells[(state.round * 7 + state.exchange * 3) % tells.length],
-    tags,
-    // Blood in the eyes: the viewer only makes out the single most likely type.
-    blind: state[oppSide].cut >= state.rules.cut.blindAt,
-    signatureReady: me.hand.includes(state.fighters[me.id].signature),
-  };
-}
 
-/** How much a follow-up bonus that is live right now is worth to the AI when picking cards. */
-function followValue(state, s, card) {
-  let v = 0;
-  for (const [tag, eff] of Object.entries(card.follow || {})) if (state[s].marks[tag]) v += ((eff.crit || 0) + (eff.quality || 0)) * 30;
-  return v;
-}
 
-function cardValue(state, s, cardId) {
-  const card = state.cards[cardId];
-  if (card.cageOnly) return card.cage === "turn" ? 12 : 6;
-  const g = state.ground;
-  // Moving toward a comfortable distance is worth something, moving away from it costs something.
-  let step = 0;
-  if (!g && card.move) step = (distGap(state, s, state.dist) - distGap(state, s, clampDist(state, state.dist + card.move))) * 3;
-  if (card.moveOnly) return step > 0 ? 0.5 + step : 0;
-  if (card.type === "G") {
-    return card.cost + (card.quality || 0) * 4 + (card.landing || 0) + step + followValue(state, s, card);
-  }
-  let v = cardDamage(state, s, cardId) + step;
-  v += (card.setup ? 2 : 0) + followValue(state, s, card);
-  if (card.type === "C" && g && g.top !== s && card.lockBottom) v += 8;
-  if (card.catchShot) v += 3;
-  if (card.signature) v += 10;
-  return v;
-}
-
-/** Highest-value ordered set of `type` cards that can legally be thrown within `limit` energy. Empty means bracing. */
-export function bestPlay(state, s, type, limit) {
-  const hand = state[s].hand.filter((c) => state.cards[c].type === type && cardCost(state, s, c) <= limit && usableAt(state, state.cards[c], state.dist, s));
-  let best = [];
-  // A strike or grapple that was chosen is always thrown, however poor; only a defend falls back to bracing.
-  let bestValue = type === "C" ? 0 : -Infinity;
-  const n = hand.length;
-  for (let mask = 1; mask < 1 << n; mask++) {
-    let cost = 0;
-    let value = 0;
-    const cards = [];
-    for (let i = 0; i < n; i++) {
-      if (!(mask & (1 << i))) continue;
-      cost += cardCost(state, s, hand[i]);
-      value += cardValue(state, s, hand[i]);
-      cards.push(hand[i]);
-    }
-    if (cost > limit || value <= bestValue) continue;
-    if (cards.length > 1 && (state.ground || cards.some((c) => state.cards[c].cageOnly))) continue;
-    const ordered = arrange(state, cards, s);
-    if (!ordered) continue;
-    bestValue = value;
-    best = ordered;
-  }
-  return best;
-}
-
-function sampleType(state, probs) {
-  const r = nextUnit(state);
-  if (r < probs.S) return "S";
-  if (r < probs.S + probs.G) return "G";
-  return "C";
-}
 
 /** Rough worth of a ground card, used to pick between cards of the kind that was chosen. */
 function groundCardValue(state, s, cardId) {
@@ -843,26 +577,6 @@ function chooseGroundAI(state, s) {
   return { cards: [bestGroundCard(state, s, pick, limit)] };
 }
 
-export function chooseAI(state, s) {
-  if (state.ground) return chooseGroundAI(state, s);
-  const ai = state.rules.ai;
-  const me = state[s];
-  const intent = getIntent(state, s);
-  const type = sampleType(state, intent.probs);
-  const b = budget(state, s);
-  let limit = nextUnit(state) < ai.commit.fullChance + (tactic(state, s).commit || 0) ? b : Math.max(1, b - 1);
-  if (me.stamina < ai.commit.conserveAt) limit = Math.min(limit, 2);
-  // Holding back never means failing to throw the type the shown odds promised: spend what the cheapest legal card costs.
-  if (type !== "C") {
-    const legal = me.hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist, s)).map((c) => cardCost(state, s, c));
-    if (legal.length) limit = Math.min(b, Math.max(limit, Math.min(...legal)));
-  }
-  const sig = state.fighters[me.id].signature;
-  if (me.hand.includes(sig) && state.cards[sig].type === type && cardCost(state, s, sig) <= b && nextUnit(state) < ai.signatureWeight + 0.4) {
-    return { cards: [sig] };
-  }
-  return { cards: bestPlay(state, s, type, limit) };
-}
 
 /** AI: follow the man down, or let him up. Grapplers follow nearly always, strikers often would rather stand. */
 export function chooseChase(state, s) {
@@ -954,6 +668,1227 @@ export function chooseCorner(state, s) {
   return "fire";
 }
 
+// ---------- Standing fight (M1.4a) ----------
+// One hand = three steps. 1) both pick a footwork at once; the pair decides who leads, the new distance and small edges for each side.
+// 2) the leader lays out a combo (1 to 4 cards, face down) and the other side picks a response. 3) the cards turn over one at a time:
+// a card slower than the responder's reaction is seen and can be answered on the spot, a faster one only meets what he bet beforehand.
+
+const FWR = (state) => state.rules.footwork;
+const ENG = (state) => state.rules.engage;
+export const HEIGHTS = ["high", "mid", "low", "grab"];
+const GUARDS = ["high", "mid", "low"];
+const RESPONSES = ["high", "mid", "low", "cover", "evade", "counter", "shoot", "preempt"];
+const fighterOf = (state, s) => state.fighters[state[s].id];
+
+/** "footwork" while the two have yet to pick a step, "lead" once the hand has a leader, "ground" on the mat. */
+export const stepOf = (state) => (state.ground ? "ground" : state.engage ? "lead" : "footwork");
+
+/** Sum of a numeric field over a fighter's live tags (each tag may need a stack level, `<key>At`). */
+function tagSum(state, s, key) {
+  let v = 0;
+  for (const [tag, m] of Object.entries(state[s].marks)) {
+    const def = state.rules.tags[tag] || {};
+    if (def[key] && m.n >= (def[`${key}At`] || 1)) v += def[key];
+  }
+  return v;
+}
+
+/** How quick his hands are right now: the fighter's own speed, a rhythm bonus, less when tired. */
+export function handSpeed(state, s) {
+  const me = state[s];
+  const e = state.rules.energy;
+  const tired = me.stamina < e.gassedAt ? 14 : me.stamina < e.tiredAt ? 6 : 0;
+  return (fighterOf(state, s).speed ?? 75) + tagSum(state, s, "speed") - tired;
+}
+
+/** Reaction: a card quicker than this cannot be seen coming. A stunned fighter sees nothing; blood in the eyes and a gassed body cost some. */
+export function reactionOf(state, s) {
+  const me = state[s];
+  if (me.rocked) return 0;
+  const r = ENG(state).reaction;
+  const e = state.rules.energy;
+  let v = fighterOf(state, s).reaction ?? 75;
+  if (me.stamina < e.gassedAt) v += r.gassed;
+  else if (me.stamina < e.tiredAt) v += r.tired;
+  if (me.cut >= state.rules.cut.blindAt) v += r.blind;
+  if (state.engage) v += state.engage.mods?.[s]?.react || 0;
+  return v;
+}
+
+/** Speed of a card when this fighter throws it. */
+export function cardSpeed(state, s, cardId) {
+  const sp = ENG(state).speedAttr;
+  return state.cards[cardId].speed + (handSpeed(state, s) - sp.pivot) * sp.perPoint;
+}
+
+/** Stamina a card takes out of the fighter standing. */
+export const standCost = (state, cardId) => state.cards[cardId].cost * ENG(state).perCost;
+
+/** How many cards the leader can string together: more stamina, longer combo; stunned, one; rhythm and smothering move it. */
+export function comboMax(state, s) {
+  const me = state[s];
+  let n = ENG(state).comboLen.find(([min]) => me.stamina >= min)[1];
+  if (me.rocked) return 1;
+  n += tagSum(state, s, "combo");
+  if (isFinal(state)) n += 1;
+  return clamp(n, 1, 5);
+}
+
+const modOf = (state, s, key, fallback = 0) => state.engage?.mods?.[s]?.[key] ?? fallback;
+
+// ---------- Footwork ----------
+
+/** The four steps with their state for this fighter: against the fence nobody can back off. */
+export function footworkChoices(state, s) {
+  const R = FWR(state);
+  return R.order.map((id) => {
+    const m = R.moves[id];
+    const penned = id === "retreat" && state.cage?.side === s;
+    return { id, ...m, disabled: penned, reason: penned ? "背靠籠子" : "" };
+  });
+}
+
+/** What a pair of steps does, seen from side a: who leads (or "roll"), the distance change, who gives ground and each side's edges. */
+export function footworkOutcome(state, fa, fb) {
+  const R = FWR(state);
+  const swap = R.order.indexOf(fa) > R.order.indexOf(fb);
+  const key = swap ? `${fb}|${fa}` : `${fa}|${fb}`;
+  const row = R.pairs[key];
+  if (!row) throw new Error(`no footwork row ${key}`);
+  const mk = (m = {}) => ({ power: 1, dmgIn: 1, evade: 0, counterSpeed: 0, crit: 0, react: 0, stam: 0, ...m });
+  const first = mk(row.a);
+  const second = mk(row.b);
+  let lead = row.lead;
+  if (lead === "first") lead = swap ? "b" : "a";
+  else if (lead === "second") lead = swap ? "a" : "b";
+  const gave = { a: false, b: false };
+  if (row.gave === "first") gave[swap ? "b" : "a"] = true;
+  if (row.gave === "second") gave[swap ? "a" : "b"] = true;
+  const bias = row.bias || 0;
+  return { key, dist: row.dist, lead, biasA: swap ? -bias : bias, gave, mods: swap ? { a: second, b: first } : { a: first, b: second }, text: row.text };
+}
+
+/** How quick to the punch: speed, a taller man's reach and a bit of momentum. */
+function initiative(state, s) {
+  const L = FWR(state).leadRoll;
+  return handSpeed(state, s) + ((fighterOf(state, s).height || 175) - 175) * L.perHeight + state[s].momentum * L.perMomentum;
+}
+
+/** Chance that side a leads when the pair of steps does not decide it. A fighter who just came out on top has the edge. */
+export function leadChance(state, biasA = 0) {
+  const L = FWR(state).leadRoll;
+  let p = 0.5 + (initiative(state, "a") - initiative(state, "b")) * L.perInit + biasA;
+  if (state.edge) p += state.edge.side === "a" ? L.edge : -L.edge;
+  return clamp(p, L.min, L.max);
+}
+
+/** For the screen: what each of his possible steps would do against `mine`, with his real chance of picking it. */
+export function previewFootwork(state, s, mine) {
+  const opp = opposite(s);
+  const intent = footworkIntent(state, opp);
+  return FWR(state).order.map((his) => {
+    const out = footworkOutcome(state, s === "a" ? mine : his, s === "a" ? his : mine);
+    const pYou = out.lead === "roll" ? (s === "a" ? leadChance(state, out.biasA) : 1 - leadChance(state, out.biasA)) : out.lead === s ? 1 : 0;
+    return {
+      his,
+      prob: intent.probs[his] || 0,
+      pYouLead: pYou,
+      dist: clampDist(state, state.dist + out.dist),
+      mine: out.mods[s],
+      theirs: out.mods[opp],
+      youGiveGround: out.gave[s],
+      heGivesGround: out.gave[opp],
+      text: out.text,
+    };
+  });
+}
+
+function applyEffects(state, s, list, events) {
+  for (const d of list) {
+    const to = d.to === "foe" ? opposite(s) : s;
+    if (d.tag) queueMark(state, to, d.tag, d.turns || 1, d.stack, d.max);
+    if (d.stamina) addStamina(state, to, d.stamina);
+    if (d.momentum) addMomentum(state, to, d.momentum);
+    if (d.dist) setDist(state, state.dist + d.dist, events, null);
+  }
+}
+
+/** Each fighter's ability triggers, standing version: `ctx.on(t, s)` says whether trigger `t` fired for side `s`. */
+function runStandingAbilities(state, ctx, events) {
+  for (const s of SIDES) {
+    const ab = state.fighters[state[s].id].ability;
+    if (!ab?.triggers) continue;
+    let fired = false;
+    for (const t of ab.triggers) {
+      if (t.ground || !STANDING_ON.includes(t.on)) continue;
+      if (t.dist && (ctx.startDist < t.dist[0] || ctx.startDist > t.dist[1])) continue;
+      if (!ctx.on(t, s)) continue;
+      applyEffects(state, s, t.do, events);
+      fired = true;
+    }
+    if (fired) events.push({ kind: "ability", side: s, name: ab.name });
+  }
+}
+const STANDING_ON = ["footwork", "lead", "counter", "comboDone", "block", "evade", "hit", "takedown", "grab", "play"];
+
+/** Pressure from giving ground and the way out of it: a fighter against the fence who circles off gets away unless the other presses. */
+function updateCageFw(state, out, fw, events) {
+  const c = state.rules.cage;
+  if (state.cage) {
+    const pinned = state.cage.side;
+    if (fw[pinned] === "circle" && fw[opposite(pinned)] !== "press") {
+      state.cage = null;
+      state[pinned].pressure = 0;
+      events.push({ kind: "cageEnd", side: pinned, how: "turn" });
+      setDist(state, c.escapeDist, events, pinned);
+      return;
+    }
+  }
+  const gave = out.gave;
+  for (const s of SIDES) {
+    if (gave[s]) state[s].pressure += 1 + (tactic(state, opposite(s)).pressure || 0);
+    else if (gave[opposite(s)]) state[s].pressure = Math.max(0, state[s].pressure - 1);
+  }
+  if (state.cage) {
+    const pinned = state.cage.side;
+    if (gave[pinned]) state.cage.ttl = c.ttl;
+    else if (--state.cage.ttl <= 0) {
+      state.cage = null;
+      events.push({ kind: "cageEnd", side: pinned, how: "fade" });
+    }
+    return;
+  }
+  const side = SIDES.find((x) => gave[x] && state[x].pressure >= c.pressureAt);
+  if (side) {
+    state.cage = { side, ttl: c.ttl };
+    score(state, opposite(side), "striking", c.pressureScore);
+    events.push({ kind: "cage", side, how: "pressure" });
+  }
+}
+
+/** Both fighters' steps, at once. Sets the distance and who leads, and opens the hand (`state.engage`). */
+export function resolveFootwork(state, fa, fb) {
+  if (state.phase !== "exchange") throw new Error(`cannot resolve in phase ${state.phase}`);
+  if (state.pending) throw new Error("a pending choice has to be resolved first");
+  if (state.ground) throw new Error("no footwork on the mat");
+  if (state.engage) throw new Error("this hand already has its footwork");
+  const fw = { a: fa, b: fb };
+  for (const s of SIDES) {
+    const ch = footworkChoices(state, s).find((c) => c.id === fw[s]);
+    if (!ch) throw new Error(`unknown footwork ${fw[s]}`);
+    if (ch.disabled) throw new Error(`${s} illegal footwork: ${ch.reason}`);
+  }
+  const events = [];
+  const out = footworkOutcome(state, fa, fb);
+  const wasRocked = { a: state.a.rocked, b: state.b.rocked };
+  for (const s of SIDES) {
+    const m = FWR(state).moves[fw[s]];
+    let cost = m.cost;
+    for (const tag of Object.keys(state[s].marks)) if (cost > 0) cost += state.rules.tags[tag]?.footCost || 0;
+    if (cost > 0 && state[s].pips.legs >= state.rules.debuff.threshold) cost += state.rules.debuff.legFootCost; // bad legs slow the feet
+    addStamina(state, s, -cost + (m.regen || 0) + out.mods[s].stam);
+  }
+  (state.fwHist ||= []).push({ a: fa, b: fb });
+  events.push({ kind: "footwork", a: fa, b: fb, text: out.text, key: out.key });
+  setDist(state, state.dist + out.dist, events, null);
+  let leader = out.lead;
+  let chance = null;
+  if (leader === "roll") {
+    chance = leadChance(state, out.biasA);
+    leader = nextUnit(state) < chance ? "a" : "b";
+  }
+  const edge = state.edge?.side ?? null;
+  state.edge = null;
+  events.push({ kind: "lead", side: leader, chance, edge });
+  state.engage = { leader, resp: opposite(leader), fw, mods: out.mods, startDist: state.dist, wasRocked, started: false, combo: [], i: 0, landed: 0, exposed: false, stop: null, edge: null, counterBy: null, thrown: { a: [], b: [] }, plan: null, log: [] };
+  updateCageFw(state, out, fw, events);
+  runStandingAbilities(state, { startDist: state.dist, on: (t, s) => t.on === "footwork" && (!t.moves || t.moves.includes(fw[s])) }, events);
+  return events;
+}
+
+// ---------- Lead and respond ----------
+
+/** Why this combo cannot be played, or null. Basic moves can repeat; drawn cards only as many times as the hand holds them. */
+export function comboError(state, s, cards) {
+  const E = state.engage;
+  if (!E || E.leader !== s) return "not leading";
+  if (E.started) return "already started";
+  if (cards.length > comboMax(state, s)) return "too long";
+  const have = {};
+  for (const c of state[s].hand) have[c] = (have[c] || 0) + 1;
+  const used = {};
+  let d = state.dist;
+  for (let i = 0; i < cards.length; i++) {
+    const card = state.cards[cards[i]];
+    if (!card || card.hidden || card.counterOnly) return "not a lead card";
+    if (!have[cards[i]]) return "not in hand";
+    if (!card.basic) {
+      used[cards[i]] = (used[cards[i]] || 0) + 1;
+      if (used[cards[i]] > have[cards[i]]) return "not in hand";
+    }
+    if (card.height === "grab" && i !== cards.length - 1) return "a grab ends the combo";
+    if (!usableAt(state, card, d, s)) return "out of range";
+    d = clampDist(state, d + (card.move || 0));
+  }
+  return null;
+}
+
+/** Why this response cannot be played, or null. A response chosen live (a card was seen coming) cannot be a pre-emptive strike. */
+export function planError(state, s, plan, live = false) {
+  const k = plan?.kind;
+  const me = state[s];
+  if (!["guard", "cover", "evade", "counter", "shoot", "preempt"].includes(k)) return "unknown response";
+  if (k === "guard" && !GUARDS.includes(plan.height)) return "guard where";
+  if (me.rocked && !["guard", "cover"].includes(k)) return "stunned";
+  if (k === "preempt" && live) return "too late";
+  if (k === "counter" || k === "preempt") {
+    const card = state.cards[plan.card];
+    if (!card || !me.hand.includes(plan.card)) return "not in hand";
+    if (!card.basic && state.engage?.thrown[s].includes(plan.card)) return "already used";
+    if (!card.power || card.feint) return "not a strike";
+    if (!usableAt(state, card, state.dist, s)) return "out of range";
+  }
+  return null;
+}
+
+/** Cards the responder could answer with: any striking card in hand that reaches from here. */
+export function counterCards(state, s) {
+  return state[s].hand.filter((c) => {
+    const card = state.cards[c];
+    if (!card.basic && state.engage?.thrown[s].includes(c)) return false;
+    return card.power && !card.feint && usableAt(state, card, state.dist, s);
+  });
+}
+
+function evadeChance(state, s, speed) {
+  const ev = ENG(state).evade;
+  return clamp(ev.base + (reactionOf(state, s) - speed) * ev.perDiff + modOf(state, s, "evade"), ev.min, ev.max);
+}
+
+/** How fast his answering strike gets there. A counter thrown at a card he never saw coming is a guess, and a slower one. */
+function counterSpeed(state, s, cardId, blind = false) {
+  return cardSpeed(state, s, cardId) + modOf(state, s, "counterSpeed") + (state.cards[cardId].counterSpeed || 0) - (blind ? ENG(state).counter.blindPenalty : 0);
+}
+
+/** The response the plan gives for cards he cannot see: a counter or a shot is a one-time bet and is used up on the first card. */
+const planFor = (E) => E.plan || { kind: "cover" };
+
+const tradeBonus = (state, s) => 1 + (passive(state, s).tradeBonus || 0);
+
+/** The leader's next card and whether the responder can see it coming (null when the combo is over). */
+export function engageWaiting(state) {
+  const E = state.engage;
+  if (!E?.started || E.stop || E.i >= E.combo.length) return null;
+  const cid = E.combo[E.i];
+  const speed = cardSpeed(state, E.leader, cid);
+  const reaction = reactionOf(state, E.resp);
+  return { index: E.i, of: E.combo.length, card: cid, speed: Math.round(speed), reaction: Math.round(reaction), visible: speed < reaction };
+}
+
+/** The leader has laid out his cards and the responder his bet. Resolves any pre-emptive strike. Returns events. */
+export function engageStart(state, combo, plan = { kind: "cover" }) {
+  const E = state.engage;
+  if (!E) throw new Error("no hand in progress");
+  const L = E.leader;
+  const S = E.resp;
+  const err = comboError(state, L, combo);
+  if (err) throw new Error(`${L} illegal combo: ${err} (${combo.join(",")})`);
+  const perr = planError(state, S, plan);
+  if (perr) throw new Error(`${S} illegal response: ${perr}`);
+  E.started = true;
+  E.combo = [...combo];
+  E.plan = { ...plan };
+  (state.respHist ||= { a: [], b: [] })[S].push(plan.kind === "guard" ? plan.height : plan.kind);
+  (state.leadHist ||= { a: [], b: [] })[L].push(combo.length ? state.cards[combo[0]].height : "pass");
+  const events = [{ kind: "engage", leader: L, resp: S, n: combo.length }];
+  if (!combo.length) {
+    probe(state, events);
+    return finishHand(state, events);
+  }
+  state.stall = 0;
+  if (plan.kind === "preempt") preempt(state, E, events);
+  if (state.over || E.stop) return finishHand(state, events);
+  return events;
+}
+
+function probe(state, events) {
+  state.stall += 1;
+  events.push({ kind: "standoff", stall: state.stall });
+  if (state.stall >= state.rules.stall.limit) {
+    addMomentum(state, "a", state.rules.momentum.standoff);
+    addMomentum(state, "b", state.rules.momentum.standoff);
+    state.stall = 0;
+    events.push({ kind: "referee" });
+  }
+}
+
+/** A strike thrown before the leader's first card, at a price. If it lands it breaks up the whole combo. */
+function preempt(state, E, events) {
+  const R = ENG(state);
+  const L = E.leader;
+  const S = E.resp;
+  const cid = E.plan.card;
+  addStamina(state, S, -R.preempt.cost - standCost(state, cid));
+  spendSignature(state, S, cid, events);
+  events.push({ kind: "preempt", side: S, card: cid, name: state.cards[cid].name });
+  E.thrown[S].push(cid);
+  const tier = rollTier(state, S, [cid], modOf(state, S, "crit"));
+  E.plan = { kind: "cover" };
+  if (dealHit(state, S, [cid], tier, R.dmgScale * modOf(state, S, "power") * modOf(state, L, "dmgIn"), events)) return;
+  if (tier !== "graze") {
+    E.stop = "preempt";
+    E.counterBy = S;
+    E.edge = S;
+    events.push({ kind: "interrupted", side: L });
+  }
+}
+
+/** Drives a whole hand: `react(state, waiting)` answers cards the responder can see (return a response, or null to stay with the bet). */
+export function resolveEngage(state, combo, plan, react = null) {
+  const events = engageStart(state, combo, plan);
+  while (state.engage) {
+    const w = engageWaiting(state);
+    const reaction = w?.visible && react ? react(state, w) : null;
+    events.push(...engageStep(state, reaction));
+  }
+  return events;
+}
+
+/** Turns over the next card against the bet (or against `reaction`, an answer to a card that was seen coming). */
+export function engageStep(state, reaction = null) {
+  const E = state.engage;
+  if (!E?.started) throw new Error("no combo in progress");
+  const L = E.leader;
+  const S = E.resp;
+  const R = ENG(state);
+  const events = [];
+  const cid = E.combo[E.i];
+  const card = state.cards[cid];
+  const speed = cardSpeed(state, L, cid);
+  const visible = speed < reactionOf(state, S);
+  let resp = planFor(E);
+  let fromPlan = true;
+  if (visible && reaction) {
+    const err = planError(state, S, reaction, true);
+    if (err) throw new Error(`${S} illegal reaction: ${err}`);
+    resp = reaction;
+    fromPlan = false;
+  }
+  // Each card after the first in a combo costs a little more: a long string of blows wears him out.
+  addStamina(state, L, -standCost(state, cid) * (1 + R.stepCost * E.i));
+  if (card.signature) {
+    addMomentum(state, L, -state.rules.momentum.signatureCost);
+    events.push({ kind: "signature", side: L, name: card.name });
+  }
+  E.thrown[L].push(cid);
+  events.push({ kind: "card", side: L, card: cid, name: card.name, index: E.i, of: E.combo.length, height: card.height, speed: Math.round(speed), visible, reply: { ...resp } });
+  E.i += 1;
+  if (!usableAt(state, card, state.dist, L)) {
+    events.push({ kind: "whiff", side: L, card: cid, name: card.name });
+  } else if (card.feint) throwFeint(state, E, resp, fromPlan, events);
+  else if (card.height === "grab") throwGrab(state, E, cid, resp, speed, fromPlan, events, visible);
+  else throwStrike(state, E, cid, resp, speed, fromPlan, events, visible);
+  if (state.over || E.stop || E.i >= E.combo.length) return finishHand(state, events);
+  return events;
+}
+
+const spentBet = (E, fromPlan, resp) => {
+  if (fromPlan && (resp.kind === "counter" || resp.kind === "shoot")) E.plan = { kind: "cover" };
+};
+
+function throwFeint(state, E, resp, fromPlan, events) {
+  const L = E.leader;
+  const S = E.resp;
+  const R = ENG(state);
+  if (!["counter", "shoot", "evade"].includes(resp.kind)) {
+    events.push({ kind: "feintWasted", side: L });
+    return;
+  }
+  // He reacted to a fake: whatever he spent is gone, and the next card catches him moving.
+  if (resp.kind === "counter") {
+    addStamina(state, S, -standCost(state, resp.card));
+    spendSignature(state, S, resp.card, events);
+    E.thrown[S].push(resp.card);
+  } else if (resp.kind === "shoot") addStamina(state, S, -R.shoot.cost);
+  else addStamina(state, S, -R.evade.cost);
+  events.push({ kind: "feintWin", side: L, vs: resp.kind });
+  queueMark(state, S, "fooled", 1);
+  E.exposed = true;
+  spentBet(E, fromPlan, resp);
+}
+
+/** A signature move used as an answer costs the momentum just as when it leads. */
+function spendSignature(state, s, cardId, events) {
+  if (!state.cards[cardId].signature) return;
+  addMomentum(state, s, -state.rules.momentum.signatureCost);
+  events.push({ kind: "signature", side: s, name: state.cards[cardId].name });
+}
+
+/** Punishes a card that was dodged or caught: the slower the card, the bigger the opening. */
+function punish(state, E, card, events) {
+  const S = E.resp;
+  const L = E.leader;
+  if (!card.recovery) return false;
+  const tier = rollTier(state, S, ["punish"], modOf(state, S, "crit"));
+  return dealHit(state, S, ["punish"], tier, card.recovery * ENG(state).punishMult * ENG(state).dmgScale * modOf(state, L, "dmgIn"), events);
+}
+
+function throwStrike(state, E, cid, resp, speed, fromPlan, events, visible) {
+  const L = E.leader;
+  const S = E.resp;
+  const card = state.cards[cid];
+  const R = ENG(state);
+  const baseMult = R.dmgScale * modOf(state, L, "power") * modOf(state, S, "dmgIn");
+  const critAdd = E.landed * R.critStep + (E.exposed ? R.feintCrit : 0) + modOf(state, L, "crit");
+  const hit = (mult, extra = 0, trade = 1) => {
+    const tier = rollTier(state, L, [cid], critAdd + extra);
+    if (tier === "crit") addMomentum(state, L, state.rules.momentum.crit);
+    const ended = dealHit(state, L, [cid], tier, baseMult * mult * trade, events);
+    if (!ended) E.landed += 1;
+    return ended;
+  };
+  const moveOn = () => {
+    if (card.move) shiftDist(state, card.move, events, L);
+  };
+  switch (resp.kind) {
+    case "guard": {
+      if (resp.height === card.height) {
+        const chip = card.signature ? state.rules.signature.glanceMult / state.rules.tiers.grazeMult : R.block.mult;
+        events.push({ kind: "block", side: S, height: resp.height, card: cid });
+        if (dealHit(state, L, [cid], "graze", baseMult * chip, events, { chip: true })) return;
+        const streak = state.guardStreak?.side === S ? state.guardStreak.n + 1 : 1;
+        state.guardStreak = { side: S, n: streak };
+        addStamina(state, S, -R.block.drainResp);
+        addStamina(state, L, -(R.block.drainLeader + (streak - 1) * R.block.streakDrain));
+        E.stop = "block";
+        return;
+      }
+      if (hit(R.mismatchMult)) return;
+      moveOn();
+      return;
+    }
+    case "cover":
+      addStamina(state, S, R.coverRegen);
+      if (hit(R.coverMult)) return;
+      moveOn();
+      return;
+    case "evade": {
+      addStamina(state, S, -R.evade.cost);
+      const p = evadeChance(state, S, speed);
+      if (nextUnit(state) < p) {
+        events.push({ kind: "evade", side: S, card: cid, chance: p });
+        moveOn();
+        E.stop = "evade";
+        E.edge = S;
+        punish(state, E, card, events);
+        return;
+      }
+      events.push({ kind: "evadeFail", side: S, chance: p });
+      if (hit(1, R.evade.failCrit)) return;
+      moveOn();
+      return;
+    }
+    case "counter": {
+      const cc = state.cards[resp.card];
+      addStamina(state, S, -standCost(state, resp.card));
+      spendSignature(state, S, resp.card, events);
+      E.thrown[S].push(resp.card);
+      spentBet(E, fromPlan, resp);
+      if (cc.counterVs === "grab") {
+        events.push({ kind: "counterWrong", side: S, name: cc.name });
+        if (hit(1, R.counter.wrongCrit)) return;
+        moveOn();
+        return;
+      }
+      const cs = counterSpeed(state, S, resp.card, !visible);
+      events.push({ kind: "counter", side: S, card: resp.card, name: cc.name, speed: Math.round(cs), vs: Math.round(speed), first: cs > speed });
+      if (cs > speed) {
+        const tier = rollTier(state, S, [resp.card], modOf(state, S, "crit"));
+        if (dealHit(state, S, [resp.card], tier, R.dmgScale * state.rules.damage.counterMult * modOf(state, S, "power") * modOf(state, L, "dmgIn"), events)) return;
+        events.push({ kind: "interrupted", side: L });
+        if (cc.move) shiftDist(state, cc.move, events, S);
+        if (cc.lockAnywhere && tier !== "graze") {
+          state.ground = makeGround(L, 0);
+          startLock(state, S, cc.name, cc.lockDepth || 1, events, passive(state, S).lockDepthBottom || 0);
+        }
+        E.stop = "counter";
+        E.counterBy = S;
+        E.edge = S;
+        return;
+      }
+      if (hit(R.counter.failMult, R.counter.failCrit, tradeBonus(state, L))) return;
+      moveOn();
+      // His answer still gets there unless the blow stunned him.
+      if (state[S].rocked && state[S].rockedAt === state.history.length) {
+        events.push({ kind: "interrupted", side: S });
+        return;
+      }
+      const tier = rollTier(state, S, [resp.card], modOf(state, S, "crit"));
+      if (dealHit(state, S, [resp.card], tier, R.dmgScale * state.rules.damage.counterMult * R.counter.secondMult * tradeBonus(state, S) * modOf(state, L, "dmgIn"), events)) return;
+      if (cc.move) shiftDist(state, cc.move, events, S);
+      return;
+    }
+    case "shoot": {
+      addStamina(state, S, -R.shoot.cost);
+      spentBet(E, fromPlan, resp);
+      if (card.shootable) {
+        events.push({ kind: "shoot", side: S, card: cid, caught: true });
+        const tier = rollTier(state, S, ["counter_shot"], R.shoot.bonus);
+        landGrab(state, S, L, "counter_shot", tier, events, {});
+        E.stop = "shoot";
+        E.edge = S;
+        E.counterBy = S;
+        return;
+      }
+      events.push({ kind: "shoot", side: S, card: cid, caught: false });
+      if (hit(R.shoot.stuffMult, R.counter.wrongCrit)) return;
+      moveOn();
+      return;
+    }
+    default:
+      if (hit(1)) return;
+      moveOn();
+  }
+}
+
+function throwGrab(state, E, cid, resp, speed, fromPlan, events, visible) {
+  const L = E.leader;
+  const S = E.resp;
+  const card = state.cards[cid];
+  const R = ENG(state);
+  let extra = 0;
+  let catcher = null;
+  E.stop = "grab";
+  if (resp.kind === "evade") {
+    addStamina(state, S, -R.evade.cost);
+    const p = evadeChance(state, S, speed);
+    if (nextUnit(state) < p) {
+      events.push({ kind: "evade", side: S, card: cid, chance: p });
+      E.stop = "evade";
+      E.edge = S;
+      punish(state, E, card, events);
+      return;
+    }
+    events.push({ kind: "evadeFail", side: S, chance: p });
+  } else if (resp.kind === "counter") {
+    const cc = state.cards[resp.card];
+    addStamina(state, S, -standCost(state, resp.card));
+    spendSignature(state, S, resp.card, events);
+    E.thrown[S].push(resp.card);
+    spentBet(E, fromPlan, resp);
+    if (cc.counterVs === "grab") {
+      catcher = resp.card;
+      events.push({ kind: "counter", side: S, card: resp.card, name: cc.name, speed: 0, vs: 0, first: false, catch: true });
+    } else {
+      const cs = counterSpeed(state, S, resp.card, !visible);
+      events.push({ kind: "counter", side: S, card: resp.card, name: cc.name, speed: Math.round(cs), vs: Math.round(speed), first: cs > speed });
+      if (cs > speed) {
+        const tier = rollTier(state, S, [resp.card], modOf(state, S, "crit"));
+        if (dealHit(state, S, [resp.card], tier, R.dmgScale * state.rules.damage.counterMult * R.counter.grabMult * modOf(state, S, "power") * modOf(state, L, "dmgIn"), events)) return;
+        events.push({ kind: "interrupted", side: L });
+        E.stop = "counter";
+        E.counterBy = S;
+        E.edge = S;
+        return;
+      }
+    }
+  } else if (resp.kind === "shoot") {
+    addStamina(state, S, -R.shoot.cost);
+    spentBet(E, fromPlan, resp);
+    resolveScramble(state, events);
+    E.stop = "grab";
+    E.edge = null;
+    return;
+  } else if (resp.kind === "guard" && resp.height === "low") {
+    extra -= R.sprawl;
+    events.push({ kind: "sprawl", side: S });
+  }
+  const tier = rollTier(state, L, [cid], extra + E.landed * R.critStep + (E.exposed ? R.feintCrit : 0) + modOf(state, L, "crit"));
+  const where = landGrab(state, L, S, cid, tier, events, { catcher, card });
+  E.grab = where;
+  if (where === "ground" || where === "clinch") E.edge = L;
+  if (where === "caught") E.edge = S;
+}
+
+/**
+ * A grab goes in. `clinchEntry` cards only close to the clinch; the rest try to take him down (the tier says how well it lands),
+ * a pull-guard drags him on top of you, and a poor shot can run into a guillotine. Returns "clinch", "ground" or "caught".
+ */
+function landGrab(state, w, l, cid, tier, events, ctx = {}) {
+  const card = state.cards[cid];
+  const sc = state.rules.score;
+  const G = state.rules.grapple;
+  if (card.clinchEntry) {
+    if (card.drain) addStamina(state, l, -card.drain);
+    const before = state.dist;
+    setDist(state, state.rules.dist.clinch, events, w);
+    if (before < state.dist) events.push({ kind: "clinch", side: w });
+    score(state, w, "grappling", sc.exchangeWin);
+    events.push({ kind: "grab", side: w, where: "clinch" });
+    return "clinch";
+  }
+  addStamina(state, l, -G.drainOnLanding - (card.drain || 0));
+  if (card.pullGuard) {
+    state.ground = makeGround(l, 0);
+    events.push({ kind: "pullGuard", side: w });
+    score(state, w, "grappling", sc.exchangeWin);
+    events.push({ kind: "grab", side: w, where: "ground" });
+    return "ground";
+  }
+  if (ctx.catcher && tier === "graze") {
+    state.ground = makeGround(w, 0);
+    events.push({ kind: "caught", side: l, name: state.cards[ctx.catcher].name });
+    if (passive(state, l).lockDepthCatch) showAbility(state, l, events);
+    startLock(state, l, state.cards[ctx.catcher].name, 1, events, passive(state, l).lockDepthCatch || 0);
+    return "caught";
+  }
+  const pos = (card.landing || 0) + G.positionFromTier[tier];
+  if (pos < 0) {
+    setDist(state, state.rules.dist.clinch, events, w);
+    events.push({ kind: "clinch", side: w, stuffed: true });
+    score(state, w, "grappling", sc.exchangeWin);
+    events.push({ kind: "grab", side: w, where: "clinch" });
+    return "clinch";
+  }
+  state.ground = makeGround(w, clamp(pos, 0, state.rules.positions.length - 1));
+  score(state, w, "grappling", sc.takedown);
+  addMomentum(state, w, state.rules.momentum.landing);
+  events.push({ kind: "takedown", side: w, pos: state.ground.pos, name: state.rules.positions[state.ground.pos], tier });
+  events.push({ kind: "grab", side: w, where: "ground" });
+  if (card.slam > 0) {
+    state[l].hp = Math.max(1, state[l].hp - card.slam * state.rules.damage.slamToGround);
+    events.push({ kind: "hit", attacker: w, target: "body", damage: card.slam, tier, card: cid, name: "重摔" });
+  }
+  return "ground";
+}
+
+/** The hand is over: who has the edge now, the points, abilities, then the usual end of an exchange. */
+function finishHand(state, events) {
+  const E = state.engage;
+  const R = ENG(state);
+  const L = E.leader;
+  const S = E.resp;
+  if (E.combo.length && !E.stop && !state.over && E.i >= E.combo.length) {
+    E.stop = "done";
+    E.edge = L;
+    addStamina(state, S, -R.comboDrain);
+    events.push({ kind: "comboDone", side: L, n: E.combo.length });
+  }
+  if (E.stop !== "block") state.guardStreak = null;
+  const wasRocked = E.wasRocked;
+  const rockedNow = (s) => state[s].rocked && state[s].rockedAt === state.history.length;
+  if (rockedNow(S) && !rockedNow(L)) E.edge = L;
+  if (rockedNow(L) && !rockedNow(S)) E.edge = S;
+  state.edge = E.edge && !state.over ? { side: E.edge } : null;
+  if (E.edge && E.combo.length) {
+    const grabbed = E.grab === "ground" || E.grab === "clinch";
+    score(state, E.edge, grabbed || (E.edge === S && E.stop === "shoot") ? "grappling" : "striking", R.edgeScore);
+    addMomentum(state, E.edge, state.rules.momentum.win);
+    addMomentum(state, opposite(E.edge), state.rules.momentum.lose);
+  }
+  const hits = events.filter((e) => e.kind === "hit" && !e.chip);
+  if (!state.over) {
+    const played = (s) => E.thrown[s].map((c) => state.cards[c]);
+    runStandingAbilities(state, {
+      startDist: E.startDist,
+      on: (t, s) => {
+        switch (t.on) {
+          case "lead": return s === L && E.combo.length > 0;
+          case "counter": return E.counterBy === s;
+          case "comboDone": return E.stop === "done" && s === L;
+          case "block": return E.stop === "block" && s === S;
+          case "evade": return E.stop === "evade" && s === S;
+          case "hit": return hits.some((e) => e.attacker === s && e.tier !== "graze" && (!t.target || e.target === t.target) && (!t.type || state.cards[e.card]?.type === t.type) && (!t.kick || state.cards[e.card]?.kick));
+          case "takedown": return events.some((e) => e.kind === "takedown" && e.side === s);
+          case "grab": return events.some((e) => e.kind === "grab" && e.side === s);
+          case "play": return s === L && played(s).filter((c) => (!t.type || c.type === t.type) && !c.feint).length >= (t.min || 1);
+          default: return false;
+        }
+      },
+    }, events);
+  }
+  if (state.ground) {
+    state.cage = null; // nobody is pinned on the mat
+    for (const s of SIDES) state[s].pressure = 0;
+  }
+  const types = { [L]: E.combo.length ? "S" : "C", [S]: "C" };
+  state.history.push(types);
+  state.engage = null;
+  endExchange(state, E.thrown, types, wasRocked, events);
+  state.exchangeCost = null;
+  const down = events.find((e) => e.kind === "takedown");
+  if (down && !state.over && state.phase === "exchange" && state.ground) state.pending = { kind: "chase", side: down.side };
+  return events;
+}
+
+// ---------- Card text for the screen ----------
+
+const HEIGHT_NAMES = { high: "上", mid: "中", low: "下", grab: "抱", feint: "假" };
+export const heightName = (h) => HEIGHT_NAMES[h] || "";
+
+/** How a standing card reads right now. `foe` is the other side, so a card can say whether he would see it coming. */
+export function describeStandingCard(state, s, cardId) {
+  const card = state.cards[cardId];
+  const foe = opposite(s);
+  const speed = Math.round(cardSpeed(state, s, cardId));
+  const dmg = card.power ? Math.round(cardDamage(state, s, cardId) * ENG(state).dmgScale) : 0;
+  let effect = "";
+  if (card.feint) effect = "騙他反應";
+  else if (card.clinchEntry) effect = "貼進纏抱";
+  else if (card.pullGuard) effect = "拉進地面，你在下位";
+  else if (card.height === "grab") effect = `摔倒 → ${state.rules.positions[card.landing || 0]}`;
+  else if (card.counterOnly) effect = card.counterVs === "grab" ? "他抱腿時勒住" : `反擊 ${dmg}`;
+  else effect = `${dmg}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
+  if (card.move && !card.counterOnly) effect += card.move > 0 ? ` · 進 ${card.move}` : ` · 退 ${-card.move}`;
+  const setups = (card.setup || []).map((st) => ({ tag: st.tag, label: state.rules.tags[st.tag]?.label || st.tag, when: st.when }));
+  const follows = Object.entries(card.follow || {}).map(([tag, eff]) => ({ tag, label: state.rules.tags[tag]?.label || tag, bonus: Math.round(((eff.crit || 0) + (eff.quality || 0)) * 100), live: Boolean(state[s].marks[tag]) }));
+  return {
+    effect,
+    height: card.height,
+    heightName: HEIGHT_NAMES[card.height] || "",
+    speed,
+    cost: Math.round(standCost(state, cardId) * 10) / 10,
+    unusable: !usableAt(state, card, state.dist, s),
+    rangeText: rangeText(state, card),
+    seenByFoe: !card.counterOnly && speed < reactionOf(state, foe),
+    recovery: card.recovery || 0,
+    setups,
+    follows,
+    counterOnly: Boolean(card.counterOnly),
+  };
+}
+
+/** What a combo would do, for the screen: its cost, where the fighters end up, and the damage if every card lands clean. */
+export function previewCombo(state, s, cards) {
+  let d = state.dist;
+  let cost = 0;
+  let dmg = 0;
+  for (const c of cards) {
+    const card = state.cards[c];
+    cost += standCost(state, c);
+    dmg += card.power ? cardDamage(state, s, c) * ENG(state).dmgScale : 0;
+    d = clampDist(state, d + (card.move || 0));
+  }
+  return { cost: Math.round(cost), damage: Math.round(dmg), endDist: d, max: comboMax(state, s), stamina: Math.round(state[s].stamina) };
+}
+
+// ---------- Standing AI ----------
+
+const sampleId = (state, probs) => {
+  let r = nextUnit(state);
+  const ids = Object.keys(probs);
+  for (const id of ids) {
+    r -= probs[id];
+    if (r < 0) return id;
+  }
+  return ids[ids.length - 1];
+};
+
+function normalise(w, floor, open) {
+  for (const id of Object.keys(w)) w[id] = open(id) ? Math.max(w[id], floor) : 0;
+  const total = Object.values(w).reduce((a, b) => a + b, 0) || 1;
+  return Object.fromEntries(Object.entries(w).map(([id, v]) => [id, v / total]));
+}
+
+/** The honest tendency of a fighter's next step. The screen shows these numbers and chooseFootwork samples them. */
+export function footworkIntent(state, s) {
+  const R = FWR(state);
+  const ai = state.rules.ai;
+  const me = state[s];
+  const oppSide = opposite(s);
+  const f = fighterOf(state, s);
+  const style = R.styles[f.fwStyle || "balanced"][phaseOf(state, s)];
+  const plan = tactic(state, s);
+  const w = {};
+  for (const id of R.order) w[id] = style[id] + (plan.fw?.[id] || 0);
+  const tags = [];
+  let readBoost = 1;
+  for (const tag of Object.keys(state[oppSide].marks)) readBoost *= state.rules.tags[tag]?.readBoost || 1;
+  const recent = (state.fwHist || []).slice(-ai.adapt.window).map((h) => h[oppSide]);
+  for (const m of recent) for (const [t, share] of Object.entries(R.lean[m])) w[t] += ai.adapt.perMatch * readBoost * share;
+  if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2]) {
+    for (const [t, share] of Object.entries(R.lean[recent[recent.length - 1]])) w[t] += ai.adapt.repeatBonus * share;
+    tags.push("看穿你的習慣");
+  }
+  if (me.rocked) { w.retreat += 0.5; w.hold += ai.rockedCounter; w.press *= 0.3; tags.push("被打暈，想撐過去"); }
+  if (state[oppSide].rocked) { w.press += ai.swarmStrike; tags.push("要衝上來追擊"); }
+  if (me.stamina < ai.lowStaminaAt) { w.hold += ai.lowStaminaCounter; w.press *= 0.5; tags.push("快沒力了"); }
+  if (state.cage) {
+    const c = state.rules.cage;
+    if (state.cage.side === s) { w.circle += c.pinnedCircle; w.press += c.pinnedPress; tags.push("背靠籠子，想脫離"); }
+    else { w.press += c.pinnerPress; tags.push("把你逼在籠邊，想壓上"); }
+  }
+  const [lo, hi] = f.prefer;
+  if (state.dist < lo) { w.press += ai.wantClose; tags.push("想拉近距離"); }
+  else if (state.dist > hi) { w.retreat += ai.wantOut * 0.5; w.circle += ai.wantOut * 0.5; tags.push("想拉開距離"); }
+  for (const [tag] of Object.entries(me.marks)) {
+    const def = state.rules.tags[tag];
+    if (!def?.sharpen) continue;
+    for (const id of R.order) w[id] **= def.sharpen;
+    tags.push(def.label);
+  }
+  const probs = normalise(w, ai.minWeight, (id) => !footworkChoices(state, s).find((c) => c.id === id).disabled);
+  const top = R.order.reduce((best, id) => (probs[id] > probs[best] ? id : best), R.order[0]);
+  const tells = ai.footTells[top];
+  return {
+    kind: "footwork",
+    options: R.order.map((id) => ({ id, label: R.moves[id].label, short: R.moves[id].short })),
+    probs,
+    top,
+    tell: tells[(state.round * 7 + state.exchange * 3) % tells.length],
+    tags,
+    blind: state[oppSide].cut >= state.rules.cut.blindAt,
+    signatureReady: me.hand.includes(f.signature),
+  };
+}
+
+const leadPool = (state, s) => state[s].hand.filter((c) => !state.cards[c].counterOnly);
+
+/** After the steps: how the leader will start (the height of his first card) or how the responder will meet it. Also honest. */
+export function engageIntent(state, s) {
+  const E = state.engage;
+  const ai = state.rules.ai;
+  const me = state[s];
+  const oppSide = opposite(s);
+  const f = fighterOf(state, s);
+  const tags = [];
+  const leading = E.leader === s;
+  let probs;
+  let options;
+  if (leading) {
+    const style = ai.lead.styles[f.leadStyle || "balanced"];
+    const w = { ...style.heights };
+    if (state[oppSide].rocked) { w.high += 0.4; tags.push("要追擊"); }
+    if (state.dist >= 3) w.mid += 0.3;
+    const recent = (state.respHist?.[oppSide] || []).slice(-ai.adapt.window);
+    for (const r of recent) if (GUARDS.includes(r)) w[r] = Math.max(0, w[r] - ai.engage.adaptHeight * 0.5);
+    if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2] && GUARDS.includes(recent[recent.length - 1])) tags.push("避開你老守的位置");
+    if (me.rocked) tags.push("被打暈，只能出一張");
+    const pool = leadPool(state, s);
+    probs = normalise(w, ai.minWeight, (h) => pool.some((c) => state.cards[c].height === h && usableAt(state, state.cards[c], state.dist, s)));
+    options = HEIGHTS.map((h) => ({ id: h, label: ai.heightWords[h] }));
+  } else {
+    const style = ai.respond.styles[f.respondStyle || "balanced"];
+    const w = { ...style };
+    const heights = (state.leadHist?.[oppSide] || []).slice(-ai.adapt.window);
+    for (const h of heights) {
+      if (GUARDS.includes(h)) w[h] += ai.engage.adaptHeight;
+      else if (h === "grab") { w.low += ai.engage.adaptHeight * 0.5; w.shoot += ai.engage.adaptHeight * 0.5; }
+    }
+    if (heights.length >= 2 && heights[heights.length - 1] === heights[heights.length - 2]) tags.push("看穿你的習慣");
+    for (const [kind, key] of [["counter", "counterSpeed"], ["evade", "evade"]]) if (modOf(state, s, key) > 0) w[kind] += 0.06 + modOf(state, s, key) * 0.2;
+    if (me.stamina < ai.lowStaminaAt) { w.cover += ai.lowStaminaCounter; tags.push("快沒力了"); }
+    if (me.rocked) {
+      for (const k of ["evade", "counter", "shoot", "preempt"]) w[k] = 0;
+      w.cover += ai.rockedCounter;
+      tags.push("被打暈，想撐過去");
+    }
+    const strikers = counterCards(state, s);
+    const preemptOk = !me.rocked && me.stamina >= ai.engage.preemptMinStamina + ENG(state).preempt.cost && strikers.length > 0;
+    probs = normalise(w, ai.minWeight, (id) => (id === "counter" ? strikers.length > 0 && !me.rocked : id === "preempt" ? preemptOk : me.rocked ? ["high", "mid", "low", "cover"].includes(id) : true));
+    options = RESPONSES.map((id) => ({ id, label: { high: "架高", mid: "架中", low: "架低", cover: "抱頭", evade: "閃身", counter: "反擊", shoot: "抱摔", preempt: "搶先" }[id] }));
+  }
+  const top = Object.keys(probs).reduce((best, id) => (probs[id] > probs[best] ? id : best));
+  return {
+    kind: leading ? "lead" : "respond",
+    options,
+    probs,
+    top,
+    tell: "",
+    tags,
+    blind: state[oppSide].cut >= state.rules.cut.blindAt,
+    detail: Boolean(state[oppSide].marks.read),
+    signatureReady: me.hand.includes(f.signature),
+  };
+}
+
+export function chooseFootwork(state, s) {
+  return sampleId(state, footworkIntent(state, s).probs);
+}
+
+const strikeValue = (state, s, c) => {
+  const card = state.cards[c];
+  if (card.height === "grab") return 6 + (card.landing || 0) * 4 + (card.quality || 0) * 40;
+  let v = cardDamage(state, s, c) + followValue(state, s, card) + (card.setup ? 2 : 0);
+  if (card.signature) v += 10;
+  // A slow card he can see coming is worth less unless it is a special that wins on power.
+  if (cardSpeed(state, s, c) < reactionOf(state, opposite(s))) v *= 0.75;
+  return v;
+};
+
+function followValue(state, s, card) {
+  let v = 0;
+  for (const [tag, eff] of Object.entries(card.follow || {})) if (state[s].marks[tag]) v += ((eff.crit || 0) + (eff.quality || 0)) * 30;
+  return v;
+}
+
+const pickWeighted = (state, items, weight) => {
+  const w = items.map((x) => Math.max(0.01, weight(x)) ** 1.5);
+  let r = nextUnit(state) * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < items.length; i++) {
+    r -= w[i];
+    if (r <= 0) return items[i];
+  }
+  return items[items.length - 1];
+};
+
+/** The AI's combo: the first card's height is drawn from the shown tendencies; the rest mixes heights and ends on its best shot. */
+export function chooseCombo(state, s, opts = {}) {
+  const intent = engageIntent(state, s);
+  const ai = state.rules.ai;
+  const f = fighterOf(state, s);
+  const style = ai.lead.styles[f.leadStyle || "balanced"];
+  const max = comboMax(state, s);
+  const h0 = opts.height || sampleId(state, intent.probs);
+  const pool = leadPool(state, s);
+  let len = 1;
+  let r = nextUnit(state);
+  for (let i = 0; i < style.len.length; i++) {
+    r -= style.len[i];
+    if (r < 0) { len = i + 1; break; }
+  }
+  len = Math.min(len, max);
+  if (me_lowStamina(state, s)) len = Math.min(len, 2);
+  const cards = [];
+  const used = new Set();
+  let d = state.dist;
+  for (let k = 0; k < len; k++) {
+    let cands = pool.filter((c) => usableAt(state, state.cards[c], d, s) && (state.cards[c].basic || !used.has(c)));
+    if (k === 0) {
+      const first = cands.filter((c) => state.cards[c].height === h0 && !state.cards[c].feint);
+      cands = first.length ? first : cands.filter((c) => !state.cards[c].feint);
+    } else {
+      const last = k === len - 1;
+      const prev = state.cards[cards[k - 1]];
+      if (prev.height === "grab") break;
+      const feint = cands.filter((c) => state.cards[c].feint);
+      const grabs = cands.filter((c) => state.cards[c].height === "grab");
+      if (!last) cands = cands.filter((c) => state.cards[c].height !== "grab");
+      if (feint.length && k === 1 && !last && nextUnit(state) < style.feint) {
+        cards.push(feint[0]);
+        used.add(feint[0]);
+        continue;
+      }
+      if (last && grabs.length && nextUnit(state) < style.shootAfter) cands = grabs;
+      else {
+        cands = cands.filter((c) => !state.cards[c].feint && state.cards[c].height !== "grab");
+        const mixed = cands.filter((c) => state.cards[c].height !== prev.height);
+        if (mixed.length && nextUnit(state) < 0.6) cands = mixed;
+      }
+    }
+    if (!cands.length) break;
+    const pick = k === len - 1 && k > 0 && cands.length > 1 && nextUnit(state) < 0.5
+      ? cands.reduce((best, c) => (strikeValue(state, s, c) > strikeValue(state, s, best) ? c : best))
+      : pickWeighted(state, cands, (c) => strikeValue(state, s, c));
+    cards.push(pick);
+    used.add(pick);
+    d = clampDist(state, d + (state.cards[pick].move || 0));
+    if (state.cards[pick].height === "grab") break;
+  }
+  const sig = f.signature;
+  if (cards.length === 0 && pool.includes(sig) && usableAt(state, state.cards[sig], d, s)) cards.push(sig);
+  return cards;
+}
+const me_lowStamina = (state, s) => state[s].stamina < state.rules.ai.commit.conserveAt;
+
+function bestCounter(state, s, minSpeed = 0) {
+  const list = counterCards(state, s).filter((c) => !state.cards[c].counterVs && (!state.cards[c].signature || state.cards[c].counterOnly));
+  if (!list.length) return null;
+  return list.reduce((best, c) => {
+    const v = (x) => state.cards[x].speed * 0.5 + state.cards[x].power + (state.cards[x].signature ? 12 : 0);
+    return v(c) > v(best) ? c : best;
+  });
+}
+
+/** The AI's bet before the cards turn over, drawn from the shown tendencies. */
+export function choosePlan(state, s) {
+  const intent = engageIntent(state, s);
+  const pick = sampleId(state, intent.probs);
+  if (GUARDS.includes(pick)) return { kind: "guard", height: pick };
+  if (pick === "counter") {
+    const c = bestCounter(state, s);
+    return c ? { kind: "counter", card: c } : { kind: "cover" };
+  }
+  if (pick === "preempt") {
+    const list = counterCards(state, s).filter((c) => !state.cards[c].counterVs && !state.cards[c].signature);
+    if (!list.length) return { kind: "cover" };
+    return { kind: "preempt", card: list.reduce((best, c) => (state.cards[c].power * state.cards[c].speed > state.cards[best].power * state.cards[best].speed ? c : best)) };
+  }
+  return { kind: pick };
+}
+
+/** A card he can see coming: the AI weighs each answer by what it would do against this very card, with some of its own style mixed in. */
+export function chooseReaction(state, s, w) {
+  const L = opposite(s);
+  const R = ENG(state);
+  const card = state.cards[w.card];
+  const me = state[s];
+  if (me.rocked) return { kind: "cover" };
+  const dmg = card.power ? cardDamage(state, L, w.card) : 8;
+  const ev = {};
+  const guardH = card.height === "grab" ? "low" : card.height === "feint" ? "high" : card.height;
+  ev[`guard:${guardH}`] = card.height === "grab" ? 3 : dmg * (1 - R.block.mult * 0.6) + 5;
+  ev.cover = dmg * (1 - R.coverMult);
+  const p = evadeChance(state, s, w.speed);
+  ev.evade = p * (dmg + (card.recovery || 0) * R.punishMult + 5) - (1 - p) * dmg * R.evade.failCrit * 4;
+  const cc = card.height === "grab" ? null : bestCounter(state, s);
+  if (cc) {
+    const first = counterSpeed(state, s, cc) > w.speed;
+    ev.counter = first ? dmg * 0.9 + state.cards[cc].power + 6 : state.cards[cc].power * 0.5 - dmg * 0.2;
+  }
+  if (card.shootable) ev.shoot = 30 * clamp(0.4 + (me.attrs.wrestling - state[L].attrs.grappleDef) * 0.01, 0.1, 0.8) - 4;
+  else if (card.height !== "grab") ev.shoot = -dmg;
+  if (card.feint) { ev.cover = 3; for (const k of Object.keys(ev)) if (k !== "cover") ev[k] = -4; }
+  const entries = Object.entries(ev);
+  if (nextUnit(state) < state.rules.ai.engage.reactVisible) {
+    const [best] = entries.reduce((b, e) => (e[1] > b[1] ? e : b));
+    return reactionFrom(state, s, best);
+  }
+  const intent = engageIntent(state, s);
+  const kinds = entries.map(([k]) => k);
+  const weightOf = (k) => (k.startsWith("guard:") ? intent.probs[k.slice(6)] : intent.probs[k] || 0.05);
+  return reactionFrom(state, s, pickWeighted(state, kinds, weightOf));
+}
+
+function reactionFrom(state, s, key) {
+  if (key.startsWith("guard:")) return { kind: "guard", height: key.slice(6) };
+  if (key === "counter") {
+    const c = bestCounter(state, s);
+    return c ? { kind: "counter", card: c } : { kind: "cover" };
+  }
+  return { kind: key };
+}
+
+/**
+ * Stand-up hand: the fighter's drawn special moves (rules.match.handSize of them, always including something to lead with and,
+ * when the deck has one, something to answer with), then the basic moves everyone always has, then the signature when the momentum is full.
+ */
+export function refillHand(state, s) {
+  const me = state[s];
+  if (state.ground) return refillGround(state, s);
+  if (me.stand) {
+    // Back on his feet: the unplayed ground cards go back to the pile and the stand-up hand returns.
+    me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat));
+    me.hand = me.stand;
+    me.stand = null;
+  }
+  const size = state.rules.match.handSize;
+  const sig = state.fighters[me.id].signature;
+  const core = me.hand.filter((c) => c !== sig && !isBasic(state, c));
+  while (core.length < size && me.draw.length + me.discard.length > 0) core.push(drawOne(state, s));
+  const answers = (c) => Boolean(state.cards[c].counterOnly);
+  for (const wantAnswer of [false, true]) {
+    if (core.some((c) => answers(c) === wantAnswer)) continue;
+    let pool = me.draw;
+    let idx = pool.findIndex((c) => answers(c) === wantAnswer);
+    if (idx < 0) {
+      pool = me.discard;
+      idx = pool.findIndex((c) => answers(c) === wantAnswer);
+    }
+    if (idx < 0) continue;
+    const others = core.filter((c) => answers(c) !== wantAnswer);
+    if (others.length < 2) continue;
+    const swapAt = core.findIndex((c) => answers(c) !== wantAnswer);
+    const taken = pool.splice(idx, 1)[0];
+    pool.unshift(core[swapAt]);
+    core[swapAt] = taken;
+  }
+  me.hand = [...core, ...state.rules.match.basics];
+  if (me.momentum >= state.rules.momentum.signatureCost) me.hand.push(sig);
+}
+
+/** Returns an error string, or null when the play is legal. Ground hands only: stand-up hands go through comboError and planError. An empty play is the free option. */
+export function playError(state, s, cards) {
+  if (!state.ground) return "stand-up hands use comboError and planError";
+  if (cards.length === 0) return state.ground.lock ? "choose a move" : null;
+  const counts = {};
+  for (const c of state[s].hand) counts[c] = (counts[c] || 0) + 1;
+  for (const c of cards) {
+    if (!counts[c]) return "not in hand";
+    counts[c]--;
+  }
+  // On the mat a hand is one card (one move in a lock fight), and a lock fight cannot be sat out.
+  if (cards.length > 1) return "one card on the ground";
+  if (costOf(state, cards, s) > budget(state, s)) return "over budget";
+  if (!usableAt(state, state.cards[cards[0]], state.dist, s)) return "out of range";
+  return null;
+}
+
+/** What the screen shows before a ground play is committed: its cost, the clean-hit damage and the tier chances. */
+export function previewPlay(state, s, cards) {
+  const type = typeOfPlay(state, cards);
+  const odds = tierOdds(state, s, cards);
+  const base = cards.reduce((sum, c) => sum + cardDamage(state, s, c), 0);
+  const d = state.rules.damage;
+  const winMult = state.ground.top === s ? d.winStrikeBonus * d.groundPositionMult[state.ground.pos] : d.bottomCounterMult;
+  return {
+    type,
+    order: cards,
+    cost: costOf(state, cards, s),
+    endDist: null,
+    damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1) * (tactic(state, opposite(s)).dmgIn || 1)),
+    critPct: Math.round(odds.crit * 100),
+    grazePct: Math.round(odds.graze * 100),
+    budget: budget(state, s),
+  };
+}
+
+/** How a card reads right now: the action name and a one-line effect. Ground cards and lock moves here; stand-up cards in describeStandingCard. */
+export function describeCard(state, s, cardId) {
+  const card = state.cards[cardId];
+  const g = state.ground;
+  if (!g) return describeStandingCard(state, s, cardId);
+  const role = g.top === s ? "top" : "bottom";
+  let action = "";
+  let effect = "";
+  if (g.lock) {
+    const l = state.rules.lock;
+    action = card.lockSide === "attack" ? "進攻" : "防守";
+    effect = card.lockSide === "attack" ? `被${l.defend[l.beats[card.lockMove]]}擋住就退一階` : `猜中${l.attack[Object.keys(l.beats).find((k) => l.beats[k] === card.lockMove)]}就退一階`;
+  } else {
+    const cat = state.rules.ground.cats[card.cat];
+    action = cat.label;
+    const gm = state.rules.damage.groundPositionMult[g.pos];
+    const gdmg = Math.round(cardDamage(state, s, cardId) * (role === "top" ? state.rules.damage.winStrikeBonus * gm : state.rules.damage.bottomCounterMult));
+    const names = state.rules.positions;
+    if (card.cat === "punch") effect = `傷害 ${gdmg}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
+    else if (card.cat === "pass") effect = g.pos >= names.length - 1 ? "已在最高位" : `→ ${names[Math.min(names.length - 1, g.pos + 1)]}`;
+    else if (card.cat === "lock") effect = `鎖技：${card.lock}`;
+    else if (card.cat === "frame") effect = g.pos > 0 ? `擋過位 · 退到${names[g.pos - 1]}` : "擋過位";
+    else if (card.cat === "counter") effect = card.lockBottom ? `鎖技：${card.lock}` : `反擊 ${gdmg}`;
+    else {
+      const to = state.rules.ground.escapeTo[g.pos];
+      effect = to < 0 ? "站起來" : `退到${names[to]}`;
+    }
+  }
+  return { action, effect, cost: cardCost(state, s, cardId), unusable: !usableAt(state, card, state.dist, s), blocked: "", rangeText: posText(state, card), setups: [], follows: [] };
+}
+
+/** The opponent's honest tendencies. The UI shows these same numbers and the choose* functions sample from them. */
+export function getIntent(state, s) {
+  if (state.ground) return groundIntent(state, s);
+  return state.engage ? engageIntent(state, s) : footworkIntent(state, s);
+}
+
+/** The AI's next decision, whatever the step is: a footwork, a combo (when leading) or a response (when answering), or a ground play. */
+export function chooseAI(state, s) {
+  if (state.ground) return chooseGroundAI(state, s);
+  if (!state.engage) return { footwork: chooseFootwork(state, s) };
+  return state.engage.leader === s ? { cards: chooseCombo(state, s) } : { plan: choosePlan(state, s) };
+}
+
+/** Resolves one simultaneous exchange on the mat. `playA` / `playB` are arrays of card ids. Stand-up hands go through resolveFootwork and resolveEngage. */
+export function resolveExchange(state, playA, playB, opts = {}) {
+  if (state.phase !== "exchange") throw new Error(`cannot resolve in phase ${state.phase}`);
+  if (state.pending) throw new Error("a pending choice has to be resolved first");
+  if (!state.ground) throw new Error("stand-up hands go through resolveFootwork and resolveEngage");
+  for (const [s, cards] of [["a", playA], ["b", playB]]) {
+    const err = playError(state, s, cards);
+    if (err) throw new Error(`${s} illegal play: ${err} (${cards.join(",")})`);
+  }
+  return resolveGroundExchange(state, playA, playB, opts);
+}
+
 // ---------- Exchange ----------
 
 function addStamina(state, s, delta) {
@@ -1023,7 +1958,7 @@ function cutOpens(state, att, def, events) {
 }
 
 /** Lands a set of cards. One tier applies to the whole set. Returns true if the fight ended. */
-function dealHit(state, att, cards, tier, mult, events) {
+function dealHit(state, att, cards, tier, mult, events, opts = {}) {
   const def = opposite(att);
   const t = state.rules.tiers;
   const tierMult = tier === "crit" ? t.critMult : tier === "graze" ? t.grazeMult : t.cleanMult;
@@ -1041,6 +1976,15 @@ function dealHit(state, att, cards, tier, mult, events) {
     const target = card.target || "head";
     for (let k = 0; k < hits; k++) {
       state[def].hp = Math.max(0, state[def].hp - dmg);
+      if (opts.chip) {
+        // A blocked blow: a little gets through, but it leaves no mark, scores nothing and cannot stun or cut.
+        events.push({ kind: "hit", attacker: att, target, damage: Math.round(dmg), tier, card: c, name: card.name, chip: true });
+        if (state[def].hp <= 0) {
+          finish(state, att, "TKO", events);
+          return true;
+        }
+        continue;
+      }
       const morePips = passive(state, att).extraPips?.[target] || 0;
       if (morePips && state[def].pips[target] < state.rules.debuff.maxPips) showAbility(state, att, events);
       state[def].pips[target] = Math.min(state.rules.debuff.maxPips, state[def].pips[target] + 1 + morePips);
@@ -1053,10 +1997,12 @@ function dealHit(state, att, cards, tier, mult, events) {
         return true;
       }
     }
+    if (opts.chip) continue;
     if (tier !== "graze") queueSetups(state, att, [c], "hit");
     // Elbows open cuts on any clean hit; everything else needs a critical hit.
     if (target === "head" && (card.cut ? tier !== "graze" : tier === "crit") && cutOpens(state, att, def, events)) return true;
   }
+  if (opts.chip) return false;
   if (headDamage < state.rules.rocked.minDamage && tier !== "crit") return false;
   if (headDamage <= 0) return false;
   const r = state.rules.rocked;
@@ -1127,24 +2073,7 @@ function setDist(state, next, events, by) {
 }
 const shiftDist = (state, delta, events, by) => delta && setDist(state, state.dist + delta, events, by);
 
-function overcommit(state, loserCards, loser) {
-  const extra = Math.max(0, (state.exchangeCost?.[loser] ?? costOf(state, loserCards, loser)) - 1);
-  const d = state.rules.damage;
-  // Getting caught on a shot hurts less than walking into a counter: the shooter is already moving under the punch.
-  const rate = typeOfPlay(state, loserCards) === "G" ? d.shootOvercommit : d.overcommitPerEnergy;
-  return 1 + extra * rate;
-}
 
-function winnerText(state, winType, loseType, ground, winnerSide, cards) {
-  if (ground) {
-    const role = ground.top === winnerSide ? "top" : "bottom";
-    return `${state.rules.groundLabels[role][winType]}得手`;
-  }
-  const stepsOnly = cards.every((c) => state.cards[c].moveOnly);
-  if (winType === "S") return "抓到他衝進來";
-  if (winType === "C") return stepsOnly ? "閃開了" : "反擊成功";
-  return stepsOnly ? "逼近了" : "摔進去了";
-}
 
 /**
  * One round of a lock fight. The attacker picked a move and the defender picked the answer; no energy, no dice, only the guess.
@@ -1191,70 +2120,8 @@ function resolveLock(state, plays, events, opts = {}) {
   events.push({ kind: "lockDeepen", attacker: atk, name: lock.name, depth: lock.depth });
 }
 
-/** The fighter on the fence turns out of it. They end up in the middle, free. */
-function escapeCage(state, w, events) {
-  state.cage = null;
-  state[w].pressure = 0;
-  events.push({ kind: "cageEnd", side: w, how: "turn" });
-  setDist(state, state.rules.cage.escapeDist, events, w);
-}
 
-/** The fighter on the fence shoves off and the two swap places: now the other one has his back to it. */
-function pushOff(state, w, l, events) {
-  const c = state.rules.cage;
-  addStamina(state, l, -state.rules.grapple.drainOnLanding);
-  state.cage = { side: l, ttl: c.ttl };
-  state[l].pressure = c.pressureAt;
-  state[w].pressure = 0;
-  events.push({ kind: "cage", side: l, how: "push" });
-  setDist(state, c.pushDist, events, w);
-}
 
-/**
- * Who is being pushed back? A fighter who keeps giving ground (backing off, or being run onto) ends up against the fence.
- * Ground given is read from the distance changes this exchange caused: closing costs the other fighter, retreating costs the retreater.
- */
-function updateCage(state, events, types) {
-  const c = state.rules.cage;
-  if (state.ground) {
-    state.cage = null;
-    for (const s of SIDES) state[s].pressure = 0;
-    return;
-  }
-  if (events.some((e) => e.kind === "cage" || e.kind === "cageEnd")) return;
-  const gave = { a: false, b: false };
-  for (const e of events) {
-    if (e.kind !== "range" || !e.by) continue;
-    if (e.dist > e.from) gave[opposite(e.by)] = true;
-    else if (types[e.by] === "C") gave[e.by] = true;
-    else gave[opposite(e.by)] = true; // pushed away by a strike
-  }
-  // Close in, a grapple that wins drives the other man back onto the fence even when no distance changes hands.
-  const winnerType = types.a === types.b ? null : state.rules.triangle[types.a] === types.b ? "a" : "b";
-  if (winnerType && types[winnerType] === "G" && state.dist >= state.rules.cage.closeDist) gave[opposite(winnerType)] = true;
-  // Pressure builds each time ground is given and only drains when the other man gives ground back.
-  for (const s of SIDES) {
-    if (gave[s]) state[s].pressure += 1 + (tactic(state, opposite(s)).pressure || 0);
-    else if (gave[opposite(s)]) state[s].pressure = Math.max(0, state[s].pressure - 1);
-  }
-  if (state.cage) {
-    const pinned = state.cage.side;
-    if (state.dist === 0) {
-      state.cage = null;
-      events.push({ kind: "cageEnd", side: pinned, how: "gap" });
-    } else if (gave[pinned]) state.cage.ttl = c.ttl;
-    else if (--state.cage.ttl <= 0) {
-      state.cage = null;
-      events.push({ kind: "cageEnd", side: pinned, how: "fade" });
-    }
-    return;
-  }
-  const side = SIDES.find((x) => gave[x] && state[x].pressure >= c.pressureAt);
-  if (side && state.dist >= 1) {
-    state.cage = { side, ttl: c.ttl };
-    events.push({ kind: "cage", side, how: "pressure" });
-  }
-}
 
 /**
  * Each fighter's ability is a list of triggers (rules/depth.json): "when X happened this exchange, do Y".
@@ -1290,111 +2157,8 @@ function applyAbilities(state, types, winner, startDist, startedOnGround, events
   }
 }
 
-/**
- * A signature move that loses the triangle is not shut out: it still lands, glancing, for a share of its power
- * (rules.signature.glanceMult), after the winner's own play. A signature that is only a grab (no damage) still pulls him into the clinch.
- */
-function signatureGlance(state, l, w, lCards, events) {
-  if (state.over) return;
-  const sigId = lCards.find((c) => state.cards[c].signature);
-  if (!sigId) return;
-  const card = state.cards[sigId];
-  const R = state.rules;
-  events.push({ kind: "glance", side: l, name: card.name });
-  if (card.power) {
-    dealHit(state, l, [sigId], "clean", R.signature.glanceMult, events);
-    return;
-  }
-  if (state.ground) return;
-  addStamina(state, w, -(card.drain || 0) * R.signature.glanceMult);
-  if (state.dist < R.dist.clinch) {
-    setDist(state, R.dist.clinch, events, l);
-    events.push({ kind: "clinch", side: l, glance: true });
-  }
-}
 
-function resolveStandingWin(state, w, l, plays, events) {
-  resolveStandingWinCore(state, w, l, plays, events);
-  signatureGlance(state, l, w, plays[l], events);
-}
 
-function resolveStandingWinCore(state, w, l, plays, events) {
-  const wCards = plays[w];
-  const lCards = plays[l];
-  const type = typeOfPlay(state, wCards);
-  const sc = state.rules.score;
-  const tier = rollTier(state, w, wCards);
-  // Only the winner's steps happen. The loser's plan was stopped, so their steps are cancelled.
-  if (type === "S") {
-    const ended = dealHit(state, w, wCards, tier, state.rules.damage.winStrikeBonus * overcommit(state, lCards, l), events);
-    if (ended) return;
-    addStamina(state, l, -state.rules.stamina.whiffGrapple);
-    shiftDist(state, moveOf(state, wCards), events, w);
-    return;
-  }
-  if (type === "C") {
-    const lockCard = wCards.find((c) => state.cards[c].lockAnywhere);
-    const ended = dealHit(state, w, wCards, tier, state.rules.damage.counterMult * overcommit(state, lCards, l), events);
-    if (ended) return;
-    shiftDist(state, moveOf(state, wCards), events, w);
-    if (wCards.some((c) => state.cards[c].cage === "turn")) escapeCage(state, w, events);
-    if (lockCard) {
-      state.ground = makeGround(l, 0);
-      startLock(state, w, state.cards[lockCard].name, state.cards[lockCard].lockDepth || 1, events, passive(state, w).lockDepthBottom || 0);
-    }
-    return;
-  }
-  // Grapple beats defend. Steps alone only close the gap.
-  if (wCards.some((c) => state.cards[c].cage === "push")) {
-    pushOff(state, w, l, events);
-    return;
-  }
-  const takers = wCards.filter((c) => !state.cards[c].moveOnly);
-  if (takers.length === 0) {
-    const grab = wCards.reduce((sum, c) => sum + (state.cards[c].drain || 0), 0);
-    if (grab) addStamina(state, l, -grab);
-    const before = state.dist;
-    shiftDist(state, moveOf(state, wCards), events, w);
-    if (state.dist === state.rules.dist.clinch && before < state.dist) events.push({ kind: "clinch", side: w });
-    score(state, w, "grappling", sc.exchangeWin);
-    return;
-  }
-  const drain = state.rules.grapple.drainOnLanding * overcommit(state, lCards, l);
-  const main = takers.reduce((best, c) => ((state.cards[c].landing || 0) > (state.cards[best].landing || 0) ? c : best), takers[0]);
-  const card = state.cards[main];
-  addStamina(state, l, -drain - (card.drain || 0));
-  if (wCards.some((c) => state.cards[c].pullGuard)) {
-    state.ground = makeGround(l, 0);
-    events.push({ kind: "pullGuard", side: w });
-    score(state, w, "grappling", sc.exchangeWin);
-    return;
-  }
-  // A poor shot runs into a guillotine.
-  const catcher = tier === "graze" ? lCards.find((c) => state.cards[c].catchShot) : null;
-  if (catcher) {
-    state.ground = makeGround(w, 0);
-    events.push({ kind: "caught", side: l, name: state.cards[catcher].name });
-    if (passive(state, l).lockDepthCatch) showAbility(state, l, events);
-    startLock(state, l, state.cards[catcher].name, 1, events, passive(state, l).lockDepthCatch || 0);
-    return;
-  }
-  const pos = (card.landing || 0) + state.rules.grapple.positionFromTier[tier];
-  if (pos < 0) {
-    setDist(state, state.rules.dist.clinch, events, w);
-    events.push({ kind: "clinch", side: w, stuffed: true });
-    score(state, w, "grappling", sc.exchangeWin);
-    return;
-  }
-  state.ground = makeGround(w, clamp(pos, 0, state.rules.positions.length - 1));
-  score(state, w, "grappling", sc.takedown);
-  addMomentum(state, w, state.rules.momentum.landing);
-  events.push({ kind: "takedown", side: w, pos: state.ground.pos, name: state.rules.positions[state.ground.pos], tier });
-  const slam = wCards.reduce((sum, c) => sum + (state.cards[c].slam || 0), 0);
-  if (slam > 0) {
-    state[l].hp = Math.max(1, state[l].hp - slam * state.rules.damage.slamToGround);
-    events.push({ kind: "hit", attacker: w, target: "body", damage: slam, tier, card: main, name: "重摔" });
-  }
-}
 
 /** Overcommitting on the mat: the loser pays for energy beyond the first, as on his feet. */
 function groundOvercommit(state, loser) {
@@ -1557,55 +2321,13 @@ function resolveGroundExchange(state, playA, playB, opts = {}) {
 
   state.history.push(types);
   if (!state.over) applyAbilities(state, types, winner, startDist, true, events);
-  if (!state.over) updateCage(state, events, types);
+  state.cage = null; // nobody is pinned on the mat
+  for (const s of SIDES) state[s].pressure = 0;
   endExchange(state, plays, types, wasRocked, events);
   state.exchangeCost = null;
   return events;
 }
 
-function resolveTrade(state, plays, events) {
-  // Both land. The smaller commitment arrives first, and a rocking shot weakens the reply.
-  const d = state.rules.damage;
-  const costA = state.exchangeCost.a;
-  const costB = state.exchangeCost.b;
-  const rush = (s) => Object.entries(state[s].marks).some(([tag, m]) => state.rules.tags[tag]?.first && m.n >= state.rules.tags[tag].first);
-  let first = "a";
-  if (rush("a") !== rush("b")) first = rush("b") ? "b" : "a";
-  else if (costB < costA) first = "b";
-  else if (rush("a") === rush("b") && costB === costA && state.b.attrs.accuracy > state.a.attrs.accuracy) first = "b";
-  const second = opposite(first);
-  const groundMult = (s) => {
-    if (!state.ground) return 1;
-    return state.ground.top === s ? d.groundPositionMult[state.ground.pos] : d.bottomStrikeMult;
-  };
-  events.push({ kind: "trade", first });
-  const tradeBonus = (side) => 1 + (passive(state, side).tradeBonus || 0);
-  for (const side of SIDES) if (passive(state, side).tradeBonus) showAbility(state, side, events);
-  const tierFirst = rollTier(state, first, plays[first]);
-  if (dealHit(state, first, plays[first], tierFirst, d.tradeMult * groundMult(first) * tradeBonus(first), events)) return;
-  // The first blow may have changed the distance, and the reply is thrown from wherever that left them.
-  shiftDist(state, moveOf(state, plays[first]), events, first);
-  const reply = [];
-  let reach = state.dist;
-  for (const c of plays[second]) {
-    const card = state.cards[c];
-    if (usableAt(state, card, reach, second)) {
-      reply.push(c);
-      if (!state.ground) reach = clampDist(state, reach + (card.move || 0));
-    } else {
-      events.push({ kind: "whiff", side: second, card: c, name: card.name });
-    }
-  }
-  const interrupted = state[second].rocked && state[second].rockedAt === state.history.length;
-  if (interrupted) events.push({ kind: "interrupted", side: second });
-  if (reply.length) {
-    const tierSecond = rollTier(state, second, reply);
-    if (dealHit(state, second, reply, tierSecond, d.tradeMult * groundMult(second) * tradeBonus(second) * (interrupted ? d.tradeInterruptMult : 1), events)) return;
-    shiftDist(state, moveOf(state, reply), events, second);
-  }
-  addMomentum(state, "a", state.rules.momentum.trade);
-  addMomentum(state, "b", state.rules.momentum.trade);
-}
 
 function resolveScramble(state, events) {
   const g = state.rules.grapple;
@@ -1620,88 +2342,7 @@ function resolveScramble(state, events) {
   events.push({ kind: "scramble", winner: w, loser: l });
 }
 
-function resolveStandoff(state, plays, events) {
-  // Nobody is committed, so both fighters' steps happen together.
-  shiftDist(state, moveOf(state, plays.a) + moveOf(state, plays.b), events, null);
-  state.stall += 1;
-  const m = state.rules.momentum;
-  events.push({ kind: "standoff", stall: state.stall });
-  if (state.stall >= state.rules.stall.limit) {
-    addMomentum(state, "a", m.standoff);
-    addMomentum(state, "b", m.standoff);
-    state.stall = 0;
-    if (state.ground && !state.ground.lock) standUp(state, events, "referee");
-    else events.push({ kind: "referee" });
-  }
-}
 
-/** Resolves one simultaneous exchange. `playA` / `playB` are arrays of card ids. Returns the event list. */
-export function resolveExchange(state, playA, playB, opts = {}) {
-  if (state.phase !== "exchange") throw new Error(`cannot resolve in phase ${state.phase}`);
-  if (state.pending) throw new Error("a pending choice has to be resolved first");
-  for (const [s, cards] of [["a", playA], ["b", playB]]) {
-    const err = playError(state, s, cards);
-    if (err) throw new Error(`${s} illegal play: ${err} (${cards.join(",")})`);
-  }
-  if (state.ground) return resolveGroundExchange(state, playA, playB, opts);
-  const events = [];
-  const order = (cards, s) => (cards.length ? arrange(state, cards, s) : ["brace"]);
-  const plays = { a: order(playA, "a"), b: order(playB, "b") };
-  const types = { a: typeOfPlay(state, plays.a), b: typeOfPlay(state, plays.b) };
-  const tri = state.rules.triangle;
-  const mirror = types.a === types.b;
-  const winner = mirror ? null : tri[types.a] === types.b ? "a" : "b";
-  const wasRocked = { a: state.a.rocked, b: state.b.rocked };
-  const groundBefore = state.ground ? { ...state.ground } : null;
-  const startDist = state.dist;
-  const staminaCost = state.rules.stamina.perEnergy;
-  const momentum = state.rules.momentum;
-  state.exchangeCost = { a: costOf(state, plays.a, "a"), b: costOf(state, plays.b, "b") }; // priced before the blows change anything
-
-  for (const s of SIDES) {
-    addStamina(state, s, -state.exchangeCost[s] * staminaCost);
-    if (plays[s].some((c) => state.cards[c].signature)) {
-      addMomentum(state, s, -momentum.signatureCost);
-      events.push({ kind: "signature", side: s, name: state.cards[plays[s][0]].name });
-    }
-  }
-  events.unshift({ kind: "reveal", a: plays.a, b: plays.b, types, winner, ground: groundBefore, dist: state.dist, cost: { ...state.exchangeCost } });
-
-  if (winner) {
-    const l = opposite(winner);
-    addMomentum(state, winner, momentum.win);
-    addMomentum(state, l, momentum.lose);
-    score(state, winner, types[winner] === "G" ? "grappling" : "striking", state.rules.score.exchangeWin);
-    events.push({ kind: "verdict", winner, type: types[winner], text: winnerText(state, types[winner], types[l], state.ground, winner, plays[winner]) });
-    queueSetups(state, winner, plays[winner], "win");
-  } else {
-    events.push({ kind: "verdict", winner: null, type: types.a, text: types.a === "S" ? "對轟" : types.a === "G" ? "互相扭抱" : "誰都不動" });
-  }
-
-  if (winner) resolveStandingWin(state, winner, opposite(winner), plays, events);
-  else if (types.a === "S") resolveTrade(state, plays, events);
-  else if (types.a === "G") resolveScramble(state, events);
-  else resolveStandoff(state, plays, events);
-
-  const onClinch = state.rules.setups?.clinch;
-  if (onClinch) {
-    for (const e of events) {
-      const side = e.kind === "clinch" ? e.side : e.kind === "scramble" ? e.winner : null;
-      if (side) queueMark(state, side, onClinch.tag, onClinch.turns || 1);
-    }
-  }
-  if (types.a !== "C" || types.b !== "C") state.stall = 0;
-
-  state.history.push(types);
-  if (!state.over) applyAbilities(state, types, winner, startDist, Boolean(groundBefore), events);
-  if (!state.over) updateCage(state, events, types);
-  endExchange(state, plays, types, wasRocked, events);
-  state.exchangeCost = null;
-  // Whoever just took the other man down chooses whether to follow him to the ground.
-  const down = events.find((e) => e.kind === "takedown");
-  if (down && !state.over && state.phase === "exchange" && state.ground) state.pending = { kind: "chase", side: down.side };
-  return events;
-}
 
 function endExchange(state, plays, types, wasRocked, events) {
   if (state.over) return;
@@ -1719,9 +2360,10 @@ function endExchange(state, plays, types, wasRocked, events) {
     // Played cards go to the discard pile. Bracing and signatures are not deck cards.
     for (const c of plays[s]) {
       const i = me.hand.indexOf(c);
-      if (i >= 0) me.hand.splice(i, 1);
+      if (i < 0) continue; // a card already used earlier this hand
+      me.hand.splice(i, 1);
       if (state.cards[c].cat) me.gdiscard.push(c);
-      else if (!state.cards[c].signature && !state.cards[c].basic && !state.cards[c].lockMove && c !== "brace") me.discard.push(c);
+      else if (!state.cards[c].signature && !state.cards[c].basic && !state.cards[c].lockMove) me.discard.push(c);
     }
     refillHand(state, s);
   }
@@ -1748,6 +2390,8 @@ function endRound(state, events) {
     state[side].pressure = 0;
   }
   state.cage = null;
+  state.edge = null;
+  state.guardStreak = null;
   state.a.rocked = false;
   state.b.rocked = false;
   // The cutman works on the cut between rounds.
@@ -1827,7 +2471,7 @@ export function checkInvariants(state) {
     if (groundCards !== f.groundDeck.length) errors.push(`${s} ground deck size ${groundCards} != ${f.groundDeck.length}`);
     if (Boolean(me.stand) !== Boolean(state.ground) && state.phase === "exchange" && !state.pending) errors.push(`${s} hand/mat mismatch`);
     if (!(Number.isInteger(me.cut) && me.cut >= 0 && me.cut <= state.rules.cut.max)) errors.push(`${s}.cut ${me.cut}`);
-    if (!state.ground) for (const step of BASIC_STEPS) if (!standHand.includes(step)) errors.push(`${s} missing ${step}`);
+    if (!state.ground) for (const basic of state.rules.match.basics) if (!standHand.includes(basic)) errors.push(`${s} missing ${basic}`);
   }
   if (state.ground) {
     if (state.ground.pos < 0 || state.ground.pos >= state.rules.positions.length) errors.push(`pos ${state.ground.pos}`);
