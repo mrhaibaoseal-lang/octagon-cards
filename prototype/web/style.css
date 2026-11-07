@@ -186,8 +186,9 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .pick .portrait { width: 46px; height: 46px; }
 .pick .tx { min-width: 0; line-height: 1.2; }
 .pick .tx br { display: none; }
-.pick .n { display: inline; font-size: 14px; font-weight: 800; }
-.pick .k { display: inline; font-size: 11px; color: var(--gold); font-weight: 700; margin-left: 5px; }
+.pick .n { display: inline; font-size: 13px; font-weight: 800; }
+.pick .k { display: inline; font-size: 10px; color: var(--gold); font-weight: 700; margin-left: 4px; }
+.pick .sz { display: inline; font-size: 10px; color: var(--dim); font-weight: 600; margin-left: 4px; white-space: nowrap; }
 .pick .sm { display: block; font-size: 11px; color: var(--dim); line-height: 1.25; margin-top: 2px; }
 .ph { font-size: 9px; color: #ffb454; font-weight: 700; margin-left: 4px; }
 .versus { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 1px; }

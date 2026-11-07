@@ -1,6 +1,7 @@
 {
   "mcgregor": {
     "name": "Conor McGregor", "short": "McGregor", "nick": "外圍狙擊手",
+    "height": 175, "weight": 155,
     "summary": "左手一擊定生死。守住外圍，等他衝進來。體能撐不到最後。",
     "attrs": { "power": 88, "accuracy": 86, "wrestling": 52, "grappleDef": 58, "submission": 48, "chin": 66, "cardio": 45 },
     "prefer": [0, 1],
@@ -15,6 +16,7 @@
   },
   "khabib": {
     "name": "Khabib Nurmagomedov", "short": "Khabib", "nick": "達吉斯坦之鷹",
+    "height": 178, "weight": 155,
     "summary": "把你壓在地上，直到你沒力氣。站著的打擊普通，一上身就難逃。",
     "attrs": { "power": 70, "accuracy": 72, "wrestling": 98, "grappleDef": 95, "submission": 78, "chin": 88, "cardio": 98 },
     "prefer": [2, 3],
@@ -29,6 +31,7 @@
   },
   "oliveira": {
     "name": "Charles Oliveira", "short": "Oliveira", "nick": "地面陷阱",
+    "height": 178, "weight": 155,
     "summary": "下位最危險。站著敢換拳也會被打暈，但一進地面隨時被鎖。",
     "attrs": { "power": 76, "accuracy": 78, "wrestling": 70, "grappleDef": 68, "submission": 99, "chin": 62, "cardio": 80 },
     "prefer": [2, 3],
@@ -43,6 +46,7 @@
   },
   "hooker": {
     "name": "Dan Hooker", "short": "Hooker", "nick": "絞刑手",
+    "height": 183, "weight": 155,
     "summary": "手長腳長，耐打又有體力。沒有一擊必殺，靠消耗把你拖垮。",
     "attrs": { "power": 78, "accuracy": 84, "wrestling": 55, "grappleDef": 65, "submission": 62, "chin": 74, "cardio": 85 },
     "prefer": [0, 1],
@@ -57,6 +61,7 @@
   },
   "sandhagen": {
     "name": "Cory Sandhagen", "short": "Sandhagen", "nick": "睡魔",
+    "height": 180, "weight": 135,
     "summary": "步法靈活、出手量大，邊打邊等破綻。力量不頂尖，但飛膝能瞬間結束比賽。",
     "attrs": { "power": 76, "accuracy": 85, "wrestling": 62, "grappleDef": 72, "submission": 58, "chin": 70, "cardio": 88 },
     "prefer": [0, 2],
@@ -71,6 +76,7 @@
   },
   "jones": {
     "name": "Jon Jones", "short": "Jones", "nick": "全能支配者",
+    "height": 193, "weight": 215,
     "summary": "什麼都會，沒有明顯弱點。用長手長腳的蹬踢和肘擊管住距離，必要時把你摔倒。",
     "attrs": { "power": 82, "accuracy": 80, "wrestling": 88, "grappleDef": 86, "submission": 76, "chin": 84, "cardio": 82 },
     "prefer": [0, 1],
@@ -85,6 +91,7 @@
   },
   "adesanya": {
     "name": "Israel Adesanya", "short": "Adesanya", "nick": "最後的風格大師",
+    "height": 193, "weight": 185,
     "summary": "步法與反擊的大師，遠距離最危險。被摔到地面就吃虧。",
     "attrs": { "power": 80, "accuracy": 90, "wrestling": 56, "grappleDef": 66, "submission": 44, "chin": 68, "cardio": 82 },
     "prefer": [0, 1],
@@ -99,6 +106,7 @@
   },
   "makhachev": {
     "name": "Islam Makhachev", "short": "Makhachev", "nick": "達吉斯坦的壓制者",
+    "height": 178, "weight": 155,
     "summary": "壓制與鎖技兼備。貼上來就很難逃，比 Khabib 更會鎖，但站著的打擊普通。",
     "attrs": { "power": 72, "accuracy": 76, "wrestling": 94, "grappleDef": 92, "submission": 86, "chin": 84, "cardio": 92 },
     "prefer": [2, 3],
@@ -113,6 +121,7 @@
   },
   "holloway": {
     "name": "Max Holloway", "short": "Holloway", "nick": "福氣",
+    "height": 180, "weight": 145,
     "summary": "出手量驚人，下巴與體力都頂尖。靠一波波組合拳慢慢累積勝勢，但單發沒那麼重。",
     "attrs": { "power": 70, "accuracy": 90, "wrestling": 60, "grappleDef": 76, "submission": 50, "chin": 92, "cardio": 96 },
     "prefer": [1, 2],
@@ -127,6 +136,7 @@
   },
   "poirier": {
     "name": "Dustin Poirier", "short": "Poirier", "nick": "鑽石",
+    "height": 175, "weight": 155,
     "summary": "拳擊技術紮實，站著敢換、貼身會用斷頭台。力量大，但被摔到地面就吃力。",
     "attrs": { "power": 86, "accuracy": 82, "wrestling": 60, "grappleDef": 70, "submission": 74, "chin": 80, "cardio": 78 },
     "prefer": [1, 2],
@@ -141,6 +151,7 @@
   },
   "pereira": {
     "name": "Alex Pereira", "short": "Pereira", "nick": "毒蛙",
+    "height": 193, "weight": 205,
     "summary": "一記左鉤拳就能結束比賽。站著極危險，體能和地面防守是弱點。",
     "attrs": { "power": 98, "accuracy": 80, "wrestling": 55, "grappleDef": 70, "submission": 40, "chin": 86, "cardio": 72 },
     "prefer": [1, 2],
@@ -155,6 +166,7 @@
   },
   "topuria": {
     "name": "Ilia Topuria", "short": "Topuria", "nick": "西班牙之魂",
+    "height": 170, "weight": 145,
     "summary": "拳擊精準又重，也有鎖技底子。站著壓迫，找到機會就結束。",
     "attrs": { "power": 90, "accuracy": 88, "wrestling": 74, "grappleDef": 78, "submission": 76, "chin": 84, "cardio": 84 },
     "prefer": [1, 2],
@@ -169,6 +181,7 @@
   },
   "omalley": {
     "name": "Sean O'Malley", "short": "O'Malley", "nick": "糖果小子",
+    "height": 180, "weight": 135,
     "summary": "步法流動、距離感極好，遠距離打不到他。下巴一般，被貼上來就麻煩。",
     "attrs": { "power": 78, "accuracy": 88, "wrestling": 52, "grappleDef": 70, "submission": 56, "chin": 66, "cardio": 74 },
     "prefer": [0, 1],
@@ -183,6 +196,7 @@
   },
   "chimaev": {
     "name": "Khamzat Chimaev", "short": "Chimaev", "nick": "野獸",
+    "height": 188, "weight": 185,
     "summary": "摔跤加重拳的壓制型。一上來就爆發，體力是唯一的顧慮。",
     "attrs": { "power": 88, "accuracy": 80, "wrestling": 96, "grappleDef": 90, "submission": 80, "chin": 80, "cardio": 62 },
     "prefer": [2, 3],
@@ -197,6 +211,7 @@
   },
   "gaethje": {
     "name": "Justin Gaethje", "short": "Gaethje", "nick": "老千",
+    "height": 180, "weight": 155,
     "summary": "耐打又敢換，靠卡夫踢和重拳一路壓上去。技術不花俏，但很難被打倒。",
     "attrs": { "power": 86, "accuracy": 70, "wrestling": 72, "grappleDef": 78, "submission": 50, "chin": 90, "cardio": 88 },
     "prefer": [1, 2],
@@ -211,6 +226,7 @@
   },
   "neutral": {
     "name": "測試選手", "short": "測試", "nick": "只給模擬用", "hidden": true,
+    "height": 178, "weight": 155,
     "summary": "所有屬性相同，用來測試打法勝率。",
     "attrs": { "power": 75, "accuracy": 75, "wrestling": 75, "grappleDef": 75, "submission": 75, "chin": 75, "cardio": 75 },
     "prefer": [1, 2],

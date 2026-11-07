@@ -41,20 +41,46 @@ function whiteOf(img) {
   return tinted(img, "#ffffff");
 }
 
-/** Where the head is in a pose, in sprite pixels: the middle of the topmost rows that have anything in them. */
-function headOf(img) {
+/** Scans a pose image for its skull top, brow position, body height and waist-to-height ratio. */
+function analyzePose(img) {
   const c = document.createElement("canvas");
   c.width = img.width;
   c.height = img.height;
   const x = c.getContext("2d");
   x.drawImage(img, 0, 0);
   const { data } = x.getImageData(0, 0, img.width, img.height);
-  let top = 0;
   const alphaAt = (px, py) => data[(py * img.width + px) * 4 + 3] > 0;
-  scan: for (; top < img.height; top++) for (let px = 0; px < img.width; px++) if (alphaAt(px, top)) break scan;
+  const spans = new Array(img.height).fill(0);
+  let top = img.height;
+  for (let py = 0; py < img.height; py++) {
+    let first = -1;
+    let last = -1;
+    for (let px = 0; px < img.width; px++) {
+      if (alphaAt(px, py)) {
+        if (first < 0) first = px;
+        last = px;
+      }
+    }
+    if (first >= 0) {
+      if (py < top) top = py;
+      spans[py] = last - first + 1;
+    }
+  }
+  if (top >= img.height) top = 0;
+  let shoulderY = Math.min(img.height - 1, top + Math.round(img.height * 0.16));
+  for (let py = top + 5; py < img.height; py++) {
+    if (spans[py] >= 28) {
+      shoulderY = py;
+      break;
+    }
+  }
+  const below = Math.max(1, img.height - shoulderY);
+  // Puffed hair (e.g. an afro) rises higher than 0.21 of the body below the shoulders; measure skull-to-feet from skullTop.
+  const skullTop = Math.max(top, Math.round(shoulderY - below * 0.21));
+  const bodyH = Math.max(1, img.height - skullTop);
   let sum = 0;
   let count = 0;
-  for (let py = top; py < Math.min(img.height, top + 12); py++) {
+  for (let py = skullTop; py < Math.min(img.height, skullTop + 12); py++) {
     for (let px = 0; px < img.width; px++) {
       if (alphaAt(px, py)) {
         sum += px;
@@ -62,11 +88,30 @@ function headOf(img) {
       }
     }
   }
-  return { x: count ? sum / count : img.width / 2, y: top + 7 };
+  const y0 = Math.floor(img.height * 0.42);
+  const y1 = Math.max(y0 + 1, Math.floor(img.height * 0.55));
+  let waistSum = 0;
+  for (let py = y0; py < y1; py++) waistSum += spans[py];
+  const waistRatio = Math.max(0.15, waistSum / (y1 - y0) / bodyH);
+  return { head: { x: count ? sum / count : img.width / 2, y: skullTop + 7 }, bodyH, waistRatio };
+}
+
+/** Computes horizontal and vertical sprite scale from real-life height (cm) and weight (lbs), normalizing sheet differences. */
+function fighterScale(info, metrics) {
+  const hCm = info?.height ?? 178;
+  const wLb = info?.weight ?? 155;
+  const bodyH = metrics?.bodyH ?? 93;
+  const rawWaistRatio = metrics?.waistRatio ?? 0.216;
+  const bmi = (wLb * 0.453592) / ((hCm / 100) ** 2);
+  const targetH = 181 + (hCm - 178) * 1.4 + (wLb - 155) * 0.14;
+  const targetWaistRatio = 0.216 * ((bmi / 22.2) ** 0.5) * ((wLb / 155) ** 0.12);
+  const sy = targetH / bodyH;
+  const corr = Math.max(0.92, Math.min(1.05, (targetWaistRatio / rawWaistRatio) ** 0.55));
+  return { sx: sy * corr, sy };
 }
 
 /** Loads real sprites where they exist. Fighters without art borrow a flat silhouette of whatever art exists. */
-export async function loadAssets(fighterIds) {
+export async function loadAssets(fighterIds, fighters = {}) {
   const assets = { fighters: {}, portraits: {} };
   let manifest = null;
   try {
@@ -79,7 +124,10 @@ export async function loadAssets(fighterIds) {
     const set = {};
     for (const pose of POSES) {
       const img = meta[pose] && (await loadImage(`assets/private/${id}/${pose}.png`));
-      if (img) set[pose] = { img, white: whiteOf(img), w: meta[pose].w, h: meta[pose].h, anchorX: meta[pose].anchorX, head: headOf(img) };
+      if (img) {
+        const info = analyzePose(img);
+        set[pose] = { img, white: whiteOf(img), w: meta[pose].w, h: meta[pose].h, anchorX: meta[pose].anchorX, head: info.head, bodyH: info.bodyH, waistRatio: info.waistRatio };
+      }
     }
     return set;
   };
@@ -88,18 +136,20 @@ export async function loadAssets(fighterIds) {
   const donor = Object.values(real)[0] || null;
   for (const id of fighterIds) {
     if (real[id]) {
-      assets.fighters[id] = { poses: real[id], placeholder: false };
+      const scale = fighterScale(fighters[id], real[id].idle);
+      assets.fighters[id] = { poses: real[id], placeholder: false, ...scale };
     } else if (donor) {
       const poses = {};
       for (const pose of POSES) {
         const d = donor[pose];
         if (!d) continue;
         const img = tinted(d.img, PLACEHOLDER_TINT[id] || "#777c8c");
-        poses[pose] = { img, white: d.white, w: d.w, h: d.h, anchorX: d.anchorX, head: d.head };
+        poses[pose] = { img, white: d.white, w: d.w, h: d.h, anchorX: d.anchorX, head: d.head, bodyH: d.bodyH, waistRatio: d.waistRatio };
       }
-      assets.fighters[id] = { poses, placeholder: true };
+      const scale = fighterScale(fighters[id], donor.idle);
+      assets.fighters[id] = { poses, placeholder: true, ...scale };
     } else {
-      assets.fighters[id] = { poses: null, placeholder: true };
+      assets.fighters[id] = { poses: null, placeholder: true, sx: SCALE, sy: SCALE };
     }
     const portrait = `assets/private/${id}/portrait.png`;
     if (await loadImage(portrait)) assets.portraits[id] = portrait;
@@ -386,10 +436,13 @@ export class Stage {
     const x = this.ctx;
     const px = f.x + f.ox;
     const py = f.y + f.oy;
+    const horiz = f.pose === "down" || f.pose === "gguard" || f.pose === "gcover";
+    const scaleX = horiz ? (art?.sy ?? SCALE) : (art?.sx ?? SCALE);
+    const scaleY = horiz ? (art?.sx ?? SCALE) : (art?.sy ?? SCALE);
     // Shadow.
     x.fillStyle = "rgba(0,0,0,0.42)";
     x.beginPath();
-    x.ellipse(px, py + 1, f.pose === "down" || f.pose === "gguard" || f.pose === "gcover" ? 96 : 56, 8, 0, 0, Math.PI * 2);
+    x.ellipse(px, py + 1, Math.round((horiz ? 96 : 56) * (scaleX / SCALE)), 8, 0, 0, Math.PI * 2);
     x.fill();
     const sprite = art?.poses?.[f.pose] || art?.poses?.[FALLBACK[f.pose]] || art?.poses?.idle;
     if (!sprite) {
@@ -397,16 +450,16 @@ export class Stage {
       x.fillRect(px - 26, py - 150, 52, 150);
       return;
     }
-    const w = sprite.w * SCALE;
-    const h = sprite.h * SCALE;
+    const w = Math.round(sprite.w * scaleX);
+    const h = Math.round(sprite.h * scaleY);
     const white = now < f.whiteUntil;
     x.save();
     x.imageSmoothingEnabled = false;
     x.translate(Math.round(px), Math.round(py - h + breathe));
     if (f.flip) x.scale(-1, 1);
-    x.drawImage(white ? sprite.white : sprite.img, Math.round(-sprite.anchorX * SCALE), 0, w, h);
+    x.drawImage(white ? sprite.white : sprite.img, Math.round(-sprite.anchorX * scaleX), 0, w, h);
     x.restore();
-    if (f.cut > 0 && !f.downed && f.pose !== "down" && sprite.head) this.drawBlood(f, sprite, px, py - h + breathe, now);
+    if (f.cut > 0 && !f.downed && f.pose !== "down" && sprite.head) this.drawBlood(f, sprite, px, py - h + breathe, now, scaleX, scaleY);
     if (art.placeholder && !f.downed) {
       x.fillStyle = "rgba(255,255,255,0.75)";
       x.font = "700 10px -apple-system, 'PingFang TC', sans-serif";
@@ -416,11 +469,11 @@ export class Stage {
   }
 
   /** A red cut on the brow and a few drips running down the face; more of both at higher levels. */
-  drawBlood(f, sprite, px, top, now) {
+  drawBlood(f, sprite, px, top, now, scaleX = SCALE, scaleY = SCALE) {
     const x = this.ctx;
     const dir = f.flip ? -1 : 1;
-    const faceX = Math.round(px + dir * (sprite.head.x - sprite.anchorX) * SCALE);
-    const faceY = Math.round(top + sprite.head.y * SCALE);
+    const faceX = Math.round(px + dir * (sprite.head.x - sprite.anchorX) * scaleX);
+    const faceY = Math.round(top + sprite.head.y * scaleY);
     x.fillStyle = "#d90429";
     x.fillRect(faceX - 4, faceY - 5, 8, 3); // the cut over the brow
     for (let k = 0; k < f.cut * 2; k++) {

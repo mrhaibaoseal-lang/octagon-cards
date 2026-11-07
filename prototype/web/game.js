@@ -33,7 +33,7 @@ async function boot() {
   const [rules, cards, fighters, depth, ground] = await Promise.all(["rules", "cards", "fighters", "depth", "ground"].map((n) => fetch(`rules/${n}.json`).then((r) => r.json())));
   data = loadData({ rules, cards, fighters, depth, ground });
   const ids = Object.keys(fighters).filter((id) => !fighters[id].hidden);
-  assets = await loadAssets(ids);
+  assets = await loadAssets(ids, fighters);
   stage = new Stage($("cage"), assets);
   stage.setFighters(picks.a, picks.b);
   stage.setLayout({ dist: 1 }, true);
@@ -48,6 +48,16 @@ async function boot() {
     if (skipWake) skipWake();
   });
   renderSelect();
+  const params = new URLSearchParams(location.search);
+  if (fighters[params.get("a")]) picks.a = params.get("a");
+  if (fighters[params.get("b")]) picks.b = params.get("b");
+  if (params.get("a") || params.get("b")) renderSelect();
+  if (params.get("autostart")) {
+    startMatch();
+    const go = document.querySelector("#overlay .opt.primary");
+    if (go) go.click();
+    $("banner").classList.remove("show");
+  }
   window.__game = { get state() { return state; }, data, refresh: () => { syncShown(); beginTurn(); } }; // refresh is for checking screens by hand
 }
 
@@ -82,9 +92,10 @@ function renderSelect() {
       ${ids.map((id) => {
         const f = data.fighters[id];
         const placeholder = assets.fighters[id]?.placeholder ? '<span class="ph">占位圖</span>' : "";
+        const size = f.height ? `<span class="sz">${f.height}cm·${f.weight}lb</span>` : "";
         return `<button class="pick ${picks[side] === id ? "on" : ""}" data-side="${side}" data-id="${id}">
           ${portraitHtml(id)}
-          <span class="tx"><span class="n">${f.short}${placeholder}</span><br><span class="k">${f.nick}</span><br><span class="sm">${f.summary}</span>${f.ability ? `<br><span class="ab">能力・${f.ability.name}：${f.ability.desc}</span>` : ""}</span>
+          <span class="tx"><span class="n">${f.short}${placeholder}</span><br><span class="k">${f.nick}</span>${size}<br><span class="sm">${f.summary}</span>${f.ability ? `<br><span class="ab">能力・${f.ability.name}：${f.ability.desc}</span>` : ""}</span>
         </button>`;
       }).join("")}
     </div>`;
