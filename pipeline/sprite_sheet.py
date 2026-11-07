@@ -119,6 +119,7 @@ def main() -> None:
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--pixel", type=int, default=4, help="sheet pixels per game pixel")
     parser.add_argument("--tolerance", type=float, default=90.0)
+    parser.add_argument("--flip-down", action="store_true", help="mirror the down pose when the sheet has the head on the left")
     args = parser.parse_args()
 
     poses = [p.strip() for p in args.poses.split(",") if p.strip()]
@@ -142,6 +143,9 @@ def main() -> None:
         mask = labels[y0:y1, x0:x1] == shape["label"]
         crop = np.dstack([rgb[y0:y1, x0:x1], (mask * 255).astype(np.uint8)])
         crop = despill(crop)
+        # The stage expects the down pose with the head on the right.
+        if pose == "down" and args.flip_down:
+            crop = crop[:, ::-1]
         width, height = x1 - x0, y1 - y0
         small = Image.fromarray(crop, "RGBA").resize(
             (max(1, width // args.pixel), max(1, height // args.pixel)), Image.Resampling.BOX

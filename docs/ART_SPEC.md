@@ -1,7 +1,7 @@
 # 選手姿勢表規格（M2）
 
 > 目標：用約 40 張圖做完約 32 位選手。生圖由使用者在 Gemini 執行。**圖不進 repo。**
-> 已有 McGregor、Dan Hooker（冷門選手，品質良好，是否像本人待使用者判斷）。原圖在 `../ufc-hd-pixel-ios/Assets/Sprites/`。McGregor 的抱摔還要修掉多的那隻手。
+> 已有 McGregor、Dan Hooker（冷門選手，使用者確認像本人）、Cory Sandhagen（冷門選手，使用者確認像本人，也和 Hooker 分得開）。原圖在 `../ufc-hd-pixel-ios/Assets/Sprites/`。McGregor 的抱摔還要修掉多的那隻手。
 
 ## 第一批要測的 5 位
 | 選手 | 為什麼選他 |
@@ -21,7 +21,7 @@
   3. 高踢（腿伸直）
   4. 受擊（頭後仰，身體失衡）
   5. 抱摔（低身前衝，雙手前伸）
-  6. 倒地（仰躺）
+  6. 倒地（仰躺，**頭在右邊、腳在左邊**；畫反了就在轉換時加 `--flip-down`）
 - 背景純綠 `#00FF00`，不要漸層和陰影。
 - 六個人物**不可互相碰到**，也不要碰到邊。轉換工具靠這點分開姿勢。
 - 全部面向右邊。
@@ -36,7 +36,7 @@ A single pixel art sprite sheet of one MMA fighter, {選手}. {外觀}. Same cha
 same colors in every pose. Six separate full-body poses arranged in a grid of 3 columns and 2 rows,
 all facing right, with wide empty space between poses so that no pose touches another:
 top row: 1) orthodox fighting stance, 2) straight punch with the arm fully extended, 3) high kick with the leg straight;
-bottom row: 4) staggered from a hit with the head thrown back, 5) double-leg takedown shot: torso bent far forward and low, head at chest height, both arms stretched forward and low with both hands open, 6) knocked out lying flat on his back.
+bottom row: 4) staggered from a hit with the head thrown back, 5) double-leg takedown shot: torso bent far forward and low, head at chest height, both arms stretched forward and low with both hands open, 6) knocked out lying flat on his back with his head on the right and his feet on the left.
 Correct anatomy in every pose: exactly two arms and two legs, no extra limbs, nothing behind his back in pose 5.
 Wearing {短褲} fight shorts, the same black open-finger MMA gloves on both hands, shirtless. Detailed 16-bit fighting game style, crisp pixels, realistic proportions,
 strong dark outline. Solid pure green background #00FF00, flat, no shadow, no gradient, no floor, no text, no logos, no brand marks.

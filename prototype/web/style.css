@@ -144,6 +144,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 
 /* Fighter select */
 #select { position: absolute; inset: 0; background: linear-gradient(#0d1019, #171b29); z-index: 20; padding: 8px 12px; display: grid; grid-template-columns: 1fr 272px 1fr; grid-template-rows: minmax(0, 1fr) 40px; gap: 6px 10px; }
+#select .col { min-height: 0; overflow-y: auto; }
 .col h3 { font-size: 13px; font-weight: 900; margin-bottom: 4px; }
 .col h3.you { color: #5be49b; } .col h3.foe { color: #ff7b7f; }
 .pick { display: flex; gap: 7px; align-items: center; width: 100%; background: rgba(255,255,255,0.05); border: 2px solid transparent; border-radius: 8px; padding: 4px 6px; text-align: left; margin-bottom: 4px; }

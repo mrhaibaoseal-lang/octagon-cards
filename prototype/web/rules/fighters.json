@@ -51,6 +51,19 @@
       "bottom": { "S": 0.30, "G": 0.50, "C": 0.20 }
     }
   },
+  "sandhagen": {
+    "name": "Cory Sandhagen", "short": "Sandhagen", "nick": "睡魔",
+    "summary": "步法靈活、出手量大，邊打邊等破綻。力量不頂尖，但飛膝能瞬間結束比賽。",
+    "attrs": { "power": 76, "accuracy": 85, "wrestling": 62, "grappleDef": 72, "submission": 58, "chin": 70, "cardio": 88 },
+    "deck": ["jab", "jab", "cross", "lead_hook", "calf_kick", "body_kick", "head_kick", "knee", "single_leg", "clinch", "guard_counter", "counter_hook", "slip_back", "check_kick"],
+    "signature": "sig_sandhagen",
+    "style": {
+      "out":    { "S": 0.45, "G": 0.15, "C": 0.40 },
+      "in":     { "S": 0.45, "G": 0.15, "C": 0.40 },
+      "top":    { "S": 0.45, "G": 0.30, "C": 0.25 },
+      "bottom": { "S": 0.25, "G": 0.55, "C": 0.20 }
+    }
+  },
   "neutral": {
     "name": "測試選手", "short": "測試", "nick": "只給模擬用", "hidden": true,
     "summary": "所有屬性相同，用來測試打法勝率。",
