@@ -25,7 +25,7 @@
   - [~] PixelLab 測試（Hooker，2026-11-07）：純文字 256＋骨架六姿勢約 15 次／人最划算；照片 128 加寫實提示詞後最穩、約 28 次／人；照片轉像素 168 比例寫實但畫面糊、約 7 次／人；兩者高踢、受擊都還做不好；**等使用者判斷像不像、要不要取代 Gemini**；細節見 `docs/HANDOFF.md`
   - [x] PixelLab 測試結束（2026-11-08）：256 文字版約 80% 不像本人，**用戶決定退回 Gemini 姿勢表做法**（看 `docs/ART_SPEC.md`）；PixelLab 只留作姿勢動畫備案。PixelLab 帳號與本機圖已全部清除，細節見 `docs/HANDOFF.md`
   - [x] Gemini 姿勢表已放進遊戲（2026-11-08）：Khabib、Jones、Adesanya、Makhachev、Holloway；頭像改官網照像素化；新四位屬性、牌組暫定，待 M1.3 調平衡
-  - [ ] 再生 Oliveira、Pereira
+  - [x] Oliveira、Pereira、Poirier、Topuria、O'Malley、Chimaev、Gaethje 的姿勢表也已放進遊戲（2026-11-08），共 15 位；Gaethje 高踢是鏡像的；新選手數值暫定，待 M1.3 調平衡
   - [ ] 判斷：冷門選手也認得出來，300 人在可接受的額度與月數內做得完（PixelLab 256 文字版估約 5000 次、2–3 個月）。沒通過就縮小名單
   - [ ] 地面專屬姿勢
 

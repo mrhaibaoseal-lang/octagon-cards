@@ -50,5 +50,11 @@
   "sig_jones":     { "name": "招牌：旋轉肘", "type": "S", "cost": 2, "power": 24, "target": "head", "crit": 0.12, "cut": true, "signature": true },
   "sig_adesanya":  { "name": "招牌：風格大師反擊", "type": "C", "cost": 2, "power": 24, "target": "head", "crit": 0.18, "signature": true },
   "sig_makhachev": { "name": "招牌：纏抱重壓", "type": "G", "cost": 2, "quality": 0.25, "landing": 1, "signature": true, "drain": 10 },
-  "sig_holloway":  { "name": "招牌：連環組合", "type": "S", "cost": 2, "power": 10, "hits": 3, "target": "head", "crit": 0.05, "signature": true }
+  "sig_holloway":  { "name": "招牌：連環組合", "type": "S", "cost": 2, "power": 10, "hits": 3, "target": "head", "crit": 0.05, "signature": true },
+  "sig_poirier":   { "name": "招牌：重拳連打", "type": "S", "cost": 2, "power": 13, "hits": 2, "target": "head", "crit": 0.1, "signature": true },
+  "sig_pereira":   { "name": "招牌：左鉤拳", "type": "S", "cost": 2, "power": 30, "target": "head", "crit": 0.22, "signature": true },
+  "sig_topuria":   { "name": "招牌：右直拳終結", "type": "S", "cost": 2, "power": 28, "target": "head", "crit": 0.18, "signature": true },
+  "sig_omalley":   { "name": "招牌：外圍連擊", "type": "S", "cost": 2, "power": 14, "hits": 2, "target": "head", "crit": 0.12, "signature": true },
+  "sig_chimaev":   { "name": "招牌：瞬間壓制", "type": "G", "cost": 2, "quality": 0.28, "landing": 1, "slam": 8, "signature": true, "drain": 10 },
+  "sig_gaethje":   { "name": "招牌：卡夫踢連打", "type": "S", "cost": 2, "power": 10, "hits": 3, "target": "legs", "crit": 0, "kick": true, "signature": true }
 }

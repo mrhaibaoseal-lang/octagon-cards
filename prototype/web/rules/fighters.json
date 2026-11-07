@@ -125,6 +125,90 @@
       "bottom": { "S": 0.30, "G": 0.50, "C": 0.20 }
     }
   },
+  "poirier": {
+    "name": "Dustin Poirier", "short": "Poirier", "nick": "鑽石",
+    "summary": "拳擊技術紮實，站著敢換、貼身會用斷頭台。力量大，但被摔到地面就吃力。",
+    "attrs": { "power": 86, "accuracy": 82, "wrestling": 60, "grappleDef": 70, "submission": 74, "chin": 80, "cardio": 78 },
+    "prefer": [1, 2],
+    "deck": ["jab", "cross", "lead_hook", "overhand", "uppercut", "body_hook", "dirty_box", "knee", "calf_kick", "single_leg", "clinch", "guard_counter", "counter_hook", "guillotine", "slip_back", "rnc"],
+    "signature": "sig_poirier",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.10, "C": 0.40 },
+      "in":     { "S": 0.50, "G": 0.15, "C": 0.35 },
+      "top":    { "S": 0.45, "G": 0.30, "C": 0.25 },
+      "bottom": { "S": 0.25, "G": 0.50, "C": 0.25 }
+    }
+  },
+  "pereira": {
+    "name": "Alex Pereira", "short": "Pereira", "nick": "毒蛙",
+    "summary": "一記左鉤拳就能結束比賽。站著極危險，體能和地面防守是弱點。",
+    "attrs": { "power": 98, "accuracy": 80, "wrestling": 55, "grappleDef": 70, "submission": 40, "chin": 86, "cardio": 72 },
+    "prefer": [1, 2],
+    "deck": ["jab", "cross", "left_hand", "lead_hook", "body_hook", "uppercut", "calf_kick", "body_kick", "head_kick", "spin_kick", "knee", "single_leg", "guard_counter", "counter_hook", "check_kick", "slip_back"],
+    "signature": "sig_pereira",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.08, "C": 0.42 },
+      "in":     { "S": 0.55, "G": 0.10, "C": 0.35 },
+      "top":    { "S": 0.50, "G": 0.25, "C": 0.25 },
+      "bottom": { "S": 0.25, "G": 0.50, "C": 0.25 }
+    }
+  },
+  "topuria": {
+    "name": "Ilia Topuria", "short": "Topuria", "nick": "西班牙之魂",
+    "summary": "拳擊精準又重，也有鎖技底子。站著壓迫，找到機會就結束。",
+    "attrs": { "power": 90, "accuracy": 88, "wrestling": 74, "grappleDef": 78, "submission": 76, "chin": 84, "cardio": 84 },
+    "prefer": [1, 2],
+    "deck": ["jab", "jab", "cross", "one_two", "lead_hook", "overhand", "uppercut", "step_jab", "knee", "single_leg", "cage_trip", "clinch", "guard_counter", "counter_hook", "rnc", "slip_back"],
+    "signature": "sig_topuria",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.12, "C": 0.38 },
+      "in":     { "S": 0.50, "G": 0.15, "C": 0.35 },
+      "top":    { "S": 0.45, "G": 0.35, "C": 0.20 },
+      "bottom": { "S": 0.25, "G": 0.50, "C": 0.25 }
+    }
+  },
+  "omalley": {
+    "name": "Sean O'Malley", "short": "O'Malley", "nick": "糖果小子",
+    "summary": "步法流動、距離感極好，遠距離打不到他。下巴一般，被貼上來就麻煩。",
+    "attrs": { "power": 78, "accuracy": 88, "wrestling": 52, "grappleDef": 70, "submission": 56, "chin": 66, "cardio": 74 },
+    "prefer": [0, 1],
+    "deck": ["jab", "jab", "cross", "step_jab", "calf_kick", "front_kick", "body_kick", "head_kick", "spin_kick", "superman", "single_leg", "guard_counter", "slip_back", "back_counter", "counter_hook", "guillotine"],
+    "signature": "sig_omalley",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.08, "C": 0.42 },
+      "in":     { "S": 0.45, "G": 0.10, "C": 0.45 },
+      "top":    { "S": 0.40, "G": 0.35, "C": 0.25 },
+      "bottom": { "S": 0.25, "G": 0.50, "C": 0.25 }
+    }
+  },
+  "chimaev": {
+    "name": "Khamzat Chimaev", "short": "Chimaev", "nick": "野獸",
+    "summary": "摔跤加重拳的壓制型。一上來就爆發，體力是唯一的顧慮。",
+    "attrs": { "power": 88, "accuracy": 80, "wrestling": 96, "grappleDef": 90, "submission": 80, "chin": 80, "cardio": 62 },
+    "prefer": [2, 3],
+    "deck": ["jab", "cross", "overhand", "dirty_box", "knee", "double_leg", "double_leg", "single_leg", "cage_trip", "slam", "clinch", "lunge", "rnc", "arm_triangle", "guard_counter", "check_kick"],
+    "signature": "sig_chimaev",
+    "style": {
+      "out":    { "S": 0.35, "G": 0.35, "C": 0.30 },
+      "in":     { "S": 0.30, "G": 0.45, "C": 0.25 },
+      "top":    { "S": 0.35, "G": 0.40, "C": 0.25 },
+      "bottom": { "S": 0.20, "G": 0.60, "C": 0.20 }
+    }
+  },
+  "gaethje": {
+    "name": "Justin Gaethje", "short": "Gaethje", "nick": "老千",
+    "summary": "耐打又敢換，靠卡夫踢和重拳一路壓上去。技術不花俏，但很難被打倒。",
+    "attrs": { "power": 86, "accuracy": 70, "wrestling": 72, "grappleDef": 78, "submission": 50, "chin": 90, "cardio": 88 },
+    "prefer": [1, 2],
+    "deck": ["jab", "cross", "overhand", "lead_hook", "uppercut", "calf_kick", "calf_kick", "body_kick", "knee", "single_leg", "clinch", "guard_counter", "counter_hook", "check_kick", "slip_back", "step_jab"],
+    "signature": "sig_gaethje",
+    "style": {
+      "out":    { "S": 0.50, "G": 0.10, "C": 0.40 },
+      "in":     { "S": 0.55, "G": 0.15, "C": 0.30 },
+      "top":    { "S": 0.45, "G": 0.30, "C": 0.25 },
+      "bottom": { "S": 0.30, "G": 0.50, "C": 0.20 }
+    }
+  },
   "neutral": {
     "name": "測試選手", "short": "測試", "nick": "只給模擬用", "hidden": true,
     "summary": "所有屬性相同，用來測試打法勝率。",

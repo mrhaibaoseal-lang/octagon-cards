@@ -8,9 +8,9 @@
 - **要使用者確認**：一場實際要多久；標記觸發頻率（約每人每場 3 次，可能偏少）。
 
 ## 2026-11-08 · Claude Sonnet 5.5（角色生成區：Gemini 姿勢表放進遊戲）
-- **做了什麼**：McGregor 換上抱摔修好、裝備無字的版本（AI 畫 UFC 字樣會鏡像或亂碼，已寫進 `ART_SPEC.md`）。Khabib 換掉占位圖；新增 Jones、Adesanya、Makhachev、Holloway（姿勢表轉換、頭像、屬性、牌組、招牌牌，**數值是我手訂，未調平衡**）。選角頭像改用官網去背照像素化（`pipeline/portrait.py`），五位都換了。`private/jones/` 原本的 PixelLab 版已被 Gemini 版覆蓋。
-- **驗證**：引擎測試 22 項通過、模擬門檻通過；844×390 看過選角（四位新選手都在）、Jones 對 Makhachev 開局與出拳，主控台無錯誤。其他姿勢只看過轉換後的六姿勢預覽頁。Holloway 原牌組沒有摔抱牌，測試擋下，已補一張單腿抓摔。
-- **要使用者確認**：新五位像不像；平衡（AI 互打 Makhachev 對打擊型只約 25–30%，Adesanya 偏強）留給 M1.3。**下一步**：Oliveira、Pereira 還沒有姿勢表。
+- **做了什麼**：Gemini 姿勢表共 15 位放進遊戲：McGregor（抱摔已修、裝備無字；AI 畫 UFC 字樣會鏡像或亂碼，見 `ART_SPEC.md`）、Khabib、Oliveira（換掉占位圖）、Jones、Adesanya、Makhachev（新版）、Holloway、Poirier、Pereira、Topuria、O'Malley、Chimaev、Gaethje（**高踢朝左，我把那格鏡像並改錨點**）。後九位新增屬性、牌組、招牌牌，**數值是我手訂，未調平衡**。選角頭像改官網去背照像素化（`pipeline/portrait.py`）。
+- **驗證**：引擎測試 22 項通過、模擬門檻通過；844×390 看過選角（15 位都在、無占位圖標記）、Gaethje 對 Khabib 開局，15 位各 7 張圖都載入，主控台只有隱藏的測試選手 `neutral` 的 404。六姿勢預覽頁看過全部。Holloway 牌組曾缺摔抱牌，已補單腿抓摔。另一個 session 的「PixelLab 清理」刪了 `private/jones/` 並清掉 manifest 的 Khabib、Jones、Adesanya、Holloway 條目，我已從原表重轉補回。
+- **要使用者確認**：新選手像不像（Pereira 官網照片有頭髮，姿勢表是光頭）；平衡（AI 互打 Makhachev、Chimaev、Gaethje 對多數人 25–35%，Topuria、Pereira、Adesanya 偏強）留給 M1.3。若 M1.2 要給新選手專屬機制，加在 `rules/depth.json`。
 
 ## 2026-11-08 · Claude Sonnet 5.5（PixelLab 第一批：256 文字版＋嚴格比對照片）
 - **最終決定（用戶，2026-11-08）：退回 Gemini 姿勢表做法**（PixelLab 文字版約 80% 不像本人；Sprite Fusion、Pixler 等也只看過文件，沒實測）。PixelLab 只留作姿勢動畫備案。以下是中途紀錄：
