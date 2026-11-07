@@ -17,6 +17,7 @@ let selected = []; // indices into the hand
 let bracing = false;
 let shown = null; // HUD values during playback, which trail the engine state
 let picks = { a: "mcgregor", b: "khabib", mode: "standard" };
+let selectUI = { target: "a", weight: "all" };
 let skipping = false;
 let skipWake = null;
 let lastLine = "";
@@ -80,50 +81,200 @@ function portraitHtml(id, cls = "portrait") {
 
 // ---------- Fighter select ----------
 
+const WEIGHT_CLASSES = [
+  ["all", "全部 15"],
+  ["135", "135 雛量"],
+  ["145", "145 羽量"],
+  ["155", "155 輕量"],
+  ["185+", "185+ 中重"],
+];
+
+function weightName(lb) {
+  if (lb <= 135) return "雛量級";
+  if (lb <= 145) return "羽量級";
+  if (lb <= 155) return "輕量級";
+  if (lb <= 185) return "中量級";
+  if (lb <= 205) return "輕重量級";
+  return "重量級";
+}
+
+function matchWeightFilter(f, filter) {
+  if (filter === "all") return true;
+  if (filter === "185+") return (f.weight || 155) >= 185;
+  return String(f.weight || 155) === filter;
+}
+
+function fighterArchetype(f) {
+  if (f.attrs.wrestling >= 85 || f.attrs.submission >= 85) return { id: "grappler", label: "🤼 摔壓地面", short: "摔壓", cls: "G" };
+  if ((f.style?.out?.C || 0) >= 0.38 || (f.prefer?.[0] === 0 && f.attrs.accuracy >= 84 && f.attrs.power < 85)) {
+    return { id: "counter", label: "⚡ 步法狙擊", short: "狙擊", cls: "C" };
+  }
+  return { id: "striker", label: "💥 重砲打擊", short: "重擊", cls: "S" };
+}
+
+function preferRangeText(f) {
+  const names = data.rules.dist.short;
+  const [lo, hi] = f.prefer || [1, 2];
+  return lo === hi ? `${names[lo]}距` : `${names[lo]}·${names[hi]}距`;
+}
+
+function describeStaticCard(cardId) {
+  const c = data.cards[cardId];
+  if (!c) return { name: cardId, type: "S", cost: 1, fx: "" };
+  let fx = "";
+  if (c.moveOnly) fx = c.move > 0 ? `進 ${c.move} 格` : `退 ${-c.move} 格`;
+  else if (c.type === "S") {
+    fx = `傷害 ${c.power}${c.hits > 1 ? `×${c.hits}` : ""}`;
+    if (c.crit >= 0.1) fx += ` · 爆擊+${Math.round(c.crit * 100)}%`;
+    if (c.cut) fx += " · 割裂";
+    if (c.move > 0) fx += ` · 進${c.move}`;
+  } else if (c.type === "G") {
+    if (c.pullGuard) fx = "拉入下位";
+    else fx = `摔入${data.rules.positions[c.landing || 0]}${c.drain ? ` · 扣敵${c.drain}體力` : ""}${c.slam ? ` · 重摔${c.slam}` : ""}`;
+  } else {
+    if (c.catchShot) fx = "抓摔進斷頭台";
+    else if (c.lockBottom || c.lockAnywhere) fx = `傷 ${c.power || 0} · 直接上鎖`;
+    else fx = `反擊 ${c.power || 0}${c.crit >= 0.1 ? ` · 爆擊+${Math.round(c.crit * 100)}%` : ""}`;
+  }
+  return { name: c.name.replace(/^招牌：/, ""), type: c.type, cost: c.cost ?? 1, fx };
+}
+
 function renderSelect() {
   const box = $("select");
   box.classList.remove("hidden");
   $("battle").classList.add("hidden");
   $("overlay").classList.add("hidden");
   const ids = Object.keys(data.fighters).filter((id) => !data.fighters[id].hidden);
-  const column = (side, title, cls) => `
-    <div class="col">
-      <h3 class="${cls}">${title}</h3>
-      ${ids.map((id) => {
-        const f = data.fighters[id];
-        const placeholder = assets.fighters[id]?.placeholder ? '<span class="ph">占位圖</span>' : "";
-        const size = f.height ? `<span class="sz">${f.height}cm·${f.weight}lb</span>` : "";
-        return `<button class="pick ${picks[side] === id ? "on" : ""}" data-side="${side}" data-id="${id}">
-          ${portraitHtml(id)}
-          <span class="tx"><span class="n">${f.short}${placeholder}</span><br><span class="k">${f.nick}</span>${size}<br><span class="sm">${f.summary}</span>${f.ability ? `<br><span class="ab">能力・${f.ability.name}：${f.ability.desc}</span>` : ""}</span>
-        </button>`;
-      }).join("")}
+
+  // Position both fighters in a close octagon face-off on the live canvas
+  stage.setFighters(picks.a, picks.b);
+  stage.setLayout({ dist: 3 }, true);
+
+  const fa = data.fighters[picks.a];
+  const fb = data.fighters[picks.b];
+  const sideCard = (side, f, opp, roleTitle) => {
+    const sig = describeStaticCard(f.signature);
+    const arch = fighterArchetype(f);
+    const active = selectUI.target === side;
+    const placeholder = assets.fighters[picks[side]]?.placeholder ? '<span class="ph">占位圖</span>' : "";
+    const miniStats = ATTR_LABELS.map(([k, lb]) => {
+      const v = f.attrs[k];
+      const win = v > opp.attrs[k];
+      return `<div class="a-st ${win ? "win" : ""}"><span>${lb}</span><b>${v}</b><i style="--w:${v}%"></i></div>`;
+    }).join("");
+    return `<div class="a-card ${side} ${active ? "target-on" : ""}" data-target-side="${side}">
+      <div class="a-card-top">
+        ${portraitHtml(picks[side], "portrait a-port")}
+        <div class="a-meta">
+          <div class="a-role"><span class="corner-pill ${side}">${roleTitle}</span><span class="arch-pill t-${arch.cls}">${arch.label}</span></div>
+          <div class="a-name">${f.short}${placeholder} <small>${f.nick}</small></div>
+          <div class="a-phys">${f.height}cm · ${f.weight}lb (${weightName(f.weight)}) · 擅長${preferRangeText(f)}</div>
+        </div>
+      </div>
+      <div class="a-sum">${f.summary}</div>
+      <div class="a-perks">
+        ${f.ability ? `<div class="a-perk"><b>⚡ ${f.ability.name}</b>：${f.ability.desc}</div>` : ""}
+        <div class="a-perk sig"><b>★ 招牌・${sig.name}</b> (<span class="t-${sig.type}">${data.rules.typeNames[sig.type]} ${sig.cost}⚡</span>)：${sig.fx}</div>
+      </div>
+      <div class="a-stats">${miniStats}</div>
     </div>`;
-  const a = data.fighters[picks.a].attrs;
-  const b = data.fighters[picks.b].attrs;
-  const rows = ATTR_LABELS.map(([key, label]) => `
-    <div class="cmp"><span class="num">${a[key]}</span><span class="tr l"><i style="width:${a[key]}%"></i></span><span class="lb">${label}</span><span class="tr r"><i style="width:${b[key]}%"></i></span><span class="num" style="text-align:right">${b[key]}</span></div>`).join("");
+  };
+
+  const wDiff = Math.abs((fa.weight || 155) - (fb.weight || 155));
+  const hDiff = (fa.height || 178) - (fb.height || 178);
+  const tapeBadge = wDiff > 0
+    ? `<span class="tape-warn">⚠️ 跨量級對決（差 ${wDiff} lb · 身高差 ${Math.abs(hDiff)} cm）</span>`
+    : `<span class="tape-ok">⚖️ ${weightName(fa.weight)}對決 · 身高差 ${Math.abs(hDiff)} cm</span>`;
+
+  const rosterTiles = ids.map((id) => {
+    const f = data.fighters[id];
+    const isA = picks.a === id;
+    const isB = picks.b === id;
+    const dim = !matchWeightFilter(f, selectUI.weight);
+    return `<button class="pick a-tile ${isA ? "you on" : ""} ${isB ? "foe" : ""} ${dim ? "filtered" : ""}" data-id="${id}">
+      <div class="a-tile-img">
+        ${portraitHtml(id, "portrait")}
+        ${isA ? '<i class="badge you">你</i>' : ""}
+        ${isB ? '<i class="badge foe">敵</i>' : ""}
+      </div>
+      <span class="a-tile-nm">${f.short}</span>
+      <span class="a-tile-wt">${f.weight}lb</span>
+    </button>`;
+  }).join("");
+
   box.innerHTML = `
-    ${column("a", "你的選手", "you")}
-    <div class="versus">
-      <h1>OCTAGON CARDS</h1>
-      ${rows}
-      <div class="modes">${Object.entries(data.rules.match.modes).map(([id, m]) => `<button class="mode ${picks.mode === id ? "on" : ""}" data-mode="${id}">${m.label}<small>${m.desc}</small></button>`).join("")}</div>
-      <div class="howto">
-        <b class="t-S">打擊</b> 克 <b class="t-G">摔抱</b> 克 <b class="t-C">防反</b> 克 <b class="t-S">打擊</b>。<br>
-        看對手傾向決定出什麼，<b>投入越多，贏得越多，猜錯也越痛</b>。體力會耗光，氣勢滿了有招牌技。
+    <div class="sel-topbar">
+      <div class="sel-brand">
+        <b>OCTAGON CARDS</b>
+        <span class="sel-rule"><i class="t-S">打擊</i>克<i class="t-G">摔抱</i> · <i class="t-G">摔抱</i>克<i class="t-C">防反</i> · <i class="t-C">防反</i>克<i class="t-S">打擊</i></span>
+      </div>
+      <div class="sel-filters">
+        ${WEIGHT_CLASSES.map(([w, lb]) => `<button class="w-pill ${selectUI.weight === w ? "on" : ""}" data-weight="${w}">${lb}</button>`).join("")}
+      </div>
+      <div class="sel-tools">
+        <button class="tool-btn" id="btn-swap" title="雙方交換角色">⇄ 互換</button>
+        <button class="tool-btn" id="btn-rand" title="隨機挑選對手">🎲 隨機對手</button>
       </div>
     </div>
-    ${column("b", "對手", "foe")}
-    <button id="start">開打</button>`;
-  box.querySelectorAll(".pick").forEach((el) => el.addEventListener("click", () => {
-    picks[el.dataset.side] = el.dataset.id;
+    <div class="a-stage-row">
+      ${sideCard("a", fa, fb, "P1 你的選手")}
+      <div class="a-center-window">
+        <div class="a-faceoff-head">
+          <div class="fo-title">OCTAGON FACE-OFF</div>
+          ${tapeBadge}
+        </div>
+        <div class="a-target-bar">
+          <button class="t-btn you ${selectUI.target === "a" ? "on" : ""}" data-target-side="a">🟢 點選換：你 (${fa.short})</button>
+          <button class="t-btn foe ${selectUI.target === "b" ? "on" : ""}" data-target-side="b">🔴 點選換：對手 (${fb.short})</button>
+        </div>
+      </div>
+      ${sideCard("b", fb, fa, "CPU 對手")}
+    </div>
+    <div class="a-dock">
+      <div class="a-roster">${rosterTiles}</div>
+      <div class="a-go-col">
+        <div class="a-modes">
+          ${Object.entries(data.rules.match.modes).map(([id, m]) => `<button class="mode ${picks.mode === id ? "on" : ""}" data-mode="${id}">${m.label}<small>${m.rounds}R×${m.exchanges}手</small></button>`).join("")}
+        </div>
+        <button id="start" class="a-start">開打 FIGHT</button>
+      </div>
+    </div>`;
+
+  box.querySelectorAll(".w-pill[data-weight]").forEach((el) => el.addEventListener("click", () => {
+    selectUI.weight = el.dataset.weight;
     renderSelect();
   }));
+  box.querySelectorAll("[data-target-side]").forEach((el) => el.addEventListener("click", () => {
+    selectUI.target = el.dataset.targetSide;
+    renderSelect();
+  }));
+  const pickFighter = (side, id) => {
+    picks[side] = id;
+    renderSelect();
+    const arch = fighterArchetype(data.fighters[id]);
+    stage.pose(side, arch.id === "grappler" ? "shoot" : arch.id === "counter" ? "kick" : "punch", 380);
+  };
+  box.querySelectorAll(".a-tile").forEach((el) => {
+    el.addEventListener("click", () => pickFighter(selectUI.target, el.dataset.id));
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      selectUI.target = "b";
+      pickFighter("b", el.dataset.id);
+    });
+  });
   box.querySelectorAll(".mode").forEach((el) => el.addEventListener("click", () => {
     picks.mode = el.dataset.mode;
     renderSelect();
   }));
+  $("btn-swap").addEventListener("click", () => {
+    [picks.a, picks.b] = [picks.b, picks.a];
+    renderSelect();
+  });
+  $("btn-rand").addEventListener("click", () => {
+    const pool = ids.filter((id) => id !== picks.a && matchWeightFilter(data.fighters[id], selectUI.weight));
+    const list = pool.length ? pool : ids.filter((id) => id !== picks.a);
+    pickFighter("b", list[Math.floor(Math.random() * list.length)]);
+  });
   $("start").addEventListener("click", startMatch);
 }
 
