@@ -10,11 +10,7 @@
   },
   "triangle": { "S": "G", "G": "C", "C": "S" },
   "typeNames": { "S": "打擊", "G": "摔抱", "C": "防反" },
-  "groundLabels": {
-    "top": { "S": "砸拳", "G": "過位", "C": "穩壓" },
-    "bottom": { "S": "蹬踢", "G": "起身掃翻", "C": "防守反制" }
-  },
-  "positions": ["防守", "控制", "背後"],
+  "positions": ["全防守", "半防守", "側控", "騎乘", "背後"],
   "dist": { "names": ["遠距", "中距", "近距", "纏抱"], "short": ["遠", "中", "近", "纏"], "start": 1, "standUp": 2, "clinch": 3 },
   "cut": { "max": 3, "blindAt": 2, "doctorAt": 3, "roundHeal": 1 },
   "energy": { "base": 3, "tiredAt": 40, "gassedAt": 18, "rockedBudget": 1, "swarmBonus": 1 },
@@ -33,7 +29,7 @@
     "winStrikeBonus": 1.1, "counterMult": 1.1, "tradeMult": 0.85,
     "overcommitPerEnergy": 0.4, "shootOvercommit": 0.15, "swarmMult": 1.25,
     "tradeInterruptMult": 0.5,
-    "groundPositionMult": [1.1, 1.35, 1.6], "bottomStrikeMult": 0.8,
+    "groundPositionMult": [1.05, 1.2, 1.4, 1.65, 1.65], "bottomStrikeMult": 0.8,
     "bottomCounterMult": 0.5, "slamToGround": 1.0,
     "limit": 60
   },
@@ -69,14 +65,46 @@
     "topControlDrain": 6
   },
   "lock": {
-    "tapBase": 0.5, "tapPerStat": 0.006, "tapDepthBonus": 0.2, "lowStaminaAt": 35, "lowStaminaBonus": 0.15,
-    "min": 0.05, "max": 0.9, "holdDrain": 4, "escapePenalty": 4, "minTopPosition": 1
+    "tapDepth": 3, "maxStart": 2, "edgeDeep": 32, "lowStaminaAt": 30,
+    "holdDrain": 4, "escapePenalty": 4,
+    "beats": { "tighten": "handfight", "angle": "turn", "leg": "yank" },
+    "attack": { "tighten": "收緊", "angle": "換角度", "leg": "腿鎖" },
+    "defend": { "handfight": "拉手", "turn": "轉身", "yank": "硬拔" }
+  },
+  "ground": {
+    "handSize": 5,
+    "cats": {
+      "punch":   { "label": "砸拳", "side": "top", "type": "S" },
+      "pass":    { "label": "過位", "side": "top", "type": "G" },
+      "lock":    { "label": "鎖技", "side": "top", "type": "G" },
+      "hold":    { "label": "穩壓", "side": "top", "type": "C", "free": true },
+      "frame":   { "label": "撐架", "side": "bottom", "type": "C" },
+      "counter": { "label": "反制", "side": "bottom", "type": "C" },
+      "escape":  { "label": "逃脫", "side": "bottom", "type": "G" },
+      "cover":   { "label": "抱頭", "side": "bottom", "type": "C", "free": true }
+    },
+    "matrix": {
+      "punch": { "frame": "top", "counter": "bottom", "escape": "top", "cover": "top" },
+      "pass":  { "frame": "bottom", "counter": "top", "escape": "top", "cover": "top" },
+      "lock":  { "frame": "top", "counter": "top", "escape": "bottom", "cover": "top" },
+      "hold":  { "frame": "none", "counter": "none", "escape": "top", "cover": "none" }
+    },
+    "coverMult": 0.5,
+    "escapeTo": [-1, 0, 1, 1, 3],
+    "sweepPos": 0,
+    "short": ["守", "半", "側", "騎", "背"],
+    "lockShare": 0.15,
+    "wins": {
+      "punch": "砸拳得手", "pass": "過位成功", "lock": "鎖住了", "hold": "穩穩壓住",
+      "frame": "撐架擋下過位", "counter": "反制了砸拳", "escape": "逃出鎖技",
+      "stalemate": "互相僵持"
+    }
   },
   "momentum": { "win": 11, "crit": 6, "rocked": 12, "trade": 4, "lose": -3, "standoff": -5, "signatureCost": 100, "landing": 6 },
   "stall": { "limit": 2 },
   "score": {
     "damage": 1.0, "exchangeWin": 3, "rocked": 10, "takedown": 8, "positionGain": 4,
-    "controlPerPosition": 2.5, "lockAttempt": 8, "cut": 6, "tenEightPerExchange": 8.4,
+    "controlByPos": [2.5, 4, 5.5, 7.5, 8], "lockAttempt": 8, "cut": 6, "tenEightPerExchange": 8.4,
     "judges": [
       { "name": "打擊派", "striking": 1.3, "grappling": 0.7 },
       { "name": "摔柔派", "striking": 0.75, "grappling": 1.4 },

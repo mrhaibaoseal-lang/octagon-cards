@@ -5,11 +5,11 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadData, cardCost, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, getIntent, bestPlay, budget, nextUnit, opposite, checkInvariants, usableAt, arrange } from "./engine.js";
+import { loadData, cardCost, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, getIntent, bestPlay, bestGroundCard, budget, nextUnit, opposite, checkInvariants, usableAt, arrange, groundWinners, groundOutcome, roleOf } from "./engine.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(here, "rules", name), "utf8"));
-export const data = loadData({ rules: load("rules.json"), cards: load("cards.json"), fighters: load("fighters.json"), depth: load("depth.json") });
+export const data = loadData({ rules: load("rules.json"), cards: load("cards.json"), fighters: load("fighters.json"), depth: load("depth.json"), ground: load("ground.json") });
 
 const TYPES = ["S", "G", "C"];
 const ARGS = process.argv.slice(2);
@@ -17,7 +17,21 @@ const MODE = (ARGS.find((a) => a.startsWith("--mode=")) || "--mode=standard").sl
 
 // ---------- Player strategies. Each returns an array of card ids. ----------
 
+/** A random move in a lock fight, or a random kind of ground play and then a random card of that kind. */
+function randomGround(state, s) {
+  const hand = state[s].hand;
+  if (state.ground.lock) return [hand[Math.floor(nextUnit(state) * hand.length)]];
+  const cats = state.rules.ground.cats;
+  const role = roleOf(state, s);
+  const kinds = Object.keys(cats).filter((c) => cats[c].side === role && (cats[c].free || hand.some((x) => state.cards[x].cat === c && cardCost(state, s, x) <= budget(state, s))));
+  const kind = kinds[Math.floor(nextUnit(state) * kinds.length)];
+  if (cats[kind].free) return [];
+  const cards = hand.filter((x) => state.cards[x].cat === kind && cardCost(state, s, x) <= budget(state, s));
+  return [cards[Math.floor(nextUnit(state) * cards.length)]];
+}
+
 function randomPlay(state, s) {
+  if (state.ground) return randomGround(state, s);
   const b = budget(state, s);
   const type = TYPES[Math.floor(nextUnit(state) * 3)];
   const all = state[s].hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist, s));
@@ -39,19 +53,67 @@ function randomPlay(state, s) {
 /** What a viewer actually sees: with blood in the eyes only the most likely type shows. */
 function seen(intent) {
   if (!intent.blind) return intent.probs;
-  const rest = (1 - intent.probs[intent.top]) / 2;
-  return { S: rest, G: rest, C: rest, [intent.top]: intent.probs[intent.top] };
+  const ids = Object.keys(intent.probs);
+  const rest = (1 - intent.probs[intent.top]) / (ids.length - 1);
+  return Object.fromEntries(ids.map((id) => [id, id === intent.top ? intent.probs[id] : rest]));
 }
 
-const spam = (type) => (state, s) => bestPlay(state, s, type, budget(state, s));
-const spamCheap = (type) => (state, s) => bestPlay(state, s, type, 1);
+/** Spam strategies do the same thing on the mat: always the same kind of play, or a fixed lock move. */
+const spam = (type) => (state, s) => (state.ground?.lock ? [state[s].hand[0]] : bestPlay(state, s, type, budget(state, s)));
+const spamCheap = (type) => (state, s) => (state.ground?.lock ? [state[s].hand[0]] : bestPlay(state, s, type, 1));
 
 function biggest(state, s) {
-  return bestPlay(state, s, "S", budget(state, s));
+  return state.ground?.lock ? [state[s].hand[0]] : bestPlay(state, s, "S", budget(state, s));
+}
+
+/** The reader on the mat: from the shown tendencies, take the option that comes out ahead most often. Lock fights use the guess table. */
+function groundReader(state, s) {
+  const intent = getIntent(state, opposite(s));
+  const probs = seen(intent);
+  const hand = state[s].hand;
+  if (state.ground.lock) {
+    const l = state.rules.lock;
+    const attacking = state.ground.lock.attacker === s;
+    // The opponent's shown option that my move beats: an attack is beaten by its answer, an answer beats its attack.
+    const pick = Object.keys(probs).reduce((best, id) => (probs[id] > probs[best] ? id : best));
+    const mine = attacking ? Object.keys(l.beats).find((k) => l.beats[k] !== pick) : Object.keys(l.beats).find((k) => k === pick);
+    const move = attacking ? mine : l.beats[pick];
+    return [hand.find((c) => state.cards[c].lockMove === move)];
+  }
+  const cats = state.rules.ground.cats;
+  const role = roleOf(state, s);
+  const mineCats = Object.keys(cats).filter((c) => cats[c].side === role);
+  let best = mineCats.find((c) => cats[c].free);
+  let bestEv = -Infinity;
+  for (const c of mineCats) {
+    if (!cats[c].free && !hand.some((x) => state.cards[x].cat === c && cardCost(state, s, x) <= budget(state, s))) continue;
+    let ev = 0;
+    for (const [o, p] of Object.entries(probs)) {
+      const out = role === "top" ? groundOutcome(state, c, o) : groundOutcome(state, o, c);
+      const mineWins = out === role;
+      const theirsWins = out !== "none" && !mineWins;
+      ev += p * (mineWins ? 1 : theirsWins ? -1 : 0);
+    }
+    if (ev > bestEv) {
+      bestEv = ev;
+      best = c;
+    }
+  }
+  if (cats[best].free) return [];
+  const b = budget(state, s);
+  const sure = bestEv;
+  let limit = sure >= 0.45 ? b : sure >= 0.3 ? Math.min(b, 2) : 1;
+  if (!state[opposite(s)].rocked) {
+    if (state[s].stamina < 30) limit = Math.min(limit, 1);
+    else if (state[s].stamina < 50) limit = Math.min(limit, 2);
+  }
+  const legal = hand.filter((x) => state.cards[x].cat === best).map((x) => cardCost(state, s, x));
+  return [bestGroundCard(state, s, best, Math.max(limit, Math.min(...legal)))];
 }
 
 /** Plays what the opponent's displayed intent says, and commits harder the more sure it is. */
 function reader(state, s) {
+  if (state.ground) return groundReader(state, s);
   const intent = getIntent(state, opposite(s));
   const probs = seen(intent);
   const tri = state.rules.triangle;
@@ -82,6 +144,7 @@ function reader(state, s) {
 
 /** Same read, but always all-in. Shows whether commit sizing matters. */
 function readerAllIn(state, s) {
+  if (state.ground) return groundReader(state, s);
   const probs = seen(getIntent(state, opposite(s)));
   const tri = state.rules.triangle;
   const best = TYPES.reduce((a, t) => (probs[tri[t]] > probs[tri[a]] ? t : a), "S");
