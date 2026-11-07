@@ -3,6 +3,9 @@
 const SCALE = 2; // sprite pixels to screen points
 const POSES = ["idle", "punch", "kick", "hit", "shoot", "down"];
 const FLOOR_Y = 296;
+// Half the gap between the two fighters at each distance (far, mid, close, clinch), and how far a strike reaches.
+const HALF_GAP = [190, 140, 96, 54];
+export const REACH = [100, 76, 44, 18];
 const PLACEHOLDER_TINT = { khabib: "#49648c", oliveira: "#2f8f83", neutral: "#777c8c" };
 
 function loadImage(src) {
@@ -30,6 +33,30 @@ function whiteOf(img) {
   return tinted(img, "#ffffff");
 }
 
+/** Where the head is in a pose, in sprite pixels: the middle of the topmost rows that have anything in them. */
+function headOf(img) {
+  const c = document.createElement("canvas");
+  c.width = img.width;
+  c.height = img.height;
+  const x = c.getContext("2d");
+  x.drawImage(img, 0, 0);
+  const { data } = x.getImageData(0, 0, img.width, img.height);
+  let top = 0;
+  const alphaAt = (px, py) => data[(py * img.width + px) * 4 + 3] > 0;
+  scan: for (; top < img.height; top++) for (let px = 0; px < img.width; px++) if (alphaAt(px, top)) break scan;
+  let sum = 0;
+  let count = 0;
+  for (let py = top; py < Math.min(img.height, top + 12); py++) {
+    for (let px = 0; px < img.width; px++) {
+      if (alphaAt(px, py)) {
+        sum += px;
+        count++;
+      }
+    }
+  }
+  return { x: count ? sum / count : img.width / 2, y: top + 7 };
+}
+
 /** Loads real sprites where they exist. Fighters without art borrow a flat silhouette of whatever art exists. */
 export async function loadAssets(fighterIds) {
   const assets = { fighters: {}, portraits: {} };
@@ -44,7 +71,7 @@ export async function loadAssets(fighterIds) {
     const set = {};
     for (const pose of POSES) {
       const img = meta[pose] && (await loadImage(`assets/private/${id}/${pose}.png`));
-      if (img) set[pose] = { img, white: whiteOf(img), w: meta[pose].w, h: meta[pose].h, anchorX: meta[pose].anchorX };
+      if (img) set[pose] = { img, white: whiteOf(img), w: meta[pose].w, h: meta[pose].h, anchorX: meta[pose].anchorX, head: headOf(img) };
     }
     return set;
   };
@@ -60,7 +87,7 @@ export async function loadAssets(fighterIds) {
         const d = donor[pose];
         if (!d) continue;
         const img = tinted(d.img, PLACEHOLDER_TINT[id] || "#777c8c");
-        poses[pose] = { img, white: d.white, w: d.w, h: d.h, anchorX: d.anchorX };
+        poses[pose] = { img, white: d.white, w: d.w, h: d.h, anchorX: d.anchorX, head: d.head };
       }
       assets.fighters[id] = { poses, placeholder: true };
     } else {
@@ -150,7 +177,13 @@ export class Stage {
   }
 
   makeFighter(side) {
-    return { side, id: null, x: side === "a" ? 250 : 594, y: FLOOR_Y, tx: side === "a" ? 250 : 594, ty: FLOOR_Y, pose: "idle", restPose: "idle", poseUntil: 0, flip: side === "b", ox: 0, oy: 0, wx: 0, whiteUntil: 0, z: 0, downed: false };
+    return { side, id: null, x: side === "a" ? 250 : 594, y: FLOOR_Y, tx: side === "a" ? 250 : 594, ty: FLOOR_Y, pose: "idle", restPose: "idle", poseUntil: 0, flip: side === "b", ox: 0, oy: 0, wx: 0, whiteUntil: 0, z: 0, downed: false, cut: 0 };
+  }
+
+  /** Bleeding level 0-3 for each fighter, drawn as a cut on the face with drips. */
+  setCuts(a, b) {
+    this.fighters.a.cut = a;
+    this.fighters.b.cut = b;
   }
 
   resize(ratio) {
@@ -189,7 +222,7 @@ export class Stage {
       bottom.flip = dir < 0;
       bottom.downed = true;
     } else {
-      const gap = view.range === "in" ? 84 : 172;
+      const gap = HALF_GAP[view.dist ?? 1];
       a.restPose = "idle";
       b.restPose = "idle";
       a.tx = 422 - gap;
@@ -326,12 +359,29 @@ export class Stage {
     if (f.flip) x.scale(-1, 1);
     x.drawImage(white ? sprite.white : sprite.img, Math.round(-sprite.anchorX * SCALE), 0, w, h);
     x.restore();
+    if (f.cut > 0 && !f.downed && f.pose !== "down" && sprite.head) this.drawBlood(f, sprite, px, py - h + breathe, now);
     if (art.placeholder && !f.downed) {
       x.fillStyle = "rgba(255,255,255,0.75)";
       x.font = "700 10px -apple-system, 'PingFang TC', sans-serif";
       x.textAlign = "center";
       x.fillText("占位圖", px, py - h - 4);
     }
+  }
+
+  /** A red cut on the brow and a few drips running down the face; more of both at higher levels. */
+  drawBlood(f, sprite, px, top, now) {
+    const x = this.ctx;
+    const dir = f.flip ? -1 : 1;
+    const faceX = Math.round(px + dir * (sprite.head.x - sprite.anchorX) * SCALE);
+    const faceY = Math.round(top + sprite.head.y * SCALE);
+    x.fillStyle = "#d90429";
+    x.fillRect(faceX - 4, faceY - 5, 8, 3); // the cut over the brow
+    for (let k = 0; k < f.cut * 2; k++) {
+      const t = (now / 900 + k * 0.29) % 1;
+      x.globalAlpha = 1 - t * 0.6;
+      x.fillRect(faceX - 5 + (k % 4) * 3, Math.round(faceY - 2 + t * (16 + f.cut * 6)), 2, 4);
+    }
+    x.globalAlpha = 1;
   }
 
   draw(now) {

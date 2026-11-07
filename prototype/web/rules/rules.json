@@ -8,6 +8,8 @@
     "bottom": { "S": "蹬踢", "G": "起身掃翻", "C": "防守反制" }
   },
   "positions": ["防守", "控制", "背後"],
+  "dist": { "names": ["遠距", "中距", "近距", "纏抱"], "short": ["遠", "中", "近", "纏"], "start": 1, "standUp": 2, "clinch": 3 },
+  "cut": { "max": 3, "blindAt": 2, "doctorAt": 3 },
   "energy": { "base": 3, "tiredAt": 40, "gassedAt": 18, "rockedBudget": 1, "swarmBonus": 1 },
   "stamina": {
     "perEnergy": 7, "regenPerExchange": 4, "cardioRegenBonus": 2, "counterRegen": 3,
@@ -20,7 +22,7 @@
     "grazeMult": 0.6, "cleanMult": 1.0, "critMult": 1.5
   },
   "damage": {
-    "powerBase": 0.6, "powerPerStat": 0.0055, "offRangeMult": 0.7,
+    "powerBase": 0.6, "powerPerStat": 0.0055,
     "winStrikeBonus": 1.1, "counterMult": 1.1, "tradeMult": 0.85,
     "overcommitPerEnergy": 0.4, "shootOvercommit": 0.15, "swarmMult": 1.25,
     "tradeInterruptMult": 0.5,
@@ -35,7 +37,7 @@
   },
   "debuff": { "threshold": 3, "maxPips": 3, "legKickMult": 0.65 },
   "grapple": {
-    "statPivot": 70, "scrambleMomentum": 5, "scrambleStamina": 4, "offRangeQuality": 0.2,
+    "statPivot": 70, "scrambleMomentum": 5, "scrambleStamina": 4,
     "drainOnLanding": 10, "positionFromTier": { "graze": -1, "clean": 0, "crit": 1 },
     "topControlDrain": 10
   },
@@ -47,7 +49,7 @@
   "stall": { "limit": 2 },
   "score": {
     "damage": 1.0, "exchangeWin": 3, "rocked": 10, "takedown": 8, "positionGain": 4,
-    "controlPerPosition": 2.5, "lockAttempt": 8, "tenEightGap": 42,
+    "controlPerPosition": 2.5, "lockAttempt": 8, "cut": 6, "tenEightGap": 42,
     "judges": [
       { "name": "打擊派", "striking": 1.3, "grappling": 0.7 },
       { "name": "摔柔派", "striking": 0.75, "grappling": 1.4 },
@@ -57,7 +59,7 @@
   "corner": {
     "options": [
       { "id": "breathe", "label": "深呼吸", "desc": "多回 25 體力", "stamina": 25 },
-      { "id": "patch", "label": "止血消腫", "desc": "回 8 生命，清 1 個傷痕", "hp": 8, "clearPip": 1 },
+      { "id": "patch", "label": "止血消腫", "desc": "回 8 生命，清 1 個傷痕，止 1 級血", "hp": 8, "clearPip": 1, "clearCut": 1 },
       { "id": "fire", "label": "教練喊話", "desc": "氣勢 +35", "momentum": 35 }
     ]
   },
@@ -65,7 +67,7 @@
     "minWeight": 0.08,
     "adapt": { "window": 3, "perMatch": 0.22, "repeatBonus": 0.15 },
     "lowStaminaCounter": 0.25, "lowStaminaAt": 30,
-    "rockedCounter": 0.7, "swarmStrike": 0.7,
+    "rockedCounter": 0.7, "swarmStrike": 0.7, "wantClose": 0.3, "wantOut": 0.3,
     "commit": { "fullChance": 0.55, "conserveAt": 40 },
     "signatureWeight": 0.35,
     "tells": {

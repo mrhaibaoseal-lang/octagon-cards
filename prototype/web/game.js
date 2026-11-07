@@ -1,6 +1,6 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
 import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf } from "./engine.js";
-import { Stage, loadAssets } from "./stage.js";
+import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
 const TYPES = ["S", "G", "C"];
@@ -18,6 +18,7 @@ let picks = { a: "mcgregor", b: "khabib" };
 let skipping = false;
 let skipWake = null;
 let lastLine = "";
+let viewDist = 1; // the distance as the screen currently shows it, which trails the engine during playback
 
 // ---------- Boot ----------
 
@@ -28,17 +29,19 @@ async function boot() {
   assets = await loadAssets(ids);
   stage = new Stage($("cage"), assets);
   stage.setFighters(picks.a, picks.b);
-  stage.setLayout({ range: "out" }, true);
+  stage.setLayout({ dist: 1 }, true);
   fit();
   window.addEventListener("resize", fit);
   $("fight").addEventListener("click", onFight);
   $("brace").addEventListener("click", onBrace);
+  $("step-in").addEventListener("click", () => onStep("step_in", $("step-in")));
+  $("step-back").addEventListener("click", () => onStep("step_back", $("step-back")));
   $("skip").addEventListener("click", () => {
     skipping = true;
     if (skipWake) skipWake();
   });
   renderSelect();
-  window.__game = { get state() { return state; }, data };
+  window.__game = { get state() { return state; }, data, refresh: () => { syncShown(); beginTurn(); } }; // refresh is for checking screens by hand
 }
 
 function fit() {
@@ -119,8 +122,10 @@ function syncShown() {
   shown = {};
   for (const s of ["a", "b"]) {
     const me = state[s];
-    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, pips: { ...me.pips } };
+    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips } };
   }
+  viewDist = state.dist;
+  stage.setCuts(shown.a.cut, shown.b.cut);
 }
 
 // ---------- HUD ----------
@@ -140,7 +145,7 @@ function renderPanel(side) {
   el.innerHTML = `
     ${portraitHtml(f === undefined ? "" : state[side].id)}
     <div class="stats">
-      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}<span class="pips">${pips}</span></div>
+      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}<span class="pips">${pips}</span></div>
       <div class="barwrap"><div class="fill ghost" style="width:${prevGhost}%"></div><div class="fill hp ${v.hp <= 30 ? "low" : ""}" style="width:${(v.hp / m.maxHp) * 100}%"></div></div>
       <div class="thinrow">
         <div class="barwrap thin"><div class="fill stam ${v.stamina < data.rules.energy.tiredAt ? "low" : ""}" style="width:${v.stamina}%"></div></div>
@@ -158,7 +163,9 @@ function placeText(view) {
     const you = view.ground.top === "a" ? "你在上位" : "你在下位";
     return `地面 · ${data.rules.positions[view.ground.pos]}<br>${you}`;
   }
-  return view.range === "in" ? "站立 · 內圍" : "站立 · 外圍";
+  const { names, short } = data.rules.dist;
+  const track = short.map((s, i) => `<i class="${i === view.dist ? "on" : ""}">${s}</i>`).join("");
+  return `站立 · ${names[view.dist]}<div class="track4">${track}</div>`;
 }
 
 function renderCenter() {
@@ -176,17 +183,20 @@ function renderHud() {
 
 function renderIntent() {
   const intent = getIntent(state, "b");
+  // With blood in your eyes only the most likely type shows. The other two read "?".
   const rows = TYPES.map((t) => {
+    const hidden = intent.blind && t !== intent.top;
     const p = Math.round(intent.probs[t] * 100);
-    return `<div class="intent-row"><span class="lbl t-${t}">${data.rules.typeNames[t]}</span><span class="track"><div class="val bg-${t}" style="width:${p}%"></div></span><span class="pct t-${t}">${p}%</span></div>`;
+    return `<div class="intent-row ${hidden ? "hide" : ""}"><span class="lbl t-${t}">${data.rules.typeNames[t]}</span><span class="track"><div class="val bg-${t}" style="width:${hidden ? 0 : p}%"></div></span><span class="pct t-${t}">${hidden ? "?" : `${p}%`}</span></div>`;
   }).join("");
   const extra = intent.tags.length ? `<i>${intent.tags.join("・")}</i>` : "";
   const sig = intent.signatureReady ? " <b>⚡招牌就緒</b>" : "";
+  const blind = intent.blind ? '<div class="blind">血流進眼睛，只看得清最可能的出招</div>' : "";
   // Fighters stand near the centre when close or grounded, so the panel moves out of their way.
-  $("intent").classList.toggle("side", Boolean(state.ground) || state.range === "in");
+  $("intent").classList.toggle("side", Boolean(state.ground) || state.dist >= 2);
   $("intent").innerHTML = `
     <div class="title"><span>${fighterOf("b").short} 下一手傾向</span>${sig}</div>
-    ${rows}
+    ${rows}${blind}
     <div class="tell">${intent.tell}${extra}</div>`;
   $("intent").classList.remove("hidden");
 }
@@ -223,16 +233,22 @@ function renderHand() {
   const cards = selectedCards();
   const type = cards.length ? data.cards[cards[0]].type : null;
   const spent = cards.reduce((sum, c) => sum + data.cards[c].cost, 0);
-  $("hand").innerHTML = state.a.hand.map((c, i) => {
-    const card = data.cards[c];
-    const d = describeCard(state, "a", c);
+  // Dimmed means clicking it would not add to the current play: wrong distance, or not enough energy left.
+  const look = (i) => {
+    const c = state.a.hand[i];
     const isSel = selected.includes(i);
-    const affordable = isSel || (type === null || type === card.type ? spent + card.cost <= b : card.cost <= b);
+    const sameType = type === null || type === data.cards[c].type;
+    const ok = playError(state, "a", sameType ? [...cards, c] : [c]) === null;
+    return { card: data.cards[c], d: describeCard(state, "a", c), isSel, affordable: isSel || ok };
+  };
+  const drawn = state.a.hand.map((c, i) => i).filter((i) => !data.cards[state.a.hand[i]].basic);
+  $("hand").innerHTML = drawn.map((i) => {
+    const { card, d, isSel, affordable } = look(i);
     const label = d.action || data.rules.typeNames[card.type];
-    const rangeText = card.range === "any" || state.ground ? "" : card.range === "out" ? "外圍" : "內圍";
-    const rangeHtml = d.offRange ? `<span class="bad">${rangeText}才順手 -30%</span>` : rangeText ? `<span>${rangeText}</span>` : "<span></span>";
+    const where = state.ground ? "" : d.rangeText;
+    const rangeHtml = d.unusable ? `<span class="bad">要在${where}</span>` : where ? `<span>${where}</span>` : "<span></span>";
     const target = card.target && card.power ? `<span>打${TARGET_NAMES[card.target]}</span>` : "";
-    return `<button class="card ${isSel ? "sel" : ""} ${affordable ? "" : "dim"} ${card.signature ? "signature" : ""}" data-i="${i}">
+    return `<button class="card ${isSel ? "sel" : ""} ${affordable ? "" : "dim"} ${d.unusable ? "far" : ""} ${card.signature ? "signature" : ""}" data-i="${i}">
       <div class="head bg-${card.type}"><span>${label}</span><span class="cost">${"⚡".repeat(card.cost)}</span></div>
       <div class="nm">${card.name}</div>
       <div class="fx">${d.effect}</div>
@@ -243,8 +259,13 @@ function renderHand() {
   let energy = "";
   for (let i = 0; i < b; i++) energy += i < spent ? "⚡" : '<span class="off">⚡</span>';
   $("energy").innerHTML = energy;
-  const braceCard = data.cards.brace;
-  $("brace").innerHTML = `${braceCard.name}<br><small>省力回體力</small>`;
+  for (const [id, el, label] of [["step_in", $("step-in"), "前進"], ["step_back", $("step-back"), "後退"]]) {
+    const i = state.a.hand.indexOf(id);
+    const { isSel, affordable } = look(i);
+    el.innerHTML = `${label}<small>⚡1</small>`;
+    el.className = `${isSel ? "sel" : ""} ${affordable ? "" : "dim"}`;
+  }
+  $("brace").innerHTML = "硬撐<small>⚡0</small>";
   $("brace").className = bracing ? "sel" : "";
   $("fight").disabled = !(cards.length || bracing);
   renderChoice();
@@ -262,14 +283,17 @@ function renderChoice() {
   const tri = data.rules.triangle;
   const beats = tri[t];
   const losesTo = TYPES.find((x) => tri[x] === t);
-  const probs = getIntent(state, "b").probs;
-  const pct = (x) => Math.round(probs[x] * 100);
+  const intent = getIntent(state, "b");
+  const probs = intent.probs;
+  const pct = (x) => (intent.blind && x !== intent.top ? "?" : `${Math.round(probs[x] * 100)}%`);
   const n = data.rules.typeNames;
   const extra = Math.max(0, preview.cost - 1);
   const rate = t === "G" ? data.rules.damage.shootOvercommit : data.rules.damage.overcommitPerEnergy;
   const risk = extra ? ` · 猜錯多吃 ${Math.round(extra * rate * 100)}%` : "";
-  const dmg = t === "G" ? "" : ` · 贏了造成約 <b>${preview.damage}</b> · 爆擊 ${preview.critPct}%`;
-  el.innerHTML = `<b class="t-${t}">${n[t]}</b>：贏 ${n[beats]} <b>${pct(beats)}%</b> · 平 ${n[t]} <b>${pct(t)}%</b> · 輸 ${n[losesTo]} <b>${pct(losesTo)}%</b>${dmg}${risk}`;
+  const hurts = cards.some((c) => data.cards[c].power);
+  const dmg = !hurts ? "" : ` · 贏了造成約 <b>${preview.damage}</b> · 爆擊 ${preview.critPct}%`;
+  const moves = preview.endDist !== null && preview.endDist !== state.dist ? ` · 出手後 <b>${data.rules.dist.names[preview.endDist]}</b>` : "";
+  el.innerHTML = `<b class="t-${t}">${n[t]}</b>：贏 ${n[beats]} <b>${pct(beats)}</b> · 平 ${n[t]} <b>${pct(t)}</b> · 輸 ${n[losesTo]} <b>${pct(losesTo)}</b>${dmg}${moves}${risk}`;
 }
 
 function onCard(i, el) {
@@ -295,6 +319,11 @@ function onCard(i, el) {
     selected = [...selected, i];
   }
   renderHand();
+}
+
+function onStep(id, el) {
+  const i = state.a.hand.indexOf(id);
+  if (i >= 0) onCard(i, el);
 }
 
 function onBrace() {
@@ -371,7 +400,9 @@ function actionPoseFor(cardId) {
 async function playEvents(events) {
   const damageLines = [];
   let verdictLine = "";
-  for (const e of events) {
+  for (let idx = 0; idx < events.length; idx++) {
+    const e = events[idx];
+    const next = events[idx + 1];
     switch (e.kind) {
       case "reveal":
         renderReveal(e);
@@ -401,7 +432,7 @@ async function playEvents(events) {
         const crit = e.tier === "crit";
         const dur = crit ? 460 : 340;
         const f = stage.fighters[e.attacker];
-        const reach = state.range === "in" ? 40 : 96;
+        const reach = REACH[viewDist];
         if (f.downed || stage.fighters[def].downed) {
           stage.strike(e.attacker, f.restPose === "shoot" ? "shoot" : "kick", 12, dur);
         } else {
@@ -451,10 +482,46 @@ async function playEvents(events) {
         break;
       case "clinch":
         stage.strike(e.side, "shoot", 50, 340);
-        syncLayout({ range: "in" });
-        showVerdict(e.stuffed ? "沒摔倒，貼住了" : "貼身纏住", "進入內圍", "#7cb7ff");
+        syncLayout({ dist: data.rules.dist.clinch });
+        showVerdict(e.stuffed ? "沒摔倒，貼住了" : "貼身纏住", "進入纏抱", "#7cb7ff");
         await wait(620);
         $("verdict").classList.add("hidden");
+        break;
+      case "range": {
+        syncLayout({ dist: e.dist });
+        // Clinches, scrambles and stand-ups announce themselves, so this only speaks for a plain step.
+        if (!["clinch", "scramble", "standup"].includes(next?.kind)) {
+          showVerdict(data.rules.dist.names[e.dist], e.dist > e.from ? "靠近了" : "拉開了", "#7cb7ff");
+          await wait(480);
+          $("verdict").classList.add("hidden");
+        } else {
+          await wait(160);
+        }
+        break;
+      }
+      case "whiff":
+        stage.floater(e.side, "揮空！", "#ffd166", 28);
+        showVerdict("揮空！", `${nameOf(e.side)} 的${e.name}打不到`, "#ffd166");
+        await wait(640);
+        $("verdict").classList.add("hidden");
+        break;
+      case "cut":
+        shown[e.side].cut = e.level;
+        stage.setCuts(shown.a.cut, shown.b.cut);
+        renderPanel(e.side);
+        stage.shake(8);
+        showVerdict("割傷！", `${nameOf(e.side)} 流血 Lv${e.level}`, "#ff4d4f");
+        await wait(760);
+        $("verdict").classList.add("hidden");
+        break;
+      case "doctor":
+        showVerdict("醫生檢查傷口…", `${nameOf(e.side)} 的傷勢太重`, "#ff4d4f");
+        await wait(800);
+        $("verdict").classList.add("hidden");
+        break;
+      case "caught":
+        syncLayout({ ground: { top: e.side === "a" ? "b" : "a", pos: 0 } });
+        stage.shake(10);
         break;
       case "position":
         syncLayout({ ground: { top: e.top, pos: e.pos } });
@@ -470,7 +537,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "standup":
-        syncLayout({ range: "in" });
+        syncLayout({ dist: e.dist });
         showVerdict(e.reason === "referee" ? "裁判叫起" : "站起來了", "", "#fff");
         await wait(620);
         $("verdict").classList.add("hidden");
@@ -481,12 +548,8 @@ async function playEvents(events) {
         await wait(520);
         $("verdict").classList.add("hidden");
         break;
-      case "range":
-        syncLayout({ range: e.range });
-        await wait(180);
-        break;
       case "scramble":
-        syncLayout({ range: "in" });
+        syncLayout({ dist: data.rules.dist.clinch });
         showVerdict("扭成一團", `${nameOf(e.winner)}稍佔上風`, "#7cb7ff");
         await wait(560);
         $("verdict").classList.add("hidden");
@@ -549,7 +612,8 @@ function renderPanelsFromState() {
 }
 
 function syncLayout(view) {
-  const full = { range: view.range || "in", ground: view.ground || null };
+  if (!view.ground) viewDist = view.dist ?? viewDist;
+  const full = { dist: viewDist, ground: view.ground || null };
   stage.setLayout(full);
   const el = $("center-bar").querySelector(".place");
   if (el) el.innerHTML = placeText(full);
@@ -565,7 +629,7 @@ async function playFinish(e) {
   await wait(260);
   stage.fall(loser);
   stage.victory(e.winner);
-  showVerdict(e.method === "SUB" ? "TAP!" : e.method, "", "", true);
+  showVerdict(e.method === "SUB" ? "TAP!" : e.method, e.reason === "doctor" ? "醫生叫停比賽" : "", "", true);
   await wait(1200);
   stage.timeScale = 1;
   $("verdict").classList.add("hidden");
@@ -575,7 +639,7 @@ async function onFight() {
   if ($("fight").disabled) return;
   const cards = selectedCards();
   const ai = chooseAI(state, "b").cards;
-  const rangeBefore = state.range;
+  const distBefore = state.dist;
   const groundBefore = state.ground ? { ...state.ground } : null;
   const events = resolveExchange(state, cards, ai);
   $("tray").classList.add("away");
@@ -585,7 +649,8 @@ async function onFight() {
   $("skip").classList.remove("hidden");
   skipping = false;
   // Keep showing the situation as it was until the playback moves it.
-  stage.setLayout({ range: rangeBefore, ground: groundBefore });
+  viewDist = distBefore;
+  stage.setLayout({ dist: distBefore, ground: groundBefore });
   await playEvents(events);
   stage.timeScale = 1;
   $("skip").classList.add("hidden");
@@ -644,7 +709,7 @@ function showResult() {
   $("alert").className = "hidden";
   const youWon = o.winner === "a";
   const title = o.winner === null ? "平手" : youWon ? "你贏了" : `${fighterOf("b").short} 贏了`;
-  const method = o.method === "DEC" ? o.decision : o.method === "SUB" ? "降伏" : o.method;
+  const method = o.method === "DEC" ? o.decision : o.method === "SUB" ? "降伏" : o.reason === "doctor" ? "TKO · 醫生叫停" : o.method;
   const detail = o.method === "DEC" ? "打滿三回合" : `第 ${o.round} 回合第 ${o.exchange} 手`;
   const totals = o.totals || (state.roundCards.length ? judgeTotals() : null);
   const judges = o.method === "DEC" && totals ? `<div class="judges">${totals.map((t) => `<div class="judge">${t.name}<b>${t.a} - ${t.b}</b></div>`).join("")}</div>` : "";

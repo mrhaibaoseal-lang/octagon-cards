@@ -3,7 +3,8 @@
     "name": "Conor McGregor", "short": "McGregor", "nick": "外圍狙擊手",
     "summary": "左手一擊定生死。守住外圍，等他衝進來。體能撐不到最後。",
     "attrs": { "power": 88, "accuracy": 86, "wrestling": 52, "grappleDef": 58, "submission": 48, "chin": 66, "cardio": 45 },
-    "deck": ["jab", "jab", "cross", "left_hand", "left_hand", "calf_kick", "head_kick", "front_kick", "single_leg", "clinch", "counter_hook", "slip_back", "pivot_counter", "guard_counter"],
+    "prefer": [0, 1],
+    "deck": ["jab", "jab", "cross", "left_hand", "left_hand", "calf_kick", "head_kick", "front_kick", "spin_kick", "single_leg", "clinch", "counter_hook", "slip_back", "back_counter", "pivot_counter", "guard_counter"],
     "signature": "sig_mcgregor",
     "style": {
       "out":    { "S": 0.55, "G": 0.10, "C": 0.35 },
@@ -16,7 +17,8 @@
     "name": "Khabib Nurmagomedov", "short": "Khabib", "nick": "達吉斯坦之鷹",
     "summary": "把你壓在地上，直到你沒力氣。站著的打擊普通，一上身就難逃。",
     "attrs": { "power": 70, "accuracy": 72, "wrestling": 98, "grappleDef": 95, "submission": 78, "chin": 88, "cardio": 98 },
-    "deck": ["jab", "cross", "overhand", "dirty_box", "double_leg", "double_leg", "single_leg", "cage_trip", "slam", "clinch", "rnc", "arm_triangle", "guard_counter", "check_kick"],
+    "prefer": [2, 3],
+    "deck": ["jab", "cross", "overhand", "dirty_box", "knee", "double_leg", "double_leg", "single_leg", "cage_trip", "slam", "clinch", "lunge", "rnc", "arm_triangle", "guard_counter", "check_kick"],
     "signature": "sig_khabib",
     "style": {
       "out":    { "S": 0.30, "G": 0.40, "C": 0.30 },
@@ -29,7 +31,8 @@
     "name": "Charles Oliveira", "short": "Oliveira", "nick": "地面陷阱",
     "summary": "下位最危險。站著敢換拳也會被打暈，但一進地面隨時被鎖。",
     "attrs": { "power": 76, "accuracy": 78, "wrestling": 70, "grappleDef": 68, "submission": 99, "chin": 62, "cardio": 80 },
-    "deck": ["jab", "cross", "lead_hook", "knee", "elbow", "pull_guard", "pull_guard", "double_leg", "rnc", "triangle", "triangle", "armbar", "guard_counter", "counter_hook"],
+    "prefer": [2, 3],
+    "deck": ["jab", "cross", "lead_hook", "knee", "elbow", "spin_elbow", "pull_guard", "pull_guard", "double_leg", "rnc", "triangle", "triangle", "armbar", "guard_counter", "counter_hook", "guillotine"],
     "signature": "sig_oliveira",
     "style": {
       "out":    { "S": 0.40, "G": 0.35, "C": 0.25 },
@@ -42,7 +45,8 @@
     "name": "Dan Hooker", "short": "Hooker", "nick": "絞刑手",
     "summary": "手長腳長，耐打又有體力。沒有一擊必殺，靠消耗把你拖垮。",
     "attrs": { "power": 78, "accuracy": 84, "wrestling": 55, "grappleDef": 65, "submission": 62, "chin": 74, "cardio": 85 },
-    "deck": ["jab", "cross", "lead_hook", "calf_kick", "body_kick", "head_kick", "knee", "elbow", "single_leg", "clinch", "guard_counter", "counter_hook", "check_kick", "slip_back"],
+    "prefer": [0, 1],
+    "deck": ["jab", "cross", "lead_hook", "calf_kick", "body_kick", "head_kick", "front_kick", "knee", "elbow", "single_leg", "clinch", "guard_counter", "counter_hook", "check_kick", "slip_back", "guillotine"],
     "signature": "sig_hooker",
     "style": {
       "out":    { "S": 0.50, "G": 0.12, "C": 0.38 },
@@ -55,7 +59,8 @@
     "name": "Cory Sandhagen", "short": "Sandhagen", "nick": "睡魔",
     "summary": "步法靈活、出手量大，邊打邊等破綻。力量不頂尖，但飛膝能瞬間結束比賽。",
     "attrs": { "power": 76, "accuracy": 85, "wrestling": 62, "grappleDef": 72, "submission": 58, "chin": 70, "cardio": 88 },
-    "deck": ["jab", "jab", "cross", "lead_hook", "calf_kick", "body_kick", "head_kick", "knee", "single_leg", "clinch", "guard_counter", "counter_hook", "slip_back", "check_kick"],
+    "prefer": [0, 2],
+    "deck": ["jab", "jab", "cross", "lead_hook", "one_two", "step_jab", "superman", "calf_kick", "body_kick", "head_kick", "knee", "single_leg", "guard_counter", "counter_hook", "slip_back", "back_counter"],
     "signature": "sig_sandhagen",
     "style": {
       "out":    { "S": 0.45, "G": 0.15, "C": 0.40 },
@@ -68,6 +73,7 @@
     "name": "測試選手", "short": "測試", "nick": "只給模擬用", "hidden": true,
     "summary": "所有屬性相同，用來測試打法勝率。",
     "attrs": { "power": 75, "accuracy": 75, "wrestling": 75, "grappleDef": 75, "submission": 75, "chin": 75, "cardio": 75 },
+    "prefer": [1, 2],
     "deck": ["jab", "cross", "calf_kick", "lead_hook", "elbow", "double_leg", "single_leg", "cage_trip", "rnc", "guard_counter", "counter_hook", "triangle", "slip_back", "body_kick"],
     "signature": "sig_mcgregor",
     "style": {

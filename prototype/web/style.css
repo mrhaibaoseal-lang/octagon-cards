@@ -30,6 +30,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .nameline { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; line-height: 1.1; }
 .mirror .nameline { flex-direction: row-reverse; }
 .nameline .tag { font-size: 10px; font-weight: 800; padding: 0 4px; border-radius: 3px; background: #ff7a1a; color: #000; }
+.nameline .tag.bleed { background: #c1121f; color: #fff; }
 .nameline .pips { margin-left: auto; font-size: 9px; color: var(--dim); display: flex; gap: 4px; font-weight: 600; }
 .mirror .nameline .pips { margin-left: 0; margin-right: auto; }
 .pip { color: rgba(255, 255, 255, 0.22); letter-spacing: -1px; }
@@ -56,9 +57,12 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .dot.done { background: rgba(255, 255, 255, 0.6); }
 .dot.now { background: var(--gold); }
 .place { font-size: 11px; font-weight: 800; color: var(--gold); line-height: 1.15; }
+.track4 { display: flex; justify-content: center; gap: 2px; margin-top: 2px; }
+.track4 i { font-style: normal; font-size: 9px; font-weight: 800; width: 21px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); color: var(--dim); line-height: 12px; }
+.track4 i.on { background: var(--gold); color: #000; }
 
 /* Intent */
-#intent { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); width: 246px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+#intent { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); width: 246px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 #intent.side { left: auto; right: 8px; transform: none; }
 #intent .title { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; color: var(--dim); font-weight: 700; }
 #intent .title b { color: var(--gold); font-size: 11px; }
@@ -69,13 +73,15 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .intent-row .pct { width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
 #intent .tell { font-size: 11px; margin-top: 3px; color: #fff; line-height: 1.2; }
 #intent .tell i { font-style: normal; color: #ffb454; margin-left: 4px; }
+#intent .blind { font-size: 10px; color: #ff7b7f; font-weight: 800; }
+.intent-row.hide { opacity: 0.45; }
 #intent .rule { font-size: 10px; margin-top: 3px; color: var(--dim); }
 #intent .rule b { font-weight: 800; }
 .t-S { color: var(--s); } .t-G { color: var(--g); } .t-C { color: var(--c); }
 .bg-S { background: var(--s); } .bg-G { background: var(--g); } .bg-C { background: var(--c); }
 
 /* Alert */
-#alert { position: absolute; top: 62px; left: 8px; width: 170px; padding: 5px 8px; border-radius: 6px; font-size: 12px; font-weight: 800; line-height: 1.25; background: rgba(229, 72, 77, 0.92); }
+#alert { position: absolute; top: 70px; left: 8px; width: 170px; padding: 5px 8px; border-radius: 6px; font-size: 12px; font-weight: 800; line-height: 1.25; background: rgba(229, 72, 77, 0.92); }
 #alert.swarm { background: rgba(245, 197, 66, 0.95); color: #000; }
 
 /* Tray */
@@ -85,9 +91,16 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #choice b { font-weight: 900; }
 #tray-row, #hand { display: flex; gap: 4px; }
 #tray { --hand-h: 104px; }
-#hand { position: absolute; left: 0; right: 96px; bottom: 0; height: var(--hand-h); align-items: flex-end; justify-content: center; }
-#choice { position: absolute; left: 0; right: 96px; bottom: calc(var(--hand-h) + 12px); margin: 0 auto; width: fit-content; max-width: 100%; white-space: nowrap; }
-#actions { position: absolute; right: 0; bottom: 0; width: 90px; display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+#hand { position: absolute; left: 0; right: 126px; bottom: 0; height: var(--hand-h); align-items: flex-end; justify-content: center; }
+#choice { position: absolute; left: 0; right: 126px; bottom: calc(var(--hand-h) + 12px); margin: 0 auto; width: fit-content; max-width: 100%; white-space: nowrap; }
+#actions { position: absolute; right: 0; bottom: 0; width: 120px; display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+#basics { display: flex; gap: 3px; }
+#basics button { flex: 1; min-width: 0; height: 40px; background: #1e2536; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 700; line-height: 1.15; padding: 2px 0; }
+#basics button small { display: block; font-size: 9px; font-weight: 600; color: var(--dim); }
+#basics button.sel { outline: 2px solid #fff; }
+#basics button.dim { opacity: 0.35; }
+#step-in { border-color: rgba(62, 142, 247, 0.7) !important; }
+#step-back { border-color: rgba(48, 164, 108, 0.7) !important; }
 #tray { height: 0; }
 .card { position: relative; width: 112px; height: 92px; background: #171b28; border: 2px solid var(--line); border-radius: 7px; padding: 0; text-align: left; overflow: hidden; transition: transform 0.12s ease, opacity 0.12s, box-shadow 0.12s; display: flex; flex-direction: column; flex: none; }
 .card .head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 900; padding: 1px 5px; color: #fff; }
@@ -99,13 +112,12 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .card.sel { transform: translateY(-12px); box-shadow: 0 0 0 2px #fff, 0 6px 14px rgba(0,0,0,0.6); }
 .card.dim { opacity: 0.38; }
 .card.signature { border-color: var(--gold); box-shadow: 0 0 10px rgba(245, 197, 66, 0.7); }
-.card.deny { animation: deny 0.22s; }
+.card.deny, #basics button.deny { animation: deny 0.22s; }
+.card.far .nm { color: rgba(255, 255, 255, 0.55); }
 @keyframes deny { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 
 #energy { text-align: center; font-size: 13px; font-weight: 900; color: var(--gold); background: var(--panel); border-radius: 5px; padding: 1px 0; letter-spacing: 1px; }
 #energy .off { color: rgba(255, 255, 255, 0.22); }
-#brace { background: #1e2536; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 700; padding: 4px 2px; line-height: 1.15; }
-#brace.sel { outline: 2px solid #fff; }
 #fight { background: var(--gold); color: #000; border-radius: 7px; font-size: 18px; font-weight: 900; padding: 7px 0; }
 #fight:disabled { background: #3a3f4d; color: rgba(255, 255, 255, 0.45); }
 
@@ -122,7 +134,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #verdict.big { font-size: 60px; color: var(--gold); top: 110px; }
 #verdict .sub { display: block; text-align: center; font-size: 13px; font-weight: 700; color: #fff; }
 @keyframes pop { from { transform: translateX(-50%) scale(1.5); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
-#last { position: absolute; left: 8px; top: 62px; width: 168px; font-size: 11px; line-height: 1.3; color: var(--dim); font-weight: 600; background: rgba(9, 11, 17, 0.6); border-radius: 5px; padding: 3px 6px; }
+#last { position: absolute; left: 8px; top: 70px; width: 168px; font-size: 11px; line-height: 1.3; color: var(--dim); font-weight: 600; background: rgba(9, 11, 17, 0.6); border-radius: 5px; padding: 3px 6px; }
 #last:empty { display: none; }
 #last b { color: #fff; }
 #skip { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; color: rgba(255, 255, 255, 0.5); font-size: 11px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-weight: 700; }
