@@ -163,7 +163,8 @@ def main() -> None:
 
     manifest_path = args.out / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    manifest.setdefault("fighters", {})[args.fighter] = meta
+    # A second sheet (the ground poses) adds to the fighter's poses instead of replacing them.
+    manifest.setdefault("fighters", {})[args.fighter] = {**manifest.get("fighters", {}).get(args.fighter, {}), **meta}
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"wrote {out_dir} and {manifest_path}")
 
