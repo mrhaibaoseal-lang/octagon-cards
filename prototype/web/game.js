@@ -1,5 +1,5 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf, cardCost } from "./engine.js";
+import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf, cardCost } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -122,13 +122,23 @@ function startMatch() {
   stage.setLayout(state, true);
   syncShown();
   beginTurn();
+  $("tray").classList.add("away");
+  $("intent").classList.add("hidden");
+  shown.b.tactic = null; // his plan is revealed when the round starts
+  renderPanel("b");
+  askTactic("賽前準備", "選你這個回合的戰術，他的打法開賽才揭曉", null, (id) => {
+    setTactic(state, "a", id);
+    syncShown();
+    beginTurn();
+    announceRound();
+  });
 }
 
 function syncShown() {
   shown = {};
   for (const s of ["a", "b"]) {
     const me = state[s];
-    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks), pinned: state.cage?.side === s };
+    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks), pinned: state.cage?.side === s, tactic: me.tactic };
   }
   viewDist = state.dist;
   viewCage = state.cage?.side ?? null;
@@ -146,6 +156,7 @@ function renderPanel(side) {
     return `<span>${TARGET_NAMES[t]}<span class="pip ${cls}">${"●".repeat(n)}${"○".repeat(data.rules.debuff.maxPips - n)}</span></span>`;
   }).join("");
   const legHurt = v.pips.legs >= data.rules.debuff.threshold ? `<span class="tag leg">腿傷·步+${data.rules.debuff.legMoveCost}⚡</span>` : "";
+  const plan = v.tactic ? `<span class="tag tc" title="${data.rules.tactics[v.tactic].desc}">${data.rules.tactics[v.tactic].short}</span>` : "";
   const pinned = v.pinned ? '<span class="tag cage">背靠籠邊</span>' : "";
   const markChips = v.marks.map((t) => `<span class="tag mk">${data.rules.tags[t]?.short || t}</span>`).join("");
   const el = $(`panel-${side}`);
@@ -155,7 +166,7 @@ function renderPanel(side) {
   el.innerHTML = `
     ${portraitHtml(f === undefined ? "" : state[side].id)}
     <div class="stats">
-      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${pinned}${legHurt}${markChips}<span class="pips">${pips}</span></div>
+      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${plan}${pinned}${legHurt}${markChips}<span class="pips">${pips}</span></div>
       <div class="barwrap"><div class="fill ghost" style="width:${pctOf(prevGhost)}%"></div><div class="fill hp ${pctOf(v.hp) <= 18 ? "low" : ""}" style="width:${pctOf(v.hp)}%"></div></div>
       <div class="thinrow">
         <div class="barwrap thin"><div class="fill stam ${v.stamina < data.rules.energy.tiredAt ? "low" : ""}" style="width:${v.stamina}%"></div></div>
@@ -748,6 +759,43 @@ async function onFight() {
   else beginTurn();
 }
 
+function tacticButtons(selected) {
+  return Object.entries(data.rules.tactics).map(([id, t]) => `<button class="tac ${id === selected ? "on" : ""}" data-id="${id}">${t.label}<small>${t.desc}</small></button>`).join("");
+}
+
+/** Before round one: choose a plan, then `done(id)` starts the fight. */
+function askTactic(title, note, selected, done) {
+  const box = $("overlay");
+  box.classList.remove("hidden");
+  let plan = selected || state.a.tactic;
+  box.innerHTML = `<div class="sheet">
+    <h2>${title}</h2>
+    <div class="note">${note}</div>
+    <div class="tactics">${tacticButtons(plan)}</div>
+    <div class="opts"><button class="opt primary" id="go">上場</button></div>
+  </div>`;
+  box.querySelectorAll(".tac").forEach((el) => el.addEventListener("click", () => {
+    plan = el.dataset.id;
+    box.querySelectorAll(".tac").forEach((t) => t.classList.toggle("on", t === el));
+  }));
+  $("go").addEventListener("click", () => {
+    box.classList.add("hidden");
+    done(plan);
+  });
+}
+
+/** The banner at the start of a round: his plan, whether he changed it, and yours. */
+function announceRound() {
+  const him = data.rules.tactics[state.b.tactic];
+  const you = data.rules.tactics[state.a.tactic];
+  const line = state.round === 1 ? `他的打法：${him.label}` : state.b.tacticChanged ? `他換打法了：${him.label}` : `他維持打法：${him.label}`;
+  const el = $("banner");
+  el.className = state.b.tacticChanged ? "changed" : "";
+  el.innerHTML = `<b>第 ${state.round} 回合</b><span>${line}</span><small>你的戰術：${you.label}</small>`;
+  void el.offsetWidth;
+  el.classList.add("show");
+}
+
 /** After a takedown: you choose whether to follow him down; the AI chooses for itself. Then the rest plays out. */
 async function settleChase() {
   const side = state.pending.side;
@@ -802,18 +850,26 @@ function showCorner() {
   const wins = card.judges.filter((j) => j.a > j.b).length;
   const head = wins >= 2 ? "這回合你領先" : card.judges.filter((j) => j.b > j.a).length >= 2 ? "這回合你落後" : "這回合很接近";
   const opts = data.rules.corner.options.map((o) => `<button class="opt" data-id="${o.id}">${o.label}<small>${o.desc}</small></button>`).join("");
+  let plan = state.a.tactic;
   const box = $("overlay");
   box.classList.remove("hidden");
   box.innerHTML = `<div class="sheet">
     <h2>第 ${card.round} / ${state.rounds} 回合結束：${head}</h2>
     <div class="judges">${judges}</div>
+    <div class="note">下一回合的戰術（他會依比分和體力換打法）</div>
+    <div class="tactics">${tacticButtons(plan)}</div>
     <div class="note">角落時間：選一件事，再上場</div>
     <div class="opts">${opts}</div>
   </div>`;
+  box.querySelectorAll(".tac").forEach((el) => el.addEventListener("click", () => {
+    plan = el.dataset.id;
+    box.querySelectorAll(".tac").forEach((t) => t.classList.toggle("on", t === el));
+  }));
   box.querySelectorAll(".opt").forEach((el) => el.addEventListener("click", () => {
-    applyCorner(state, { a: el.dataset.id, b: chooseCorner(state, "b") });
+    applyCorner(state, { a: el.dataset.id, b: chooseCorner(state, "b") }, { a: plan });
     box.classList.add("hidden");
     beginTurn();
+    announceRound();
   }));
 }
 

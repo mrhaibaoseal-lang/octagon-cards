@@ -1,7 +1,7 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData, chooseChase, resolvePending } from "../engine.js";
+import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData, chooseChase, resolvePending, chooseTactic, setTactic } from "../engine.js";
 import { data, playGame, strategies } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
@@ -597,4 +597,62 @@ test("Khabib makes getting up harder, Oliveira locks deeper from the bottom, Chi
     }
   }
   assert.ok(drained > 5);
+});
+
+// ---------- Tactics ----------
+
+test("a tactic changes what a fighter's plays are worth, and the corner can switch it", () => {
+  const state = createMatch(data, "neutral", "neutral", 4);
+  state.a.hand = ["cross", "step_in", "step_back"];
+  setTactic(state, "b", "probe");
+  setTactic(state, "a", "probe");
+  const calm = previewPlay(state, "a", ["cross"]).damage;
+  setTactic(state, "a", "ko");
+  assert.ok(state.a.tacticChanged);
+  const swing = previewPlay(state, "a", ["cross"]);
+  assert.ok(swing.damage > calm * 1.15, `ko ${swing.damage} vs probe ${calm}`);
+  setTactic(state, "b", "ko");
+  assert.ok(previewPlay(state, "a", ["cross"]).damage > swing.damage, "going for the knockout also means taking more");
+  setTactic(state, "a", "ko");
+  assert.ok(!state.a.tacticChanged, "keeping the same plan is not a change");
+  assert.throws(() => setTactic(state, "a", "nonsense"));
+  state.phase = "corner";
+  applyCorner(state, { a: "breathe", b: "breathe" }, { a: "press" });
+  assert.equal(state.a.tactic, "press");
+  assert.ok(state.a.tacticChanged);
+  assert.ok(state.rules.tactics[state.b.tactic], "the AI picked one too");
+});
+
+test("the AI swings for the knockout when behind and plays it safe when ahead, shown intent stays honest", () => {
+  const share = (setup, id) => {
+    let n = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const state = createMatch(data, "mcgregor", "khabib", seed);
+      state.round = 2;
+      setup(state);
+      if (chooseTactic(state, "a") === id) n++;
+    }
+    return n / 300;
+  };
+  const judges = (a, b) => ({ round: 1, judges: [{ a, b }, { a, b }, { a, b }] });
+  const behind = share((s) => s.roundCards.push(judges(9, 10)), "ko");
+  const ahead = share((s) => s.roundCards.push(judges(10, 9)), "ko");
+  assert.ok(behind > ahead + 0.15, `ko when behind ${behind}, ahead ${ahead}`);
+  const safe = share((s) => s.roundCards.push(judges(10, 9)), "probe");
+  assert.ok(safe > 0.3, `probe when ahead ${safe}`);
+  const press = (stamina) => share((s) => { s.b.stamina = stamina; }, "press");
+  assert.ok(press(20) > press(100), "leans on a tired foe");
+  // The numbers on screen are still the numbers the AI plays.
+  const state = createMatch(data, "khabib", "mcgregor", 9);
+  setTactic(state, "a", "ko");
+  const probs = getIntent(state, "a").probs;
+  const counts = { S: 0, G: 0, C: 0 };
+  for (let i = 0; i < 5000; i++) {
+    const cards = chooseAI(state, "a").cards;
+    counts[cards.length ? data.cards[cards[0]].type : "C"]++;
+  }
+  for (const t of ["S", "G", "C"]) assert.ok(Math.abs(counts[t] / 5000 - probs[t]) < 0.04, `${t}`);
+  const calm = createMatch(data, "khabib", "mcgregor", 9);
+  setTactic(calm, "a", "probe");
+  assert.ok(getIntent(state, "a").probs.S > getIntent(calm, "a").probs.S + 0.1, "the knockout plan throws more strikes");
 });

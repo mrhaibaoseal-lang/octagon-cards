@@ -86,6 +86,7 @@ export function createMatch(data, idA, idB, seed = 1, mode = "standard") {
     shuffle(state, state[s].draw);
     refillHand(state, s);
   }
+  for (const s of SIDES) state[s].tactic = chooseTactic(state, s);
   return state;
 }
 
@@ -102,6 +103,8 @@ function makeSide(data, id, maxHp) {
     pips: { head: 0, body: 0, legs: 0 },
     cut: 0, // bleeding level 0-3
     marks: {}, // short-lived tags: { tag: { turns, n } }
+    tactic: null, // this round's game plan (rules.tactics id)
+    tacticChanged: false, // whether it differs from last round's
     pressure: 0, // how much ground this fighter has recently given up
     draw: [...f.deck],
     discard: [],
@@ -184,6 +187,9 @@ export function budget(state, s) {
 
 /** The last exchange of a round: everyone has an extra energy to spend and the judges weigh it more. */
 export const isFinal = (state) => state.exchange === state.perRound;
+
+/** This round's game plan for a fighter, as numbers (rules.tactics). */
+const tactic = (state, s) => state.rules.tactics[state[s].tactic] || {};
 
 /** The always-on part of a fighter's ability (see rules/depth.json). */
 const passive = (state, s) => state.fighters[state[s].id].ability?.passive || {};
@@ -280,6 +286,8 @@ function tierOdds(state, s, cards) {
     const def = state.rules.tags[tag] || {};
     bonus += (def.crit || 0) * (def.perStack ? m.n : 1);
   }
+  const plan = tactic(state, s);
+  bonus += (plan.crit || 0) + (type === "G" ? plan.gQuality || 0 : 0);
   // A man with his back to the fence is easier to take down.
   if (type === "G" && state.cage?.side === opposite(s)) bonus += state.rules.cage.takedownBonus;
   return {
@@ -306,7 +314,7 @@ function powerMult(state, side) {
 /** Damage of one card before tier and situation multipliers. */
 function cardDamage(state, side, cardId) {
   const card = state.cards[cardId];
-  let dmg = (card.power || 0) * powerMult(state, side);
+  let dmg = (card.power || 0) * powerMult(state, side) * (tactic(state, side).dmgOut || 1);
   if (card.kick && state[side].pips.legs >= state.rules.debuff.threshold) dmg *= state.rules.debuff.legKickMult;
   return dmg;
 }
@@ -325,7 +333,7 @@ export function previewPlay(state, s, cards) {
     type,
     cost: costOf(state, cards, s),
     endDist: state.ground ? null : clampDist(state, state.dist + moveOf(state, order)),
-    damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1)),
+    damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1) * (tactic(state, opposite(s)).dmgIn || 1)),
     critPct: Math.round(odds.crit * 100),
     grazePct: Math.round(odds.graze * 100),
     budget: budget(state, s),
@@ -408,7 +416,8 @@ export function getIntent(state, s) {
   const me = state[s];
   const oppSide = opposite(s);
   const style = state.fighters[me.id].style[phaseOf(state, s)];
-  const w = { S: style.S, G: style.G, C: style.C };
+  const plan = tactic(state, s);
+  const w = { S: style.S + (plan.style?.S || 0), G: style.G + (plan.style?.G || 0), C: style.C + (plan.style?.C || 0) };
   const tags = [];
 
   // Having been fooled makes the other side read you better.
@@ -528,7 +537,7 @@ export function chooseAI(state, s) {
   const intent = getIntent(state, s);
   const type = sampleType(state, intent.probs);
   const b = budget(state, s);
-  let limit = nextUnit(state) < ai.commit.fullChance ? b : Math.max(1, b - 1);
+  let limit = nextUnit(state) < ai.commit.fullChance + (tactic(state, s).commit || 0) ? b : Math.max(1, b - 1);
   if (me.stamina < ai.commit.conserveAt) limit = Math.min(limit, 2);
   // Holding back never means failing to throw the type the shown odds promised: spend what the cheapest legal card costs.
   if (type !== "C") {
@@ -569,6 +578,59 @@ export function resolvePending(state, choice) {
   }
   for (const s of SIDES) refillHand(state, s);
   return events;
+}
+
+/** Rounds won by `s` minus rounds won by the other side, by the judges' majority so far. */
+function roundLead(state, s) {
+  let lead = 0;
+  for (const card of state.roundCards) {
+    const mine = card.judges.filter((j) => j[s] > j[opposite(s)]).length;
+    const theirs = card.judges.filter((j) => j[opposite(s)] > j[s]).length;
+    lead += mine > theirs ? 1 : theirs > mine ? -1 : 0;
+  }
+  return lead;
+}
+
+/**
+ * The AI's plan for the coming round: the fighter's own taste, bent by the score, the damage and the gas tank.
+ * Behind on the cards or the foe about to go: swing for the finish. Ahead or tired: keep it safe. Foe gassed: lean on him.
+ */
+export function chooseTactic(state, s) {
+  const me = state[s];
+  const foe = state[opposite(s)];
+  const bias = state.fighters[me.id].tactics || {};
+  const lead = roundLead(state, s);
+  const hp = me.hp / state.maxHp;
+  const foeHp = foe.hp / state.maxHp;
+  const last = state.round >= state.rounds;
+  const w = {};
+  for (const id of Object.keys(state.rules.tactics)) w[id] = bias[id] ?? 1;
+  if (lead < 0) { w.ko += 1.2 * -lead; w.points += 0.6; w.press += 0.4; }
+  if (lead > 0) w.probe += 1.2 * lead;
+  if (last && lead < 0) w.ko += 1.5;
+  if (last && lead > 0) w.probe += 1;
+  if (me.stamina < 40) w.probe += 1.5;
+  if (hp < 0.35) w.probe += 1;
+  if (me.cut >= 2) w.probe += 0.8;
+  if (foeHp < 0.35) w.ko += 1.5;
+  if (foe.stamina < 35) w.press += 1;
+  if (me.tactic) w[me.tactic] *= 1.6; // a plan tends to be kept unless something changed
+  const ids = Object.keys(w);
+  const weights = ids.map((id) => w[id] ** 1.5);
+  let r = nextUnit(state) * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < ids.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return ids[i];
+  }
+  return ids[ids.length - 1];
+}
+
+/** Fixes a fighter's plan for the round and remembers whether it changed. */
+export function setTactic(state, s, id) {
+  if (!state.rules.tactics[id]) throw new Error(`unknown tactic ${id}`);
+  const prev = state[s].tactic;
+  state[s].tacticChanged = Boolean(prev) && prev !== id;
+  state[s].tactic = id;
 }
 
 export function chooseCorner(state, s) {
@@ -623,7 +685,7 @@ function settleMarks(state, events) {
 }
 
 function score(state, s, kind, amount) {
-  state.roundScore[s][kind] += amount * (isFinal(state) ? state.rules.match.finalExchange.scoreMult : 1);
+  state.roundScore[s][kind] += amount * (isFinal(state) ? state.rules.match.finalExchange.scoreMult : 1) * (tactic(state, s).scoreMult || 1);
 }
 
 function finish(state, winner, method, events, reason = null) {
@@ -659,7 +721,7 @@ function dealHit(state, att, cards, tier, mult, events) {
   for (const c of cards) {
     const card = state.cards[c];
     if (!card.power) continue;
-    const total = Math.min(state.rules.damage.limit, cardDamage(state, att, c) * tierMult * mult * swarm);
+    const total = Math.min(state.rules.damage.limit, cardDamage(state, att, c) * tierMult * mult * swarm * (tactic(state, def).dmgIn || 1));
     if (total <= 0) continue;
     const hits = card.hits || 1;
     const dmg = total / hits;
@@ -827,7 +889,7 @@ function updateCage(state, events, types) {
   if (winnerType && types[winnerType] === "G" && state.dist >= state.rules.cage.closeDist) gave[opposite(winnerType)] = true;
   // Pressure builds each time ground is given and only drains when the other man gives ground back.
   for (const s of SIDES) {
-    if (gave[s]) state[s].pressure += 1;
+    if (gave[s]) state[s].pressure += 1 + (tactic(state, opposite(s)).pressure || 0);
     else if (gave[opposite(s)]) state[s].pressure = Math.max(0, state[s].pressure - 1);
   }
   if (state.cage) {
@@ -1179,6 +1241,7 @@ function endExchange(state, plays, types, wasRocked, events) {
     if (wasRocked[s] && me.rocked && me.rockedAt !== state.history.length - 1) me.rocked = false;
     let regen = st.regenPerExchange + ((me.attrs.cardio - 70) / 30) * st.cardioRegenBonus;
     if (types[s] === "C") regen += st.counterRegen;
+    regen += tactic(state, s).regen || 0;
     if (me.pips.body >= state.rules.debuff.threshold) regen += st.bodyDebuffRegen;
     addStamina(state, s, regen);
     // Played cards go to the discard pile. Bracing and signatures are not deck cards.
@@ -1246,7 +1309,7 @@ function decide(state, events) {
 }
 
 /** Between rounds. `choices` = { a: optionId, b: optionId }. */
-export function applyCorner(state, choices) {
+export function applyCorner(state, choices, tactics = {}) {
   if (state.phase !== "corner") throw new Error("not in corner");
   const st = state.rules.stamina;
   for (const s of SIDES) {
@@ -1267,6 +1330,7 @@ export function applyCorner(state, choices) {
   state.round += 1;
   state.exchange = 1;
   state.phase = "exchange";
+  for (const s of SIDES) setTactic(state, s, tactics[s] ?? chooseTactic(state, s));
 }
 
 // ---------- Invariants ----------

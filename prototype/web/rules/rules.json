@@ -54,6 +54,12 @@
     "rhythm": { "label": "連打節奏", "short": "節奏", "perStack": true, "crit": 0.04, "first": 2, "budget": 1, "budgetAt": 3 },
     "fooled": { "label": "被看穿，傾向更好讀", "short": "被看穿", "sharpen": 1.8, "readBoost": 2 }
   },
+  "tactics": {
+    "probe": { "label": "試探", "short": "試探", "desc": "穩住節奏：每手多回 2 體力、少冒險；傷害 -10%", "regen": 2, "dmgOut": 0.9, "commit": -0.15, "style": { "S": -0.1, "G": -0.05, "C": 0.2 } },
+    "press": { "label": "壓迫抱摔", "short": "壓迫", "desc": "貼上去纏鬥：摔抱成功率 +8%、更快把他逼到籠邊；傷害 -5%", "gQuality": 0.08, "pressure": 1, "dmgOut": 0.95, "style": { "S": -0.1, "G": 0.25, "C": -0.1 } },
+    "points": { "label": "搶分", "short": "搶分", "desc": "多出手拿分：每手的裁判分數 +25%；傷害 -5%", "scoreMult": 1.25, "dmgOut": 0.95, "commit": 0.05, "style": { "S": 0.1, "G": 0, "C": -0.05 } },
+    "ko": { "label": "拼 KO", "short": "拼KO", "desc": "賭一把：傷害 +12%、爆擊 +5%；但挨的傷害 +10%、每手少回 1 體力", "dmgOut": 1.12, "dmgIn": 1.1, "crit": 0.05, "regen": -1, "commit": 0.15, "style": { "S": 0.2, "G": -0.05, "C": -0.15 } }
+  },
   "setups": { "clinch": { "tag": "tied", "turns": 1 } },
   "cage": { "pressureAt": 2, "ttl": 4, "closeDist": 2, "takedownBonus": 0.12, "pinnerG": 0.25, "pinnedC": 0.2, "pinnedG": 0.1, "escapeDist": 1, "pushDist": 2 },
   "chase": { "default": 0.6, "tiredFoeBonus": 0.15, "dangerPivot": 80, "perSubmission": 0.004, "tag": "released", "turns": 2 },

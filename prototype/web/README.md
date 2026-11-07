@@ -11,7 +11,7 @@ node prototype/web/serve.js
 ## 檔案
 | 檔案 | 內容 |
 |---|---|
-| `rules/*.json` | 所有牌、選手與數值。**調平衡只改這裡** |
+| `rules/*.json` | 所有牌、選手與數值。**調平衡只改這裡**。`depth.json` 是疊在 `cards.json`／`fighters.json` 上的跨手佈局、選手能力、戰術口味（新選手要有專屬能力，到這裡加一筆） |
 | `engine.js` | 純規則，不碰畫面。瀏覽器與 Node 共用 |
 | `game.js` | 畫面、HUD、每手的演出 |
 | `stage.js` | Canvas：八角籠、選手、特效 |
