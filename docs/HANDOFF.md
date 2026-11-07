@@ -5,6 +5,7 @@
 ## 2026-11-08 · Claude Sonnet 5.5（PixelLab 第一批驗證：O'Malley、Ngannou、Merab）
 - **做了什麼**：三人走完整流程（256 純文字＋全身照寫細節＋骨架 8 格＋受擊 3 格），圖在 `prototype/web/assets/private/{omalley,ngannou,merab}/`，三人對照 `private/batch1_three.png`。轉檔 `pipeline/pl_convert.py`、姿勢參數 `pipeline/pl_poses.json`（不含圖）。本輪 92/2000（剩 1750）。
 - **使用者判斷**：Ngannou 非常好；第一版 O'Malley（髮型臉全不像）、Merab（畫風不同、髮鬍不對）不行。**重生後的版本使用者還沒看**。教訓：提示詞要加「realistic adult proportions, about 8 heads tall, small head, NOT chibi」才不會跑出卡通臉；髮型寫「short cropped / buzz-cut、receding」這類具體描述；**受擊三格不要寫 punched，會把對手的手臂畫進畫面**，改寫「leaning back with the head tilted up, guard hands still near the chest」。
+- **照片版（使用者說文字版效果差、要試圖片）**：全身官方照＋pro 128（各 25＋動畫 5），`private/{omalley_p,merab_p}/`，對照 `private/batch1_photo.png`。髮型鬍子比文字版像，但頭身比失衡（大頭短身、像 Q 版）、畫風與 256 的 Ngannou 不同；Merab 出拳格有黃色閃光殘影。累計 152/2000（剩 1690）。
 - **已知瑕疵**：手套上仍有小標記像字（三人皆有）；Ngannou 抱摔、倒地有少量灰色雜點；O'Malley 臉偏動漫；高踢只到腰。
 - **要使用者確認**：新版 O'Malley、Merab 像不像、能不能批量。**下一步**：通過後批量做其餘 29 位（約 14 次／人）；遊戲內每位選手縮放倍數（256 版約 230px 高）要先問使用者再改。
 
