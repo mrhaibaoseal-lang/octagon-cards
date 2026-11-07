@@ -369,3 +369,19 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #hand:empty { display: none; }
 #tray > * { pointer-events: none; }
 #tray button, #tray #actions { pointer-events: auto; }
+
+/* The name row: the name and the pips never get pushed out; tags give way (they scroll off the right) instead. */
+.nameline .nm { flex: none; }
+.nameline .tags { flex: 1 1 0; min-width: 0; display: flex; gap: 3px; overflow: hidden; align-items: center; }
+.mirror .nameline .tags { flex-direction: row-reverse; }
+.nameline .tags .tag { flex: none; }
+.nameline .pips { flex: none; margin-left: 0; }
+.mirror .nameline .pips { margin-right: 0; }
+
+/* Cards turning over: small, and clear of the fighters' heads. */
+#reveal { top: 62px; gap: 70px; }
+#reveal .flip { width: 100px; }
+#reveal .flip .head { font-size: 12px; padding: 1px 2px; }
+#reveal .flip .body { font-size: 12px; padding: 2px 3px; min-height: 0; line-height: 1.2; }
+#reveal .flip .who { font-size: 9px; padding-bottom: 1px; }
+#reveal .flip .body small { font-size: 9px; }
