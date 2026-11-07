@@ -48,7 +48,11 @@
     "winded": { "label": "身體吃重", "short": "吃重" },
     "tied": { "label": "貼身纏上", "short": "貼身" },
     "released": { "label": "放他起來，佔上風", "short": "佔先", "crit": 0.1 },
-    "fooled": { "label": "被假動作騙到", "short": "被騙", "sharpen": 1.8, "readBoost": 2 }
+    "flow": { "label": "步法流動", "short": "流動", "crit": 0.12 },
+    "crowded": { "label": "被管住距離", "short": "被管", "moveCost": 1 },
+    "smothered": { "label": "被壓得喘不過氣", "short": "窒息", "budget": -1 },
+    "rhythm": { "label": "連打節奏", "short": "節奏", "perStack": true, "crit": 0.04, "first": 2, "budget": 1, "budgetAt": 3 },
+    "fooled": { "label": "被看穿，傾向更好讀", "short": "被看穿", "sharpen": 1.8, "readBoost": 2 }
   },
   "setups": { "clinch": { "tag": "tied", "turns": 1 } },
   "cage": { "pressureAt": 2, "ttl": 4, "closeDist": 2, "takedownBonus": 0.12, "pinnerG": 0.25, "pinnedC": 0.2, "pinnedG": 0.1, "escapeDist": 1, "pushDist": 2 },

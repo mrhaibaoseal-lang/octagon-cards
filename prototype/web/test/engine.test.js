@@ -485,3 +485,116 @@ test("a takedown leaves the winner a choice: follow to the ground, or let him up
   };
   assert.ok(rate("khabib") > rate("mcgregor") + 0.3);
 });
+
+// ---------- Fighter abilities ----------
+
+/** A fight between two named fighters with hands and distance set by hand. */
+function duel(idA, idB, handA, handB, dist, seed = 5) {
+  const state = createMatch(data, idA, idB, seed);
+  state.a.hand = [...handA, "step_in", "step_back"];
+  state.b.hand = [...handB, "step_in", "step_back"];
+  state.dist = dist;
+  return state;
+}
+
+test("every real fighter has an ability made only of known tags and effects", () => {
+  for (const [id, f] of Object.entries(data.fighters)) {
+    if (f.hidden) continue;
+    assert.ok(f.ability?.name && f.ability.desc, `${id} has no ability`);
+    assert.ok(f.ability.triggers || f.ability.passive, `${id} ability does nothing`);
+    for (const t of f.ability.triggers || []) {
+      assert.ok(["win", "play", "hit", "takedown", "moved"].includes(t.on), `${id} trigger ${t.on}`);
+      for (const d of t.do) if (d.tag) assert.ok(data.rules.tags[d.tag], `${id} unknown tag ${d.tag}`);
+    }
+  }
+});
+
+test("a counter that wins lets McGregor see through the next exchange, and Adesanya also gets away", () => {
+  const mc = duel("mcgregor", "neutral", ["guard_counter"], ["jab"], 1);
+  resolveExchange(mc, ["guard_counter"], ["jab"]);
+  assert.ok(mc.b.marks.fooled, "the foe is easier to read");
+  const ad = duel("adesanya", "neutral", ["guard_counter"], ["jab"], 2);
+  resolveExchange(ad, ["guard_counter"], ["jab"]);
+  assert.equal(ad.dist, 1, "pulled away one step");
+  assert.ok(ad.b.marks.fooled);
+  assert.equal(ad.cage, null, "pulling away after a win is not giving ground");
+  const nobody = duel("neutral", "neutral", ["guard_counter"], ["jab"], 1);
+  resolveExchange(nobody, ["guard_counter"], ["jab"]);
+  assert.ok(!nobody.b.marks.fooled, "only the ability does that");
+});
+
+test("Holloway builds rhythm by striking every exchange: more crit, first to arrive, an extra energy at three stacks", () => {
+  const state = duel("holloway", "neutral", ["jab", "cross"], ["guard_counter"], 1);
+  const plain = budget(state, "a");
+  for (let i = 1; i <= 3; i++) {
+    state.a.hand = ["jab", "cross", "step_in", "step_back"];
+    state.b.hand = ["guard_counter", "step_in", "step_back"];
+    state.a.stamina = 100;
+    state.a.hp = state.maxHp;
+    state.b.hp = state.maxHp;
+    resolveExchange(state, ["jab"], ["guard_counter"]);
+    assert.equal(state.a.marks.rhythm?.n, i, `stack after strike ${i}`);
+  }
+  assert.equal(budget(state, "a"), plain + 1, "three stacks add an energy");
+  const base = createMatch(data, "holloway", "neutral", 1);
+  base.a.hand = ["cross", "step_in", "step_back"];
+  state.a.hand = ["cross", "step_in", "step_back"];
+  assert.ok(previewPlay(state, "a", ["cross"]).critPct > previewPlay(base, "a", ["cross"]).critPct + 8);
+  // A different kind of play lets the rhythm drop after one more exchange.
+  state.a.hand = ["single_leg", "step_in", "step_back"];
+  state.b.hand = ["guard_counter", "step_in", "step_back"];
+  resolveExchange(state, ["single_leg"], ["guard_counter"]);
+  assert.ok(!state.a.marks.rhythm, "the streak is over");
+  // The rhythm decides who lands first in a trade.
+  const trade = duel("holloway", "neutral", ["cross"], ["cross"], 1);
+  trade.a.marks.rhythm = { turns: 1, n: 2 };
+  trade.a.hand = ["cross", "step_in", "step_back"];
+  trade.b.hand = ["jab", "step_in", "step_back"];
+  const ev = resolveExchange(trade, ["cross"], ["jab"]);
+  assert.equal(ev.find((e) => e.kind === "trade").first, "a", "two stacks arrive first despite the dearer card");
+});
+
+test("Khabib makes getting up harder, Oliveira locks deeper from the bottom, Chimaev tires him after a takedown", () => {
+  const getUps = (topId) => {
+    let free = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const state = duel("neutral", topId, [], [], 2, seed);
+      state.ground = { top: "b", pos: 1, lock: null };
+      state.a.hand = ["single_leg", "step_in", "step_back"];
+      state.b.hand = ["guard_counter", "step_in", "step_back"];
+      resolveExchange(state, ["single_leg"], ["guard_counter"]);
+      if (!state.ground || state.ground.pos === 0) free++;
+    }
+    return free;
+  };
+  assert.ok(getUps("khabib") < getUps("neutral") - 20, "fewer escapes against Khabib");
+  const lock = (id) => {
+    const state = duel(id, "neutral", ["triangle"], ["jab"], 2);
+    state.ground = { top: "b", pos: 0, lock: null };
+    state.a.hand = ["triangle", "step_in", "step_back"];
+    state.b.hand = ["jab", "step_in", "step_back"];
+    for (let seed = 1; seed <= 60; seed++) {
+      state.rng = BigInt(seed);
+      state.ground = { top: "b", pos: 0, lock: null };
+      resolveExchange(state, ["triangle"], ["jab"]);
+      if (state.ground?.lock) return state.ground.lock.depth;
+      state.a.hand = ["triangle", "step_in", "step_back"];
+      state.b.hand = ["jab", "step_in", "step_back"];
+      state.phase = "exchange";
+      state.over = null;
+    }
+    return 0;
+  };
+  assert.equal(lock("oliveira"), lock("neutral") + 1);
+  let drained = 0;
+  for (let seed = 1; seed <= 100; seed++) {
+    const state = duel("chimaev", "neutral", ["double_leg"], ["guard_counter"], 2, seed);
+    const before = state.b.stamina;
+    const events = resolveExchange(state, ["double_leg"], ["guard_counter"]);
+    if (events.some((e) => e.kind === "takedown")) {
+      assert.ok(before - state.b.stamina >= 12, "the 12 stamina hit comes on top of the usual cost");
+      drained++;
+    }
+  }
+  assert.ok(drained > 5);
+});

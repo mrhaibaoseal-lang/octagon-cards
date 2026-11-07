@@ -78,7 +78,7 @@ function renderSelect() {
         const placeholder = assets.fighters[id]?.placeholder ? '<span class="ph">占位圖</span>' : "";
         return `<button class="pick ${picks[side] === id ? "on" : ""}" data-side="${side}" data-id="${id}">
           ${portraitHtml(id)}
-          <span class="tx"><span class="n">${f.short}${placeholder}</span><br><span class="k">${f.nick}</span><br><span class="sm">${f.summary}</span></span>
+          <span class="tx"><span class="n">${f.short}${placeholder}</span><br><span class="k">${f.nick}</span><br><span class="sm">${f.summary}</span>${f.ability ? `<br><span class="ab">能力・${f.ability.name}：${f.ability.desc}</span>` : ""}</span>
         </button>`;
       }).join("")}
     </div>`;
@@ -209,7 +209,8 @@ function renderIntent() {
   $("intent").innerHTML = `
     <div class="title"><span>${fighterOf("b").short} 下一手傾向</span>${sig}</div>
     ${rows}${blind}
-    <div class="tell">${intent.tell}${extra}</div>`;
+    <div class="tell">${intent.tell}${extra}</div>
+    ${fighterOf("b").ability ? `<div class="abil">能力・${fighterOf("b").ability.name}：${fighterOf("b").ability.desc}</div>` : ""}`;
   $("intent").classList.remove("hidden");
 }
 
@@ -319,7 +320,8 @@ function renderChoice() {
   const el = $("choice");
   const cards = selectedCards();
   if (!cards.length && !bracing) {
-    el.innerHTML = "選牌：同一類可以多張，能量用完為止";
+    const mine = fighterOf("a").ability;
+    el.innerHTML = `選牌：同一類可以多張，能量用完為止${mine ? ` · 你的能力「${mine.name}」` : ""}`;
     return;
   }
   const preview = previewPlay(state, "a", cards);
@@ -530,6 +532,10 @@ async function playEvents(events) {
         showVerdict(e.stuffed ? "沒摔倒，貼住了" : "貼身纏住", "進入纏抱", "#7cb7ff");
         await wait(620);
         $("verdict").classList.add("hidden");
+        break;
+      case "ability":
+        stage.floater(e.side, `✦ ${e.name}`, "#f5c542", 20);
+        await wait(300);
         break;
       case "cage":
         viewCage = e.side;

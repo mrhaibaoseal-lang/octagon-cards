@@ -177,13 +177,18 @@ export function budget(state, s) {
   if (state[opposite(s)].rocked) b += e.swarmBonus;
   for (const [tag, m] of Object.entries(me.marks)) {
     const def = state.rules.tags[tag] || {};
-    b += (def.budget || 0) * (def.perStack ? m.n : 1);
+    if (def.budget && m.n >= (def.budgetAt || 1)) b += def.budget;
   }
   return Math.max(1, b);
 }
 
 /** The last exchange of a round: everyone has an extra energy to spend and the judges weigh it more. */
 export const isFinal = (state) => state.exchange === state.perRound;
+
+/** The always-on part of a fighter's ability (see rules/depth.json). */
+const passive = (state, s) => state.fighters[state[s].id].ability?.passive || {};
+/** Tells the screen that a passive just did something. */
+const showAbility = (state, s, events) => events.push({ kind: "ability", side: s, name: state.fighters[state[s].id].ability.name });
 
 /** Which style table applies: the ground roles, or the outside / inside of the stand-up game. */
 export const phaseOf = (state, s) => (state.ground ? (state.ground.top === s ? "top" : "bottom") : state.dist >= 2 ? "in" : "out");
@@ -599,6 +604,8 @@ function queueSetups(state, side, cards, when) {
 
 /** Expired tags drop off, then the new ones take hold. Runs at the end of every exchange. */
 function settleMarks(state, events) {
+  const had = {};
+  for (const s of SIDES) had[s] = Object.fromEntries(Object.entries(state[s].marks).map(([t, m]) => [t, m.n]));
   for (const s of SIDES) {
     for (const [tag, m] of Object.entries(state[s].marks)) {
       m.turns -= 1;
@@ -607,7 +614,8 @@ function settleMarks(state, events) {
   }
   for (const p of state.pendingMarks) {
     const mine = state[p.side].marks;
-    if (p.stack && mine[p.tag]) mine[p.tag] = { turns: p.turns, n: Math.min(p.max || 1, mine[p.tag].n + 1) };
+    const before = had[p.side][p.tag];
+    if (p.stack && before) mine[p.tag] = { turns: p.turns, n: Math.min(p.max || 1, before + 1) };
     else mine[p.tag] = { turns: p.turns, n: 1 };
     events.push({ kind: "mark", side: p.side, tag: p.tag, n: mine[p.tag].n });
   }
@@ -658,7 +666,9 @@ function dealHit(state, att, cards, tier, mult, events) {
     const target = card.target || "head";
     for (let k = 0; k < hits; k++) {
       state[def].hp = Math.max(0, state[def].hp - dmg);
-      state[def].pips[target] = Math.min(state.rules.debuff.maxPips, state[def].pips[target] + 1);
+      const morePips = passive(state, att).extraPips?.[target] || 0;
+      if (morePips && state[def].pips[target] < state.rules.debuff.maxPips) showAbility(state, att, events);
+      state[def].pips[target] = Math.min(state.rules.debuff.maxPips, state[def].pips[target] + 1 + morePips);
       score(state, att, "striking", dmg * state.rules.score.damage);
       events.push({ kind: "hit", attacker: att, target, damage: Math.round(dmg), tier, card: c, name: card.name });
       lastTarget = target;
@@ -677,8 +687,9 @@ function dealHit(state, att, cards, tier, mult, events) {
   const r = state.rules.rocked;
   const chin = state[def].attrs.chin;
   if (wasRocked) {
-    const p = clamp(r.flashKoBase + (r.chinPivot - chin) * r.flashKoPerChin + (r.flashKoHpPivot - state[def].hp) * r.flashKoPerHp + (tier === "crit" ? r.critBonus : 0), r.min, r.max);
+    const p = clamp(r.flashKoBase + (r.chinPivot - chin) * r.flashKoPerChin + (r.flashKoHpPivot - state[def].hp) * r.flashKoPerHp + (tier === "crit" ? r.critBonus : 0) + (passive(state, att).rockedKoBonus || 0), r.min, r.max);
     if (nextUnit(state) < p) {
+      if (passive(state, att).rockedKoBonus) showAbility(state, att, events);
       finish(state, att, state.ground ? "TKO" : "KO", events);
       return true;
     }
@@ -838,6 +849,40 @@ function updateCage(state, events, types) {
   }
 }
 
+/**
+ * Each fighter's ability is a list of triggers (rules/depth.json): "when X happened this exchange, do Y".
+ * X: win / play / hit / takedown / moved, optionally narrowed by card type, start distance or body target.
+ * Y: put a tag on themselves or the foe, drain stamina, shift the distance, add momentum.
+ */
+function applyAbilities(state, types, winner, startDist, startedOnGround, events) {
+  for (const s of SIDES) {
+    const ab = state.fighters[state[s].id].ability;
+    if (!ab?.triggers) continue;
+    let fired = false;
+    for (const t of ab.triggers) {
+      if (startedOnGround && t.on !== "takedown") continue;
+      if (t.type && types[s] !== t.type) continue;
+      if (t.dist && (startDist < t.dist[0] || startDist > t.dist[1])) continue;
+      let ok = false;
+      if (t.on === "win") ok = winner === s;
+      else if (t.on === "play") ok = true;
+      else if (t.on === "hit") ok = events.some((e) => e.kind === "hit" && e.attacker === s && e.tier !== "graze" && (!t.target || e.target === t.target));
+      else if (t.on === "takedown") ok = events.some((e) => e.kind === "takedown" && e.side === s);
+      else if (t.on === "moved") ok = events.some((e) => e.kind === "range" && e.by === s);
+      if (!ok) continue;
+      for (const d of t.do) {
+        const to = d.to === "foe" ? opposite(s) : s;
+        if (d.tag) queueMark(state, to, d.tag, d.turns || 1, d.stack, d.max);
+        if (d.stamina) addStamina(state, to, d.stamina);
+        if (d.momentum) addMomentum(state, to, d.momentum);
+        if (d.dist && !state.ground) setDist(state, state.dist + d.dist, events, null);
+      }
+      fired = true;
+    }
+    if (fired) events.push({ kind: "ability", side: s, name: ab.name });
+  }
+}
+
 function resolveStandingWin(state, w, l, plays, events) {
   const wCards = plays[w];
   const lCards = plays[l];
@@ -894,7 +939,8 @@ function resolveStandingWin(state, w, l, plays, events) {
   if (catcher) {
     state.ground = { top: w, pos: 0, lock: null };
     events.push({ kind: "caught", side: l, name: state.cards[catcher].name });
-    startLock(state, l, state.cards[catcher].name, 1, events);
+    if (passive(state, l).lockDepthCatch) showAbility(state, l, events);
+    startLock(state, l, state.cards[catcher].name, 1 + (passive(state, l).lockDepthCatch || 0), events);
     return;
   }
   const pos = (card.landing || 0) + state.rules.grapple.positionFromTier[tier];
@@ -958,9 +1004,13 @@ function resolveGroundWin(state, w, l, plays, events) {
     if (!ended && tier === "crit") standUp(state, events, "upkick");
   } else if (type === "G") {
     // Getting out takes work: a graze changes nothing, a clean win recovers one position, only a great one jumps.
-    if (tier === "graze") events.push({ kind: "ride", side: l, held: true });
-    else if (tier === "clean" && g.pos > 0) setPosition(state, g.pos - 1, events, w);
-    else if (tier === "crit" && g.pos === 0) {
+    // A heavy top man (escapePenalty) makes every escape one grade worse.
+    const grades = ["graze", "clean", "crit"];
+    const eTier = grades[Math.max(0, grades.indexOf(tier) - (passive(state, l).escapePenalty || 0))];
+    if (eTier !== tier) showAbility(state, l, events);
+    if (eTier === "graze") events.push({ kind: "ride", side: l, held: true });
+    else if (eTier === "clean" && g.pos > 0) setPosition(state, g.pos - 1, events, w);
+    else if (eTier === "crit" && g.pos === 0) {
       g.top = w;
       score(state, w, "grappling", state.rules.score.takedown);
       events.push({ kind: "sweep", side: w, name: state.rules.positions[0] });
@@ -968,7 +1018,8 @@ function resolveGroundWin(state, w, l, plays, events) {
   } else {
     const lockCard = wCards.find((c) => state.cards[c].lockBottom);
     if (lockCard) {
-      startLock(state, w, state.cards[lockCard].name, state.cards[lockCard].lockDepth || 1, events);
+      if (passive(state, w).lockDepthBottom) showAbility(state, w, events);
+      startLock(state, w, state.cards[lockCard].name, (state.cards[lockCard].lockDepth || 1) + (passive(state, w).lockDepthBottom || 0), events);
       return;
     }
     const ended = wCards.length ? dealHit(state, w, wCards, tier, d.bottomCounterMult * mult, events) : false;
@@ -981,17 +1032,21 @@ function resolveTrade(state, plays, events) {
   const d = state.rules.damage;
   const costA = state.exchangeCost.a;
   const costB = state.exchangeCost.b;
+  const rush = (s) => Object.entries(state[s].marks).some(([tag, m]) => state.rules.tags[tag]?.first && m.n >= state.rules.tags[tag].first);
   let first = "a";
-  if (costB < costA) first = "b";
-  else if (costB === costA && state.b.attrs.accuracy > state.a.attrs.accuracy) first = "b";
+  if (rush("a") !== rush("b")) first = rush("b") ? "b" : "a";
+  else if (costB < costA) first = "b";
+  else if (rush("a") === rush("b") && costB === costA && state.b.attrs.accuracy > state.a.attrs.accuracy) first = "b";
   const second = opposite(first);
   const groundMult = (s) => {
     if (!state.ground) return 1;
     return state.ground.top === s ? d.groundPositionMult[state.ground.pos] : d.bottomStrikeMult;
   };
   events.push({ kind: "trade", first });
+  const tradeBonus = (side) => 1 + (passive(state, side).tradeBonus || 0);
+  for (const side of SIDES) if (passive(state, side).tradeBonus) showAbility(state, side, events);
   const tierFirst = rollTier(state, first, plays[first]);
-  if (dealHit(state, first, plays[first], tierFirst, d.tradeMult * groundMult(first), events)) return;
+  if (dealHit(state, first, plays[first], tierFirst, d.tradeMult * groundMult(first) * tradeBonus(first), events)) return;
   // The first blow may have changed the distance, and the reply is thrown from wherever that left them.
   shiftDist(state, moveOf(state, plays[first]), events, first);
   const reply = [];
@@ -1009,7 +1064,7 @@ function resolveTrade(state, plays, events) {
   if (interrupted) events.push({ kind: "interrupted", side: second });
   if (reply.length) {
     const tierSecond = rollTier(state, second, reply);
-    if (dealHit(state, second, reply, tierSecond, d.tradeMult * groundMult(second) * (interrupted ? d.tradeInterruptMult : 1), events)) return;
+    if (dealHit(state, second, reply, tierSecond, d.tradeMult * groundMult(second) * tradeBonus(second) * (interrupted ? d.tradeInterruptMult : 1), events)) return;
     shiftDist(state, moveOf(state, reply), events, second);
   }
   addMomentum(state, "a", state.rules.momentum.trade);
@@ -1061,6 +1116,7 @@ export function resolveExchange(state, playA, playB) {
   const winner = mirror ? null : tri[types.a] === types.b ? "a" : "b";
   const wasRocked = { a: state.a.rocked, b: state.b.rocked };
   const groundBefore = state.ground ? { ...state.ground } : null;
+  const startDist = state.dist;
   const staminaCost = state.rules.stamina.perEnergy;
   const momentum = state.rules.momentum;
   state.exchangeCost = { a: costOf(state, plays.a, "a"), b: costOf(state, plays.b, "b") }; // priced before the blows change anything
@@ -1103,6 +1159,7 @@ export function resolveExchange(state, playA, playB) {
   if (types.a !== "C" || types.b !== "C") state.stall = 0;
 
   state.history.push(types);
+  if (!state.over) applyAbilities(state, types, winner, startDist, Boolean(groundBefore), events);
   if (!state.over) updateCage(state, events, types);
   endExchange(state, plays, types, wasRocked, events);
   state.exchangeCost = null;

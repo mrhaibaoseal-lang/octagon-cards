@@ -26,20 +26,20 @@
     "feint": {"name": "假動作", "type": "S", "cost": 1, "power": 3, "range": [0, 2], "target": "head", "crit": 0, "setup": [{"tag": "fooled", "when": "win", "to": "foe"}]}
   },
   "fighters": {
-    "mcgregor": {"deckSwap": [["jab", "feint"]], "chase": 0.35},
-    "adesanya": {"deckSwap": [["jab", "feint"]], "chase": 0.35},
-    "sandhagen": {"deckSwap": [["jab", "feint"]], "chase": 0.45},
-    "holloway": {"deckSwap": [["jab", "feint"]], "chase": 0.4},
-    "khabib": {"chase": 0.95},
-    "oliveira": {"chase": 0.8},
-    "hooker": {"chase": 0.5},
-    "jones": {"chase": 0.75},
-    "makhachev": {"chase": 0.95},
-    "poirier": {"chase": 0.6},
-    "pereira": {"chase": 0.4},
-    "topuria": {"chase": 0.6},
-    "omalley": {"chase": 0.35},
-    "chimaev": {"chase": 0.95},
-    "gaethje": {"chase": 0.4}
+    "mcgregor": {"deckSwap": [["jab", "feint"]], "chase": 0.35, "ability": {"name": "看穿", "desc": "防反贏下後，看穿他的下一手傾向", "triggers": [{"on": "win", "type": "C", "do": [{"to": "foe", "tag": "fooled"}]}]}},
+    "adesanya": {"deckSwap": [["jab", "feint"]], "chase": 0.35, "ability": {"name": "風格大師", "desc": "防反贏下後，自己拉開 1 格，並看清他的下一手", "triggers": [{"on": "win", "type": "C", "do": [{"dist": -1}, {"to": "foe", "tag": "fooled"}]}]}},
+    "sandhagen": {"deckSwap": [["jab", "feint"]], "chase": 0.45, "ability": {"name": "流動步法", "desc": "靠步法移動後，下一手爆擊率 +12%", "triggers": [{"on": "moved", "do": [{"tag": "flow"}]}]}},
+    "holloway": {"deckSwap": [["jab", "feint"]], "chase": 0.4, "ability": {"name": "連打加速", "desc": "連續出打擊，每手疊一層節奏：爆擊更高、搶先出手，疊滿 3 層多 1 能量", "triggers": [{"on": "play", "type": "S", "do": [{"tag": "rhythm", "stack": true, "max": 3, "turns": 1}]}]}},
+    "khabib": {"chase": 0.95, "ability": {"name": "死纏爛打", "desc": "把你摔倒後，你更難站起來", "passive": {"escapePenalty": 1}}},
+    "oliveira": {"chase": 0.8, "ability": {"name": "下位鎖技", "desc": "從下位上的鎖技，一開始就更深", "passive": {"lockDepthBottom": 1}}},
+    "hooker": {"chase": 0.5, "ability": {"name": "長臂消耗", "desc": "打擊命中後，對手額外損失 3 體力", "triggers": [{"on": "hit", "type": "S", "do": [{"to": "foe", "stamina": -3}]}]}},
+    "jones": {"chase": 0.75, "ability": {"name": "管住距離", "desc": "打擊贏下後，對手下一手步法多耗 1 能量", "triggers": [{"on": "win", "type": "S", "do": [{"to": "foe", "tag": "crowded"}]}]}},
+    "makhachev": {"chase": 0.95, "ability": {"name": "窒息壓制", "desc": "摔抱贏下後，對手下一手少 1 能量", "triggers": [{"on": "win", "type": "G", "do": [{"to": "foe", "tag": "smothered"}]}]}},
+    "poirier": {"chase": 0.6, "ability": {"name": "換拳狠勁", "desc": "雙方對轟時，他的傷害 +15%", "passive": {"tradeBonus": 0.15}}},
+    "pereira": {"chase": 0.4, "ability": {"name": "左鉤拳終結", "desc": "被打暈的對手再挨頭部重擊，更容易直接 KO", "passive": {"rockedKoBonus": 0.12}}},
+    "topuria": {"chase": 0.6, "ability": {"name": "反擊壓上", "desc": "防反贏下後，上前一步並開路，下一手重拳更易爆擊", "triggers": [{"on": "win", "type": "C", "do": [{"dist": 1}, {"tag": "opened"}]}]}},
+    "omalley": {"chase": 0.35, "ability": {"name": "遠距離狙擊", "desc": "在遠、中距離打擊贏下後，下一手開路", "triggers": [{"on": "win", "type": "S", "dist": [0, 1], "do": [{"tag": "opened"}]}]}},
+    "chimaev": {"chase": 0.95, "ability": {"name": "瞬間壓制", "desc": "摔倒對手後，對手立刻損失 12 體力", "triggers": [{"on": "takedown", "do": [{"to": "foe", "stamina": -12}]}]}},
+    "gaethje": {"chase": 0.4, "ability": {"name": "腿踢累積", "desc": "踢中腿部會多累積 1 個傷痕，對手更快被腿傷拖慢步法", "passive": {"extraPips": {"legs": 1}}}}
   }
 }
