@@ -209,7 +209,12 @@ export function cardCost(state, s, c) {
   return extra ? Math.min(card.cost + extra, Math.max(card.cost, budget(state, s))) : card.cost;
 }
 const costOf = (state, cards, s) => cards.reduce((sum, c) => sum + cardCost(state, s, c), 0);
-const typeOfPlay = (state, cards) => (cards.length ? state.cards[cards[0]].type : "C");
+/** A play counts as the type of its real cards. A step thrown in with them (move first, then strike) takes on that type. */
+export function typeOfPlay(state, cards) {
+  if (!cards.length) return "C";
+  const real = cards.find((c) => !state.cards[c].moveOnly);
+  return state.cards[real ?? cards[0]].type;
+}
 const clampDist = (state, d) => clamp(d, 0, state.rules.dist.names.length - 1);
 
 /** Can this card be thrown from distance `d`? On the ground distance does not apply, but steps do not exist there. */
@@ -259,7 +264,11 @@ export function playError(state, s, cards) {
     if (!counts[c]) return "not in hand";
     counts[c]--;
   }
-  if (new Set(cards.map((c) => state.cards[c].type)).size > 1) return "mixed types";
+  // One kind of play, except that a single step may come with it: "step in, then jab".
+  const real = cards.filter((c) => !state.cards[c].moveOnly);
+  const steps = cards.filter((c) => state.cards[c].moveOnly);
+  const kinds = (list) => new Set(list.map((c) => state.cards[c].type)).size;
+  if (kinds(cards) > 1 && !(real.length && steps.length === 1 && kinds(real) === 1)) return "mixed types";
   if (cards.length > 1 && cards.some((c) => state.cards[c].cageOnly)) return "fence cards go alone";
   if (costOf(state, cards, s) > budget(state, s)) return "over budget";
   if (!arrange(state, cards, s)) return "out of range";
@@ -331,6 +340,7 @@ export function previewPlay(state, s, cards) {
   const order = arrange(state, cards, s) || cards;
   return {
     type,
+    order,
     cost: costOf(state, cards, s),
     endDist: state.ground ? null : clampDist(state, state.dist + moveOf(state, order)),
     damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1) * (tactic(state, opposite(s)).dmgIn || 1)),

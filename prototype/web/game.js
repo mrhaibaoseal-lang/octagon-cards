@@ -206,22 +206,17 @@ function renderHud() {
 
 function renderIntent() {
   const intent = getIntent(state, "b");
-  // With blood in your eyes only the most likely type shows. The other two read "?".
-  const rows = TYPES.map((t) => {
+  // One slim bar under his panel: the three shares side by side. With blood in your eyes only the likeliest shows; the others read "?".
+  const segs = TYPES.map((t) => {
     const hidden = intent.blind && t !== intent.top;
     const p = Math.round(intent.probs[t] * 100);
-    return `<div class="intent-row ${hidden ? "hide" : ""}"><span class="lbl t-${t}">${data.rules.typeNames[t]}</span><span class="track"><div class="val bg-${t}" style="width:${hidden ? 0 : p}%"></div></span><span class="pct t-${t}">${hidden ? "?" : `${p}%`}</span></div>`;
+    const width = hidden ? 8 : intent.blind ? 100 - 16 : p;
+    return `<span class="seg bg-${t} ${hidden ? "hide" : ""}" style="flex:${Math.max(width, 1)}">${data.rules.typeNames[t]} ${hidden ? "?" : `${p}%`}</span>`;
   }).join("");
-  const extra = intent.tags.length ? `<i>${intent.tags.join("・")}</i>` : "";
-  const sig = intent.signatureReady ? " <b>⚡招牌就緒</b>" : "";
-  const blind = intent.blind ? '<div class="blind">血流進眼睛，只看得清最可能的出招</div>' : "";
-  // Fighters stand near the centre when close or grounded, so the panel moves out of their way.
-  $("intent").classList.toggle("side", Boolean(state.ground) || (state.dist >= 2 && !state.cage));
-  $("intent").innerHTML = `
-    <div class="title"><span>${fighterOf("b").short} 下一手傾向</span>${sig}</div>
-    ${rows}${blind}
-    <div class="tell">${intent.tell}${extra}</div>
-    ${fighterOf("b").ability ? `<div class="abil">能力・${fighterOf("b").ability.name}：${fighterOf("b").ability.desc}</div>` : ""}`;
+  const sig = intent.signatureReady ? '<b class="sig">⚡招牌</b>' : "";
+  const note = intent.blind ? "血流進眼睛，只看得清最可能的出招" : intent.tags.length ? intent.tags.join("・") : intent.tell;
+  $("intent").title = intent.tell;
+  $("intent").innerHTML = `<div class="bar3">${segs}${sig}</div><div class="note1">${note}</div>`;
   $("intent").classList.remove("hidden");
 }
 
@@ -279,15 +274,18 @@ function linkHtml(d) {
 function renderHand() {
   const b = budget(state, "a");
   const cards = selectedCards();
-  const type = cards.length ? data.cards[cards[0]].type : null;
   const spent = cards.reduce((sum, c) => sum + cardCost(state, "a", c), 0);
   // Dimmed means clicking it would not add to the current play: wrong distance, or not enough energy left.
   const look = (i) => {
     const c = state.a.hand[i];
     const isSel = selected.includes(i);
-    const sameType = type === null || type === data.cards[c].type;
-    const ok = playError(state, "a", sameType ? [...cards, c] : [c]) === null;
-    return { card: data.cards[c], d: describeCard(state, "a", c), isSel, affordable: isSel || ok };
+    // Clicking a card that does not go with the current play starts a new play with it, so only the alone check matters then.
+    const together = playError(state, "a", [...cards, c]);
+    const ok = together === null || ((together === "mixed types" || together === "fence cards go alone") && playError(state, "a", [c]) === null);
+    const d = describeCard(state, "a", c);
+    // A card out of range now may still be thrown after the step that comes with it.
+    if (d.unusable && cards.length && !isSel && together === null) d.unusable = false;
+    return { card: data.cards[c], d, isSel, affordable: isSel || ok };
   };
   const drawn = state.a.hand.map((c, i) => i).filter((i) => !data.cards[state.a.hand[i]].basic);
   const fence = state.a.hand.map((c, i) => i).filter((i) => data.cards[state.a.hand[i]].cageOnly);
@@ -332,7 +330,7 @@ function renderChoice() {
   const cards = selectedCards();
   if (!cards.length && !bracing) {
     const mine = fighterOf("a").ability;
-    el.innerHTML = `選牌：同一類可以多張，能量用完為止${mine ? ` · 你的能力「${mine.name}」` : ""}`;
+    el.innerHTML = `選牌：同一類可多張；前進／後退可搭配出手（先移動再出牌）${mine ? ` · 能力「${mine.name}」` : ""}`;
     return;
   }
   const preview = previewPlay(state, "a", cards);
@@ -350,7 +348,8 @@ function renderChoice() {
   const hurts = cards.some((c) => data.cards[c].power);
   const dmg = !hurts ? "" : ` · 贏了造成約 <b>${preview.damage}</b> · 爆擊 ${preview.critPct}%`;
   const moves = preview.endDist !== null && preview.endDist !== state.dist ? ` · 出手後 <b>${data.rules.dist.names[preview.endDist]}</b>` : "";
-  el.innerHTML = `<b class="t-${t}">${n[t]}</b>：贏 ${n[beats]} <b>${pct(beats)}</b> · 平 ${n[t]} <b>${pct(t)}</b> · 輸 ${n[losesTo]} <b>${pct(losesTo)}</b>${dmg}${moves}${risk}`;
+  const seq = preview.order.length > 1 && preview.order.some((c) => data.cards[c].moveOnly) ? `<b>${preview.order.map((c) => data.cards[c].name).join(" → ")}</b> · ` : "";
+  el.innerHTML = `${seq}<b class="t-${t}">${n[t]}</b>：贏 ${n[beats]} <b>${pct(beats)}</b> · 平 ${n[t]} <b>${pct(t)}</b> · 輸 ${n[losesTo]} <b>${pct(losesTo)}</b>${dmg}${moves}${risk}`;
 }
 
 function onCard(i, el) {
@@ -361,9 +360,12 @@ function onCard(i, el) {
     renderHand();
     return;
   }
-  const current = selectedCards();
-  if (current.length && data.cards[current[0]].type !== card.type) selected = [];
-  const next = [...selected, i].map((x) => state.a.hand[x]);
+  let next = [...selected, i].map((x) => state.a.hand[x]);
+  const together = playError(state, "a", next);
+  if (together === "mixed types" || together === "fence cards go alone") {
+    selected = [];
+    next = [state.a.hand[i]];
+  }
   if (playError(state, "a", next)) {
     if (playError(state, "a", [state.a.hand[i]])) {
       el.classList.remove("deny");

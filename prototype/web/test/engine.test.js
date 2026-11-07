@@ -92,7 +92,7 @@ test("displayed intent is honest: AI choices follow the shown numbers", () => {
 test("illegal plays are rejected", () => {
   const state = createMatch(data, "mcgregor", "khabib", 3);
   assert.ok(playError(state, "a", ["not_a_card"]));
-  const [s, g] = ["S", "G"].map((t) => state.a.hand.find((c) => data.cards[c].type === t));
+  const [s, g] = ["S", "G"].map((t) => state.a.hand.find((c) => data.cards[c].type === t && !data.cards[c].moveOnly));
   assert.ok(playError(state, "a", [s, g]), "mixed types");
   state.a.stamina = 1;
   assert.equal(budget(state, "a"), 1);
@@ -655,4 +655,41 @@ test("the AI swings for the knockout when behind and plays it safe when ahead, s
   const calm = createMatch(data, "khabib", "mcgregor", 9);
   setTactic(calm, "a", "probe");
   assert.ok(getIntent(state, "a").probs.S > getIntent(calm, "a").probs.S + 0.1, "the knockout plan throws more strikes");
+});
+
+// ---------- Moving and playing in the same exchange ----------
+
+test("a step can come with a play of any type: move first, then throw, and the play counts as the cards' type", () => {
+  const state = setup(["jab", "cross", "single_leg", "guard_counter"], ["guard_counter"], 0);
+  state.a.stamina = 100;
+  // From far a jab cannot reach, but a step first brings it into range.
+  assert.ok(playError(state, "a", ["jab"]));
+  assert.equal(playError(state, "a", ["step_in", "jab"]), null);
+  assert.deepEqual(arrange(state, ["jab", "step_in"], "a"), ["step_in", "jab"], "the order is found when the step has to come first");
+  const preview = previewPlay(state, "a", ["step_in", "jab"]);
+  assert.equal(preview.type, "S");
+  assert.equal(preview.cost, 2);
+  assert.equal(preview.endDist, 1);
+  // Still only one step, and still one kind of real card.
+  assert.ok(playError(state, "a", ["step_in", "step_back", "jab"]), "two steps with a strike");
+  assert.ok(playError(state, "a", ["step_in", "jab", "single_leg"]), "a strike and a grapple");
+  state.dist = 1;
+  assert.equal(playError(state, "a", ["step_back", "guard_counter"]), null, "a defender who backs away");
+  state.dist = 0;
+  // It resolves as the strike: the jab beats a grapple, hits, and the step lands.
+  let hits = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const s = setup(["jab"], [], 0, seed);
+    s.a.stamina = 100;
+    const ev = resolveExchange(s, ["step_in", "jab"], ["step_in"]);
+    assert.equal(ev.find((e) => e.kind === "verdict").winner, "a");
+    if (ev.some((e) => e.kind === "hit")) hits++;
+    assert.ok(s.dist >= 1, "he moved in");
+  }
+  assert.ok(hits > 10);
+  // A loser's step is cancelled like any other: the counter beats the strike, so the advance does not happen.
+  const lost = setup(["jab"], ["guard_counter"], 0);
+  lost.a.stamina = 100;
+  resolveExchange(lost, ["step_in", "jab"], ["guard_counter"]);
+  assert.equal(lost.dist, 0);
 });
