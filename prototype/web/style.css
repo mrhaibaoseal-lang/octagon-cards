@@ -364,3 +364,8 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #tray[data-mode="lead"] #choice { bottom: 116px; max-width: 700px; }
 #tray[data-mode="respond"] #choice { bottom: 52px; max-width: 700px; }
 #tray[data-mode="respond"][data-pick="1"] #choice { bottom: 90px; }
+
+/* An empty hand row must not sit on top of the footwork and response buttons. */
+#hand:empty { display: none; }
+#tray > * { pointer-events: none; }
+#tray button, #tray #actions { pointer-events: auto; }
