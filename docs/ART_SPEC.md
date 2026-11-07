@@ -71,7 +71,7 @@ uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.p
 uv run --no-project --with pillow --with numpy python -I pipeline/portrait.py --photo prototype/web/assets/private/_source/<選手>_ufc.png --fighter <選手> --out prototype/web/assets/private --colors 24 --side 0.65 --contrast 1.1 --saturation 1.05
 ```
 
-對比、飽和度調高會變橘色刺眼，維持 1.1 左右。原本從姿勢表裁的頭像舊檔留在 `_source/`。
+對比、飽和度調高會變橘色刺眼，維持 1.1 左右。原本從姿勢表裁的頭像舊檔留在 `_source/`。照片網址從選手頁 `https://www.ufc.com/athlete/<名-姓>` 的 og:image 取。已換：McGregor、Khabib、Oliveira、Hooker、Sandhagen。官網照片是現在的樣子（例如 Hooker、Oliveira 是漂金髮），和姿勢表裡的髮色可能不同。
 
 ## 還沒解決
 - **地面姿勢**：現在用「抱摔」疊在「倒地」上。上位與下位的專屬姿勢，要等 6 姿勢通過後再加一張表。
