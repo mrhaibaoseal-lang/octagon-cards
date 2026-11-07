@@ -423,5 +423,6 @@
     0.14
    ]
   }
- ]
+ ],
+ "_note": "poses8：八格主動畫（第 5 格 head -35 的受擊格不用，受擊用 hit3b）。hit3：三格受擊，action_description 用 \"standing, leaning back slightly with the head tilted up, guard hands still near the chest\"，動畫名 hit3b。"
 }

@@ -21,7 +21,7 @@
   - [x] 使用者確認 Sandhagen 像本人，也和 Hooker 分得開（2026-11-07）：冷門選手的路線目前走得通
   - [x] McGregor 抱摔已修好並換上（2026-11-07）；裝備上不畫字（見 `docs/ART_SPEC.md`）
   - [~] PixelLab 測試（Hooker，2026-11-07）：純文字 256＋骨架六姿勢約 15 次／人最划算；照片 128 加寫實提示詞後最穩、約 28 次／人；照片轉像素 168 比例寫實但畫面糊、約 7 次／人；兩者高踢、受擊都還做不好；**等使用者判斷像不像、要不要取代 Gemini**；細節見 `docs/HANDOFF.md`
-  - [~] PixelLab 第一批 32 位（名單：`data/fighters.json` 其餘 29 位＋GSP、Silva、Ngannou）：先驗證 O'Malley、Ngannou、Merab（2026-11-08）；Ngannou 使用者說非常好，O'Malley、Merab 重生版**等使用者判斷**，通過才批量；細節見 `docs/HANDOFF.md`
+  - [~] PixelLab 第一批 32 位（名單：`data/fighters.json` 其餘 29 位＋GSP、Silva、Ngannou）：全走 256 文字版（照片 128 版已否決）；已做 8 位（Ngannou、Merab 用戶 OK；Aspinall、Chimaev、Jones、Topuria、Volkanovski、Pereira **等用戶判斷**）；O'Malley 卡關；通過才批量其餘 22 位；細節見 `docs/HANDOFF.md`
   - [ ] 再生 Khabib、Oliveira、Pereira
   - [ ] 判斷：冷門選手也認得出來，300 人在可接受的額度與月數內做得完（PixelLab 256 文字版估約 5000 次、2–3 個月）。沒通過就縮小名單
   - [ ] 地面專屬姿勢

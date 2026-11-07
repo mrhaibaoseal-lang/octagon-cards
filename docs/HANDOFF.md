@@ -2,12 +2,11 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
-## 2026-11-08 · Claude Sonnet 5.5（PixelLab 第一批驗證：O'Malley、Ngannou、Merab）
-- **做了什麼**：三人走完整流程（256 純文字＋全身照寫細節＋骨架 8 格＋受擊 3 格），圖在 `prototype/web/assets/private/{omalley,ngannou,merab}/`，三人對照 `private/batch1_three.png`。轉檔 `pipeline/pl_convert.py`、姿勢參數 `pipeline/pl_poses.json`（不含圖）。本輪 92/2000（剩 1750）。
-- **使用者判斷**：Ngannou 非常好；第一版 O'Malley（髮型臉全不像）、Merab（畫風不同、髮鬍不對）不行。**重生後的版本使用者還沒看**。教訓：提示詞要加「realistic adult proportions, about 8 heads tall, small head, NOT chibi」才不會跑出卡通臉；髮型寫「short cropped / buzz-cut、receding」這類具體描述；**受擊三格不要寫 punched，會把對手的手臂畫進畫面**，改寫「leaning back with the head tilted up, guard hands still near the chest」。
-- **照片版（使用者說文字版效果差、要試圖片）**：全身官方照＋pro 128（各 25＋動畫 5），`private/{omalley_p,merab_p}/`，對照 `private/batch1_photo.png`。髮型鬍子比文字版像，但頭身比失衡（大頭短身、像 Q 版）、畫風與 256 的 Ngannou 不同；Merab 出拳格有黃色閃光殘影。累計 152/2000（剩 1690）。
-- **已知瑕疵**：手套上仍有小標記像字（三人皆有）；Ngannou 抱摔、倒地有少量灰色雜點；O'Malley 臉偏動漫；高踢只到腰。
-- **要使用者確認**：新版 O'Malley、Merab 像不像、能不能批量。**下一步**：通過後批量做其餘 29 位（約 14 次／人）；遊戲內每位選手縮放倍數（256 版約 230px 高）要先問使用者再改。
+## 2026-11-08 · Claude Sonnet 5.5（PixelLab 第一批：256 文字版＋嚴格比對照片）
+- **決定**：用戶要求像本人、不要 Q 版 → 全走 256 文字版（照片 pro 128 會大頭 Q 版、畫風不一致，已否決）。提示詞由 `pipeline/pl_fighters.py` 依官方全身照填的特徵產生（30 位資料都在裡面）；轉檔 `pipeline/pl_convert.py`。圖在 `private/<id>/`。
+- **已做 8 位**：Ngannou、Merab（用戶看過 OK）；Aspinall、Chimaev、Jones、Topuria、Volkanovski、Pereira（我自查，**用戶尚未判斷**）。O'Malley 重生 4 次（髮型與臉仍是動漫風）**不及格，卡關**。累計本任務 263 次，剩 1579。
+- **要點**：提示詞須有「about 8 heads tall, small head, NOT chibi」；受擊不能併進八格動畫（碎成雜點），另跑 3 格 hit3b 且不能寫 punched；Jones 出拳有白色閃光、Aspinall 出拳拳頭模糊、手套偶有小標記。
+- **下一步**：用戶判斷這 6 位像不像 → 通過才批量其餘 22 位（約 14 次／人）；O'Malley 要換做法或先排後；遊戲內每人縮放倍數要先問用戶。
 
 ## 2026-11-07 · Claude Sonnet 5.5 → Opus 5.5（PixelLab 測試：Hooker）
 - **做了什麼**：試了五種做法，圖都在 `prototype/web/assets/private/hooker_pl*/`（gitignore，Gemini 版 `hooker/` 沒動），對照頁 `assets/private/compare_hooker.html`，累計 123/2000。姿勢一律用 skeleton-v3 自寫 8 格（3 次，一格一個姿勢，含過渡格才不糊；倒地要水平鏡像）。

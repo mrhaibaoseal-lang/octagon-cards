@@ -6,8 +6,9 @@
       [--pick pose=動畫名:格號[:flip]]...
 
 --src 是 PixelLab 下載 zip 解壓後的資料夾（內含 Idle/animations/<動畫>/east/frame_NNN.png）。
-預設對應（骨架八格 poses8 + 受擊三格 hit3，格號從 0 起）：
-  idle=poses8:0  punch=poses8:1  kick=poses8:2  hit=hit3:2  shoot=poses8:5  down=poses8:7:flip
+預設對應（骨架八格 poses8 + 受擊三格 hit3b，格號從 0 起）：
+  idle=poses8:0  punch=poses8:1  kick=poses8:2  hit=hit3b:2  shoot=poses8:5  down=poses8:7:flip
+注意：受擊不能併進八格動畫（會碎成雜點），一定要另跑 3 格 hit3b；hit3b 的動作描述不能寫 punched（會畫出對手的手臂）。
 down 要水平鏡像（頭在右）。每格裁邊、alpha 二值化、anchorX = 最低 20% 的平均 x。
 """
 import argparse
@@ -21,7 +22,7 @@ DEFAULT = {
     "idle": ("poses8", 0, False),
     "punch": ("poses8", 1, False),
     "kick": ("poses8", 2, False),
-    "hit": ("hit3", 2, False),
+    "hit": ("hit3b", 2, False),
     "shoot": ("poses8", 5, False),
     "down": ("poses8", 7, True),
 }
