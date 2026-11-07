@@ -385,3 +385,45 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #reveal .flip .body { font-size: 12px; padding: 2px 3px; min-height: 0; line-height: 1.2; }
 #reveal .flip .who { font-size: 9px; padding-bottom: 1px; }
 #reveal .flip .body small { font-size: 9px; }
+
+/* ---------- Readability pass (2026-11-08) ---------- */
+/* Footwork: four plain buttons; the outcomes sit under his tendency bar. */
+#fwpanel { height: 52px; }
+.fwbtns { height: 52px; }
+.fwbtn { padding: 2px 4px; gap: 2px; }
+.fwbtn b { font-size: 18px; }
+.fwbtn i { font-size: 11px; }
+#tray[data-mode="footwork"] #choice { bottom: 60px; }
+#fwpreview { position: absolute; top: 92px; right: 6px; width: 354px; background: rgba(9, 11, 17, 0.88); border: 1px solid var(--line); border-radius: 6px; padding: 4px 5px; }
+#fwpreview .pvtitle { font-size: 11px; font-weight: 800; color: var(--gold); margin-bottom: 3px; }
+#fwpreview .pvgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.pvcell { border-left: 3px solid var(--c); background: rgba(255, 255, 255, 0.05); border-radius: 3px; padding: 2px 5px; }
+.pvcell b { display: flex; justify-content: space-between; font-size: 12px; font-weight: 900; }
+.pvcell b em { font-style: normal; color: var(--gold); }
+.pvcell span { display: block; font-size: 10.5px; font-weight: 600; color: #d8deeb; line-height: 1.3; }
+
+/* Move tiles: height and speed on top, the name, one number. */
+#hand.tiles { --hand-h: 66px; height: 66px; gap: 4px; }
+.tile { height: 66px; max-width: 76px; justify-content: flex-start; }
+.tile .th { padding: 2px 5px 0; }
+.tile .hb { font-size: 13px; }
+.tile .sp { font-size: 11px; font-weight: 900; border-radius: 3px; padding: 0 4px; line-height: 15px; }
+.tile .sp.fast { background: rgba(0, 0, 0, 0.35); color: #9ff0c4; }
+.tile .sp.slow { background: #ff9f43; color: #000; }
+.tile .tn { font-size: 13px; padding: 3px 5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .tf { font-size: 15px; font-weight: 900; color: var(--gold); padding: 1px 5px 0; }
+.tile .tf .bad { font-size: 12px; color: #ff9f43; }
+.tile .live { position: absolute; right: 3px; bottom: 3px; font-style: normal; font-size: 9px; font-weight: 900; background: #5be49b; color: #04120a; border-radius: 3px; padding: 0 3px; }
+#combo { bottom: 72px; }
+#tray[data-mode="lead"] #choice { bottom: 98px; line-height: 1.45; }
+#choice .good, #last .good { color: #5be49b; }
+#last .bad { color: #ff7b7f; }
+
+/* The hand log: every step stays readable on the left. */
+#last { width: 214px; max-height: 200px; overflow: hidden; color: #e8ecf5; background: rgba(9, 11, 17, 0.82); border: 1px solid var(--line); line-height: 1.35; padding: 4px 7px; }
+#last .lt { font-size: 10px; font-weight: 800; color: var(--gold); margin-bottom: 1px; }
+#last div { font-size: 11px; }
+#last div.sub { padding-left: 14px; color: #c6cede; }
+#last b { color: #fff; }
+
+#fwpreview { top: 104px; }

@@ -282,6 +282,7 @@ function startMatch() {
   const seed = Number(new URLSearchParams(location.search).get("seed")) || Math.floor(Math.random() * 1e9);
   state = createMatch(data, picks.a, picks.b, seed, picks.mode);
   lastLine = "";
+  handLog = [];
   $("select").classList.add("hidden");
   $("overlay").classList.add("hidden");
   $("battle").classList.remove("hidden");
@@ -460,8 +461,8 @@ function renderAlert() {
     } else el.innerHTML += `<br>${body}`;
   }
   if (el.className !== "hidden") el.classList.toggle("right", state.cage?.side === "a" && !state.ground);
-  $("last").style.display = el.className === "hidden" ? "" : "none";
-  $("last").innerHTML = lastLine;
+  renderLog();
+  $("last").style.top = el.className === "hidden" ? "" : `${el.offsetTop + el.offsetHeight + 6}px`;
 }
 
 // ---------- Hand ----------
@@ -482,7 +483,7 @@ function linkHtml(d) {
 
 /** Hides every tray piece, then the step shows what it needs. */
 function clearTray() {
-  for (const id of ["fwpanel", "combo", "bets", "counterpick", "pass"]) $(id).classList.add("hidden");
+  for (const id of ["fwpanel", "fwpreview", "combo", "bets", "counterpick", "pass"]) $(id).classList.add("hidden");
   $("hand").innerHTML = "";
   $("hand").className = "";
   $("basics").classList.add("hidden");
@@ -525,23 +526,25 @@ function renderFootwork() {
   const panel = $("fwpanel");
   panel.classList.remove("hidden");
   const buttons = choices.map((c) => `<button class="fwbtn ${fwPick === c.id ? "sel" : ""} ${c.disabled ? "dim" : ""}" data-id="${c.id}" style="--c:${FW_COLORS[c.id]}">
-      <b>${c.label}</b><small>${c.disabled ? c.reason : c.desc}</small><i>${c.cost > 0 ? `體力 -${c.cost}` : "回 1 體力"}</i></button>`).join("");
-  let chips = '<div class="fwchips"><div class="fwhint">選一個走位，看他各種走位會變成什麼局面</div></div>';
+      <b>${c.label}</b><i>${c.disabled ? c.reason : c.cost > 0 ? `體力 -${c.cost}` : "不耗體力"}</i></button>`).join("");
+  panel.innerHTML = `<div class="fwbtns">${buttons}</div>`;
+  // What each of his steps would do against yours, laid out under his tendency bar.
+  const pv = $("fwpreview");
   if (fwPick) {
     const rows = previewFootwork(state, "a", fwPick);
     const intent = getIntent(state, "b");
-    chips = `<div class="fwchips">${rows.map((r) => {
+    pv.innerHTML = `<div class="pvtitle">你${R.moves[fwPick].label}，如果他…</div><div class="pvgrid">${rows.map((r) => {
       const hidden = intent.blind && r.his !== intent.top;
-      return `<div class="fwchip" style="--c:${FW_COLORS[r.his]}"><b>他${R.moves[r.his].label} ${hidden ? "?" : `${Math.round(r.prob * 100)}%`}</b><span>${outcomeText(r)}</span></div>`;
+      return `<div class="pvcell" style="--c:${FW_COLORS[r.his]}"><b>${R.moves[r.his].label}<em>${hidden ? "?" : `${Math.round(r.prob * 100)}%`}</em></b><span>${outcomeText(r)}</span></div>`;
     }).join("")}</div>`;
+    pv.classList.remove("hidden");
   }
-  panel.innerHTML = chips + `<div class="fwbtns">${buttons}</div>`;
   panel.querySelectorAll(".fwbtn").forEach((el) => el.addEventListener("click", () => {
     if (el.classList.contains("dim")) return;
     fwPick = el.dataset.id;
     renderHand();
   }));
-  $("choice").innerHTML = fwPick ? `<b>${R.moves[fwPick].label}</b>：${R.moves[fwPick].desc}` : "每一手先走位：雙方同時選，揭曉後決定誰帶頭、距離變幾格";
+  $("choice").innerHTML = fwPick ? `<b>${R.moves[fwPick].label}</b>：${R.moves[fwPick].desc} · 右上方是他各種走位的結果` : "先選走位：雙方同時選，揭曉後決定誰帶頭、距離變幾格";
   $("energy").innerHTML = `體力 <b>${Math.round(state.a.stamina)}</b>`;
   $("fight").textContent = "走位";
   $("fight").disabled = !fwPick;
@@ -557,16 +560,42 @@ function tileHtml(i, mode) {
   const picked = mode === "lead" && combo.includes(c) && !card.basic;
   const test = mode === "lead" ? comboError(state, "a", [...combo, c]) : null;
   const dim = mode === "lead" && Boolean(test);
-  const seen = mode === "lead" && d.seenByFoe ? '<span class="seen" title="他的反應力看得到這招">慢·會被看到</span>' : mode === "lead" && !card.counterOnly ? '<span class="quick">快·看不到</span>' : "";
+  const fast = !d.seenByFoe;
+  const live = d.follows.some((f) => f.live);
+  const tooFar = card.range && state.dist < card.range[0];
+  const main = d.unusable ? `<span class="bad">${tooFar ? "太遠" : "太近"}</span>` : tileMain(card, d);
   return `<button class="tile ${HEIGHT_COLORS[d.height] || ""} ${card.signature ? "signature" : ""} ${picked ? "sel" : ""} ${dim && !picked ? "dim" : ""} ${d.unusable ? "far" : ""}" data-i="${i}">
-      <div class="th"><span class="hb">${d.heightName || (card.counterOnly ? "反" : "")}</span><span class="sp">速${d.speed}</span></div>
+      <div class="th"><span class="hb">${d.heightName}</span><span class="sp ${fast ? "fast" : "slow"}">${fast ? "快" : "慢"}</span></div>
       <div class="tn">${name}</div>
-      <div class="tf">${d.effect}</div>
-      ${linkHtml(d)}
-      <div class="tr">${d.unusable ? `<span class="bad">要在${d.rangeText || "別的距離"}</span>` : d.rangeText ? `<span>${d.rangeText}</span>` : "<span></span>"}<span>-${Math.round(d.cost)}</span></div>
-      ${seen}
+      <div class="tf">${main}</div>
+      ${live ? '<i class="live">可接</i>' : ""}
     </button>`;
 }
+
+/** The one big thing on a tile: damage for a strike, what a grab does. */
+function tileMain(card, d) {
+  if (card.feint) return "騙";
+  if (card.clinchEntry) return "貼身";
+  if (card.height === "grab") return "摔";
+  return d.effect.split(" · ")[0];
+}
+
+/** The full story of one move, shown in the line above the hand when it is tapped. */
+function cardDetail(c) {
+  const card = data.cards[c];
+  const d = describeCard(state, "a", c);
+  const reaction = Math.round(reactionOf(state, "b"));
+  const bits = [`<b>${card.name}</b>`, `${heightWord(card.height)} · 速度 ${d.speed}${d.seenByFoe ? `（低於他的反應力 ${reaction}，<span class="bad">他看得到</span>）` : `（他的反應力 ${reaction}，看不到）`}`];
+  bits.push(d.effect.startsWith("摔") || d.effect.startsWith("貼") || d.effect.startsWith("騙") ? d.effect : `傷害 ${d.effect}`);
+  if (d.rangeText) bits.push(d.rangeText);
+  bits.push(`體力 ${Math.round(d.cost)}`);
+  const live = d.follows.find((f) => f.live);
+  if (live) bits.push(`<span class="good">可接${data.rules.tags[live.tag]?.short || ""}，爆擊 +${live.bonus}%</span>`);
+  else if (d.setups.length) bits.push(`打中後${d.setups.map((s) => data.rules.tags[s.tag]?.short).join("、")}`);
+  if (d.recovery >= 8) bits.push("收手大，被閃開會吃反擊");
+  return bits.join(" · ");
+}
+let tapped = null; // the move whose details the line above the hand shows
 
 function renderLead() {
   const hand = state.a.hand;
@@ -593,9 +622,10 @@ function renderLead() {
   const dmg = combo.length ? ` · 全中約 <b>${pv.damage}</b> · 體力 -${pv.cost}${pv.endDist !== state.dist ? ` · 出手後${distShort(pv.endDist)}` : ""}` : "";
   const warn = sees.length ? ` · <span class="bad">慢招他會看到：${sees.join("、")}</span>` : "";
   const reaction = Math.round(reactionOf(state, "b"));
-  $("choice").innerHTML = combo.length
-    ? `你帶頭：<b>${combo.map((c) => data.cards[c].name).join(" → ")}</b>${dmg}${warn}`
-    : `你帶頭：點招式排連段（最多 ${max} 張）· 他的反應力 <b>${reaction}</b>：速度比這低的招他看得到、能當場應對`;
+  const head = combo.length
+    ? `連段：全中約 <b>${pv.damage}</b> · 體力 -${pv.cost}${pv.endDist !== state.dist ? ` · 出手後${distShort(pv.endDist)}` : ""}${warn}`
+    : `你帶頭：點招式排連段（最多 ${max} 張）· 標「慢」的招，他看得到、能當場應對`;
+  $("choice").innerHTML = tapped ? `${cardDetail(tapped)}<br>${head}` : head;
   $("energy").innerHTML = `體力 <b>${pv.stamina}</b> · 連段 ≤ ${max}`;
   $("fight").textContent = "出手";
   $("fight").disabled = !combo.length;
@@ -605,6 +635,7 @@ function renderLead() {
 
 function onLeadCard(i, el) {
   const c = state.a.hand[i];
+  tapped = c;
   const err = comboError(state, "a", [...combo, c]);
   if (err) {
     el.classList.remove("deny");
@@ -815,6 +846,7 @@ async function onPass() {
 }
 
 function beginTurn() {
+  tapped = null;
   selected = [];
   bracing = false;
   fwPick = null;
@@ -837,8 +869,24 @@ function beginTurn() {
 
 // ---------- Exchange playback ----------
 
+/** Playback pace: every pause in a hand is stretched by this much so each step can be read. */
+const PACE = 1.6;
+let handLog = []; // one line per thing that happened this hand, kept on screen
+
+function logLine(html, cls = "") {
+  handLog.push(`<div class="${cls}">${html}</div>`);
+  renderLog();
+}
+
+function renderLog() {
+  const el = $("last");
+  el.innerHTML = handLog.length ? `<div class="lt">交手紀錄</div>${handLog.slice(-11).join("")}` : "";
+  el.style.display = "";
+}
+
 function wait(ms) {
   if (skipping) return Promise.resolve();
+  ms *= PACE;
   return new Promise((resolve) => {
     const t = setTimeout(() => {
       skipWake = null;
@@ -891,6 +939,7 @@ function cardFlip(e) {
   // Left is always you and right is always him, whoever is throwing the card.
   return L === "a" ? mine + answer : answer + mine;
 }
+const replyWord = (r) => ({ guard: `架${GUARD_WORDS[r.height] || ""}`, cover: "抱頭", evade: "閃身", counter: `反擊（${data.cards[r.card]?.name || ""}）`, shoot: "抱腿", preempt: "搶先" }[r.kind] || "");
 const heightWord = (h) => ({ high: "上段", mid: "中段", low: "下段", grab: "抱摔", feint: "假動作" }[h] || "");
 
 function actionPoseFor(cardId) {
@@ -954,6 +1003,7 @@ async function playEvents(events) {
         const color = e.winner === "a" ? "#5be49b" : e.winner === "b" ? "#ff7b7f" : "#fff";
         showVerdict(e.text, who, color);
         verdictLine = `${e.text}（${who}）`;
+        logLine(`<b>${e.text}</b>（${who}）`);
         await wait(620);
         $("reveal").classList.add("hidden");
         $("verdict").classList.add("hidden");
@@ -967,6 +1017,7 @@ async function playEvents(events) {
         if (e.chip) {
           stage.recoil(def, 8, 180, "idle");
           if (e.damage > 0) stage.floater(def, `-${e.damage}`, "#9aa4bd", 16);
+          if (e.damage > 0) logLine(`擋下仍漏 -${e.damage}`, "sub");
           renderPanel(def);
           await wait(220);
           break;
@@ -999,10 +1050,12 @@ async function playEvents(events) {
         }
         renderPanel(def);
         damageLines.push(`${nameOf(e.attacker)} ${e.name} -${e.damage}${crit ? " 爆擊" : ""}`);
+        logLine(`${nameOf(e.attacker)} ${e.name} <b class="${e.attacker === "a" ? "good" : "bad"}">-${e.damage}</b>${crit ? " 爆擊！" : ""}`, "sub");
         await wait(dur * 0.62);
         break;
       }
       case "rocked":
+        logLine(`<b>${nameOf(e.side)}被打暈！</b>`, "sub");
         shown[e.side].rocked = true;
         renderPanel(e.side);
         stage.stagger(e.side, 700);
@@ -1012,8 +1065,10 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "interrupted":
+        logLine(`${nameOf(e.side)}被打斷`, "sub");
         break;
       case "takedown": {
+        logLine(`<b>摔倒！</b>${e.name}，${nameOf(e.side)}在上位`);
         stage.strike(e.side, "shoot", 110, 360);
         await wait(300);
         stage.shake(10);
@@ -1041,6 +1096,7 @@ async function playEvents(events) {
         await wait(300);
         break;
       case "cage":
+        logLine(`${nameOf(e.side)}被逼到籠邊`, "sub");
         viewCage = e.side;
         shown[e.side].pinned = true;
         renderPanel(e.side);
@@ -1092,6 +1148,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "cut":
+        logLine(`${nameOf(e.side)}割傷，流血 Lv${e.level}`, "sub");
         shown[e.side].cut = e.level;
         stage.setCuts(shown.a.cut, shown.b.cut);
         renderPanel(e.side);
@@ -1141,6 +1198,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "standoff":
+        logLine("互相試探，雙方回體力");
         showVerdict(e.ground ? "互相僵持" : "互相試探", "雙方回體力", "#9fe2bf");
         await wait(480);
         $("verdict").classList.add("hidden");
@@ -1187,6 +1245,7 @@ async function playEvents(events) {
         stage.flash(0.3);
         break;
       case "footwork":
+        logLine(`走位：你<b>${data.rules.footwork.moves[e.a].label}</b>，他<b>${data.rules.footwork.moves[e.b].label}</b>`);
         $("reveal").innerHTML = footworkFlip("a", e.a) + footworkFlip("b", e.b);
         $("reveal").classList.remove("hidden");
         showVerdict(e.text.length > 20 ? "走位揭曉" : e.text, e.text.length > 20 ? e.text : "", "#9be7ff");
@@ -1195,6 +1254,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "lead": {
+        logLine(`<b>${nameOf(e.side)}帶頭</b>${e.chance === null ? "" : "（看速度搶先）"}`);
         const sub = e.chance === null ? "走位決定了誰先出手" : `搶先手：你 ${Math.round((e.side === "a" ? e.chance : 1 - e.chance) * 100)}%`;
         showVerdict(`${nameOf(e.side)}帶頭`, e.edge ? `${sub} · 上一手的優勢` : sub, e.side === "a" ? "#5be49b" : "#ff7b7f");
         shown.a.leader = e.side === "a";
@@ -1213,11 +1273,13 @@ async function playEvents(events) {
         }
         break;
       case "card":
+        logLine(`${"①②③④⑤"[e.index] || "•"} ${nameOf(e.side)}：<b>${e.name.replace(/^招牌[：:]/, "")}</b>（${heightWord(data.cards[e.card].height)}）→ ${nameOf(e.side === "a" ? "b" : "a")}${replyWord(e.reply)}${e.visible ? "（看到了）" : ""}`);
         $("reveal").innerHTML = cardFlip(e);
         $("reveal").classList.remove("hidden");
         await wait(e.visible ? 760 : 620);
         break;
       case "block":
+        logLine("擋住了，連段中斷", "sub good-b");
         stage.recoil(e.side, 10, 220, "idle");
         stage.floater(e.side, "擋住!", "#5be49b", 24);
         showVerdict("擋住了！", `${nameOf(e.side)}架${GUARD_WORDS[e.height]}，連段中斷`, "#5be49b");
@@ -1226,6 +1288,7 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "evade":
+        logLine(`${nameOf(e.side)}閃開了，對方露出破綻`, "sub");
         stage.recoil(e.side, 30, 300, "idle");
         stage.floater(e.side, "閃開!", "#5be49b", 26);
         showVerdict("閃開了！", `${nameOf(e.side)}閃過去（機會 ${Math.round(e.chance * 100)}%），對方露出破綻`, "#5be49b");
@@ -1234,10 +1297,12 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "evadeFail":
+        logLine("沒閃掉", "sub");
         stage.floater(e.side, "沒閃掉", "#ffd166", 20);
         await wait(240);
         break;
       case "counter":
+        logLine(e.catch ? "斷頭台等著他" : e.first ? `反擊搶先（${e.speed} 對 ${e.vs}）` : `反擊太慢（${e.speed} 對 ${e.vs}）`, "sub");
         showVerdict(e.catch ? "勒住他的脖子" : e.first ? "反擊搶先！" : "反擊太慢", e.catch ? "他抱腿，斷頭台等著" : `${e.name}（${e.speed} 對 ${e.vs}）`, e.first ? "#5be49b" : "#ffd166");
         stage.strike(e.side, data.cards[e.card]?.kick ? "kick" : "punch", REACH[viewDist] || 40, 300);
         await wait(e.first ? 620 : 520);
@@ -1255,12 +1320,14 @@ async function playEvents(events) {
         $("verdict").classList.add("hidden");
         break;
       case "preempt":
+        logLine(`${nameOf(e.side)}搶先出手：<b>${e.name}</b>`);
         showVerdict("搶先出手！", `${nameOf(e.side)}用${e.name}搶在前面`, "#f5c542");
         stage.strike(e.side, data.cards[e.card]?.kick ? "kick" : "punch", REACH[viewDist] || 40, 320);
         await wait(640);
         $("verdict").classList.add("hidden");
         break;
       case "shoot":
+        logLine(e.caught ? "抱腿反擊！" : "抱腿撞上快招", "sub");
         stage.strike(e.side, "shoot", 90, 340);
         showVerdict(e.caught ? "抱腿反擊！" : "抱腿失敗", e.caught ? `${nameOf(e.side)}鑽進慢招的空檔` : `${nameOf(e.side)}撞上快招`, e.caught ? "#7cb7ff" : "#ffd166");
         await wait(640);
@@ -1271,6 +1338,7 @@ async function playEvents(events) {
         await wait(300);
         break;
       case "feintWin":
+        logLine("假動作騙到了", "sub");
         stage.floater(e.side === "a" ? "b" : "a", "上當了!", "#ffd166", 24);
         showVerdict("假動作成功！", `${nameOf(e.side === "a" ? "b" : "a")}吃了假動作，下一招更容易中`, "#f5c542");
         await wait(700);
@@ -1282,6 +1350,7 @@ async function playEvents(events) {
         await wait(300);
         break;
       case "comboDone":
+        logLine(`連段打完，${nameOf(e.side)}佔上風`, "sub");
         showVerdict("連段打完！", `${e.n} 張全部出手 · ${nameOf(e.side)}掌握主動，對手體力在掉`, "#f5c542");
         await wait(640);
         $("reveal").classList.add("hidden");
@@ -1296,10 +1365,7 @@ async function playEvents(events) {
         break;
     }
   }
-  if (verdictLine) {
-    const detail = damageLines.length ? `<br>${damageLines.slice(-2).join("<br>")}` : "";
-    lastLine = `<b>上一手：${verdictLine}</b>${detail}`;
-  }
+  if (verdictLine && !handLog.length) logLine(verdictLine);
 }
 
 function renderPanelsFromState() {
@@ -1346,13 +1412,15 @@ function beginPlayback() {
   $("tray").classList.add("away");
   $("intent").classList.add("hidden");
   $("alert").className = "hidden";
-  $("last").innerHTML = "";
+  $("fwpreview").classList.add("hidden");
+  renderLog();
   $("skip").classList.remove("hidden");
   skipping = false;
 }
 
 /** Everything a hand leaves behind once it has played: a choice to follow him down, the corner, the result, or the next hand. */
 async function afterHand() {
+  await wait(350);
   endCinema();
   if (state.pending) await settleChase();
   stage.timeScale = 1;
@@ -1367,6 +1435,7 @@ async function afterHand() {
 
 /** Step one of a stand-up hand: both pick a footwork, it plays out, and then the lead is settled. */
 async function onFootwork() {
+  handLog = [];
   const mine = fwPick;
   const his = chooseFootwork(state, "b");
   const distBefore = state.dist;
@@ -1443,6 +1512,7 @@ function answerLive() {
 
 /** One exchange on the mat: pick a card, or the free option. A human whose lock is about to sink holds on with a timing bar. */
 async function onGroundFight() {
+  handLog = [];
   const cards = selectedCards();
   const ai = chooseAI(state, "b").cards;
   const groundBefore = { ...state.ground };
