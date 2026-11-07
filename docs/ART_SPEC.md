@@ -60,6 +60,9 @@ uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.p
 ```
 
 工具會印出找到幾個人物。不是 6 個就會停下來，通常是人物互相碰到，或背景不夠純。
+- **體型大小全自動校正**：
+  1. **轉檔時自動補齊身高體重**：若 `rules/fighters.json` 裡的新選手還沒填 `height`（cm）與 `weight`（lb），`sprite_sheet.py` 會自動從 `data/fighters.json` 查出該選手的真實身高與量級體重寫入（也可加 `--height 170 --weight 145` 手動指定），並在終端機印出校正後的畫面尺寸。
+  2. **載入時自動掃描像素（`stage.js`）**：遊戲載入 `idle.png` 時，`analyzePose` 會自動抓出肩膀位置、推算頭骨頂到腳底的真實像素高度（自動排除像 O'Malley 爆炸頭的蓬鬆髮型虛高）並量測腰寬比例，再由 `fighterScale` 依 `height` 與 `weight` 算出水平／垂直縮放倍率。因此**生圖時不必擔心 Gemini 把人物畫太大或太小，放進遊戲就會自動縮放到真實比例**。
 
 ## 裝備上不要有字（2026-11-07 試過）
 手套與腰帶上的 UFC 字樣，AI 會隨手臂轉向而鏡像、顛倒或變成亂碼（六格只有出拳那格正常），遊戲尺寸下也看不清。**決定：全表無字、無商標**，手套純黑，不要在裝備上畫字。生圖後仍要逐格看有沒有偷偷長出字。

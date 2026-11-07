@@ -111,6 +111,68 @@ def despill(rgba: np.ndarray) -> np.ndarray:
     return out
 
 
+WEIGHT_BY_CLASS = {
+    "Flyweight": 125,
+    "Bantamweight": 135,
+    "Featherweight": 145,
+    "Lightweight": 155,
+    "Welterweight": 170,
+    "Middleweight": 185,
+    "Light Heavyweight": 205,
+    "Heavyweight": 245,
+}
+
+
+def ensure_fighter_size(fighter_id: str, height_arg: int | None, weight_arg: int | None) -> tuple[int, int]:
+    """Read or auto-populate height (cm) and weight (lb) in prototype/web/rules/fighters.json from data/fighters.json."""
+    rules_path = Path("prototype/web/rules/fighters.json")
+    if not rules_path.exists():
+        return height_arg or 178, weight_arg or 155
+    rules = json.loads(rules_path.read_text(encoding="utf-8"))
+    entry = rules.get(fighter_id, {})
+    h_cm = height_arg or entry.get("height")
+    w_lb = weight_arg or entry.get("weight")
+    if (not h_cm or not w_lb) and Path("data/fighters.json").exists():
+        raw = json.loads(Path("data/fighters.json").read_text(encoding="utf-8"))
+        roster = raw.get("fighters", raw) if isinstance(raw, dict) else raw
+        target_name = (entry.get("name") or fighter_id).lower()
+        for item in roster:
+            name = (item.get("name") or "").lower()
+            if name == target_name or fighter_id.lower() in name.split():
+                h_cm = h_cm or item.get("heightCm")
+                w_lb = w_lb or WEIGHT_BY_CLASS.get(item.get("weightClass", ""), 155)
+                break
+    h_cm = int(h_cm or 178)
+    w_lb = int(w_lb or 155)
+    if fighter_id in rules and (entry.get("height") != h_cm or entry.get("weight") != w_lb):
+        entry["height"] = h_cm
+        entry["weight"] = w_lb
+        rules_path.write_text(json.dumps(rules, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"  auto-filled {fighter_id} in rules/fighters.json: {h_cm}cm, {w_lb}lb")
+    return h_cm, w_lb
+
+
+def preview_screen_size(idle_rgba: np.ndarray, h_cm: int, w_lb: int) -> str:
+    """Mirror stage.js analyzePose + fighterScale to report the rendered screen size."""
+    alpha = idle_rgba[:, :, 3] > 0
+    h, w = alpha.shape
+    spans = [int(np.where(alpha[r])[0][-1] - np.where(alpha[r])[0][0] + 1) if alpha[r].any() else 0 for r in range(h)]
+    top = next((r for r, s in enumerate(spans) if s > 0), 0)
+    shoulder_y = next((r for r in range(top + 5, h) if spans[r] >= 28), min(h - 1, top + round(h * 0.16)))
+    below = max(1, h - shoulder_y)
+    skull_top = max(top, round(shoulder_y - below * 0.21))
+    body_h = max(1, h - skull_top)
+    y0, y1 = int(h * 0.42), max(int(h * 0.42) + 1, int(h * 0.55))
+    waist_ratio = max(0.15, sum(spans[y0:y1]) / (y1 - y0) / body_h)
+    bmi = (w_lb * 0.453592) / ((h_cm / 100.0) ** 2)
+    target_h = 181 + (h_cm - 178) * 1.4 + (w_lb - 155) * 0.14
+    target_wr = 0.216 * ((bmi / 22.2) ** 0.5) * ((w_lb / 155.0) ** 0.12)
+    sy = target_h / body_h
+    corr = max(0.92, min(1.05, (target_wr / waist_ratio) ** 0.55))
+    sx = sy * corr
+    return f"{round(w * sx)}x{round(h * sy)}px (scale {sx:.2f}x{sy:.2f}, {h_cm}cm/{w_lb}lb)"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sheet", required=True, type=Path)
@@ -120,6 +182,8 @@ def main() -> None:
     parser.add_argument("--pixel", type=int, default=4, help="sheet pixels per game pixel")
     parser.add_argument("--tolerance", type=float, default=90.0)
     parser.add_argument("--flip-down", action="store_true", help="mirror the down pose when the sheet has the head on the left")
+    parser.add_argument("--height", type=int, default=None, help="real height in cm (auto-filled from data/fighters.json if omitted)")
+    parser.add_argument("--weight", type=int, default=None, help="division weight in lbs (auto-filled from data/fighters.json if omitted)")
     args = parser.parse_args()
 
     poses = [p.strip() for p in args.poses.split(",") if p.strip()]
@@ -137,6 +201,7 @@ def main() -> None:
 
     out_dir = args.out / args.fighter
     out_dir.mkdir(parents=True, exist_ok=True)
+    h_cm, w_lb = ensure_fighter_size(args.fighter, args.height, args.weight)
     meta: dict[str, dict] = {}
     for pose, shape in zip(poses, order_reading(shapes)):
         x0, y0, x1, y1 = shape["box"]
@@ -159,7 +224,8 @@ def main() -> None:
         xs = np.nonzero(low.any(axis=0))[0]
         anchor = float(xs.mean()) if len(xs) else pixels.shape[1] / 2
         meta[pose] = {"w": small.width, "h": small.height, "anchorX": round(anchor, 1)}
-        print(f"  {pose}: {small.width}x{small.height} anchor {anchor:.0f}")
+        extra = f" -> screen {preview_screen_size(pixels, h_cm, w_lb)}" if pose == "idle" else ""
+        print(f"  {pose}: {small.width}x{small.height} anchor {anchor:.0f}{extra}")
 
     manifest_path = args.out / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
