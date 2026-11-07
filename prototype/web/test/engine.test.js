@@ -125,7 +125,7 @@ test("committing more makes a wrong read hurt more", () => {
       state.a.hand = [...attackerCards];
       state.b.hand = ["counter_hook"];
       resolveExchange(state, attackerCards, ["counter_hook"]);
-      total += 100 - state.a.hp;
+      total += state.maxHp - state.a.hp;
     }
     return total;
   };
@@ -223,7 +223,7 @@ test("a trade whiffs when the first blow takes the reply out of range", () => {
     const w = events.filter((e) => e.kind === "whiff");
     if (first === "a") {
       assert.equal(w.length, 1, "the kick whiffs after the jab closes in");
-      assert.equal(state.a.hp, 100, "a was never hit");
+      assert.equal(state.a.hp, state.maxHp, "a was never hit");
       whiffs++;
     } else {
       assert.equal(w.length, 0);

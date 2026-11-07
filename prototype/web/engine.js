@@ -29,8 +29,14 @@ function shuffle(state, list) {
 
 // ---------- Setup ----------
 
-export function createMatch(data, idA, idB, seed = 1) {
+export function createMatch(data, idA, idB, seed = 1, mode = "standard") {
+  const length = data.rules.match.modes[mode];
+  if (!length) throw new Error(`unknown match length ${mode}`);
   const state = {
+    mode,
+    rounds: length.rounds,
+    perRound: length.exchanges, // exchanges in each round
+    maxHp: length.hp,
     rules: data.rules,
     cards: data.cards,
     fighters: data.fighters,
@@ -43,8 +49,8 @@ export function createMatch(data, idA, idB, seed = 1) {
     stall: 0,
     phase: "exchange", // exchange | corner | over
     over: null,
-    a: makeSide(data, idA),
-    b: makeSide(data, idB),
+    a: makeSide(data, idA, length.hp),
+    b: makeSide(data, idB, length.hp),
     history: [],
     roundCards: [],
     roundScore: freshScore(),
@@ -57,13 +63,13 @@ export function createMatch(data, idA, idB, seed = 1) {
   return state;
 }
 
-function makeSide(data, id) {
+function makeSide(data, id, maxHp) {
   const f = data.fighters[id];
   return {
     id,
     name: f.short,
     attrs: f.attrs,
-    hp: data.rules.match.maxHp,
+    hp: maxHp,
     stamina: data.rules.match.maxStamina,
     momentum: 0,
     rocked: false,
@@ -444,7 +450,7 @@ export function chooseCorner(state, s) {
   const me = state[s];
   if (me.cut >= 2) return "patch";
   if (me.stamina < 45) return "breathe";
-  if (me.hp < 45) return "patch";
+  if (me.hp < state.maxHp * 0.45) return "patch";
   return "fire";
 }
 
@@ -889,7 +895,7 @@ function endExchange(state, plays, types, wasRocked, events) {
   }
   if (state.ground) score(state, state.ground.top, "grappling", state.rules.score.controlPerPosition * (state.ground.pos + 1));
 
-  if (state.exchange >= state.rules.match.exchangesPerRound) endRound(state, events);
+  if (state.exchange >= state.perRound) endRound(state, events);
   else state.exchange += 1;
 }
 
@@ -898,7 +904,7 @@ function endRound(state, events) {
   const judges = s.judges.map((j) => {
     const perf = (side) => state.roundScore[side].striking * j.striking + state.roundScore[side].grappling * j.grappling;
     const gap = perf("a") - perf("b");
-    const loserScore = Math.abs(gap) >= s.tenEightGap ? 8 : 9;
+    const loserScore = Math.abs(gap) >= s.tenEightPerExchange * state.perRound ? 8 : 9;
     if (Math.abs(gap) < 0.5) return { a: 10, b: 10 };
     return gap > 0 ? { a: 10, b: loserScore } : { a: loserScore, b: 10 };
   });
@@ -907,10 +913,12 @@ function endRound(state, events) {
   state.roundScore = freshScore();
   state.a.rocked = false;
   state.b.rocked = false;
+  // The cutman works on the cut between rounds.
+  for (const side of SIDES) state[side].cut = Math.max(0, state[side].cut - state.rules.cut.roundHeal);
   state.ground = null;
   state.dist = state.rules.dist.start;
   state.stall = 0;
-  if (state.round >= state.rules.match.rounds) decide(state, events);
+  if (state.round >= state.rounds) decide(state, events);
   else state.phase = "corner";
 }
 
@@ -947,7 +955,7 @@ export function applyCorner(state, choices) {
     if (!opt) throw new Error(`unknown corner option ${choices[s]}`);
     if (opt.stamina) addStamina(state, s, opt.stamina);
     if (opt.momentum) addMomentum(state, s, opt.momentum);
-    if (opt.hp) me.hp = Math.min(state.rules.match.maxHp, me.hp + opt.hp);
+    if (opt.hp) me.hp = Math.min(state.maxHp, me.hp + opt.hp);
     if (opt.clearCut) me.cut = Math.max(0, me.cut - opt.clearCut);
     if (opt.clearPip) {
       const worst = Object.keys(me.pips).reduce((a, b) => (me.pips[a] >= me.pips[b] ? a : b));
@@ -967,7 +975,7 @@ export function checkInvariants(state) {
   const m = state.rules.match;
   for (const s of SIDES) {
     const me = state[s];
-    if (!(me.hp >= 0 && me.hp <= m.maxHp)) errors.push(`${s}.hp ${me.hp}`);
+    if (!(me.hp >= 0 && me.hp <= state.maxHp)) errors.push(`${s}.hp ${me.hp}`);
     if (!(me.stamina >= 0 && me.stamina <= m.maxStamina)) errors.push(`${s}.stamina ${me.stamina}`);
     if (!(me.momentum >= 0 && me.momentum <= m.maxMomentum)) errors.push(`${s}.momentum ${me.momentum}`);
     const f = state.fighters[me.id];

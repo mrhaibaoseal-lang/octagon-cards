@@ -1,6 +1,12 @@
 {
   "version": 1,
-  "match": { "rounds": 3, "exchangesPerRound": 5, "handSize": 5, "maxHp": 100, "maxStamina": 100, "maxMomentum": 100 },
+  "match": {
+    "handSize": 5, "maxStamina": 100, "maxMomentum": 100,
+    "modes": {
+      "standard": { "label": "一般賽", "rounds": 3, "exchanges": 10, "hp": 190, "desc": "3 回合 × 10 手" },
+      "main": { "label": "主賽", "rounds": 5, "exchanges": 8, "hp": 250, "desc": "5 回合 × 8 手" }
+    }
+  },
   "triangle": { "S": "G", "G": "C", "C": "S" },
   "typeNames": { "S": "打擊", "G": "摔抱", "C": "防反" },
   "groundLabels": {
@@ -9,12 +15,12 @@
   },
   "positions": ["防守", "控制", "背後"],
   "dist": { "names": ["遠距", "中距", "近距", "纏抱"], "short": ["遠", "中", "近", "纏"], "start": 1, "standUp": 2, "clinch": 3 },
-  "cut": { "max": 3, "blindAt": 2, "doctorAt": 3 },
+  "cut": { "max": 3, "blindAt": 2, "doctorAt": 3, "roundHeal": 1 },
   "energy": { "base": 3, "tiredAt": 40, "gassedAt": 18, "rockedBudget": 1, "swarmBonus": 1 },
   "stamina": {
-    "perEnergy": 7, "regenPerExchange": 4, "cardioRegenBonus": 2, "counterRegen": 3,
-    "cornerBase": 18, "cornerCardio": 0.2, "bodyDebuffRegen": -3,
-    "whiffGrapple": 4, "tiredDamageMult": 0.85
+    "perEnergy": 4.5, "regenPerExchange": 3, "cardioRegenBonus": 2, "counterRegen": 2,
+    "cornerBase": 18, "cornerCardio": 0.2, "bodyDebuffRegen": -2,
+    "whiffGrapple": 3, "tiredDamageMult": 0.85
   },
   "tiers": {
     "baseCrit": 0.15, "baseGraze": 0.25, "critPerStat": 0.004, "grazePerStat": 0.003,
@@ -33,23 +39,23 @@
   "rocked": {
     "minDamage": 11, "base": 0.3, "perDamage": 0.02, "perChin": 0.006, "chinPivot": 70,
     "headDebuffBonus": 0.2, "critBonus": 0.2, "min": 0.03, "max": 0.9,
-    "flashKoBase": 0.1, "flashKoPerChin": 0.006, "flashKoHpPivot": 40, "flashKoPerHp": 0.006
+    "flashKoBase": 0.1, "flashKoPerChin": 0.006, "flashKoHpPivot": 80, "flashKoPerHp": 0.003
   },
   "debuff": { "threshold": 3, "maxPips": 3, "legKickMult": 0.65 },
   "grapple": {
-    "statPivot": 70, "scrambleMomentum": 5, "scrambleStamina": 4,
-    "drainOnLanding": 10, "positionFromTier": { "graze": -1, "clean": 0, "crit": 1 },
-    "topControlDrain": 10
+    "statPivot": 70, "scrambleMomentum": 3, "scrambleStamina": 3,
+    "drainOnLanding": 6, "positionFromTier": { "graze": -1, "clean": 0, "crit": 1 },
+    "topControlDrain": 6
   },
   "lock": {
     "tapBase": 0.5, "tapPerStat": 0.006, "tapDepthBonus": 0.2, "lowStaminaAt": 35, "lowStaminaBonus": 0.15,
-    "min": 0.05, "max": 0.9, "holdDrain": 6, "escapePenalty": 6, "minTopPosition": 1
+    "min": 0.05, "max": 0.9, "holdDrain": 4, "escapePenalty": 4, "minTopPosition": 1
   },
-  "momentum": { "win": 22, "crit": 12, "rocked": 18, "trade": 6, "lose": -6, "standoff": -8, "signatureCost": 100, "landing": 10 },
+  "momentum": { "win": 11, "crit": 6, "rocked": 12, "trade": 4, "lose": -3, "standoff": -5, "signatureCost": 100, "landing": 6 },
   "stall": { "limit": 2 },
   "score": {
     "damage": 1.0, "exchangeWin": 3, "rocked": 10, "takedown": 8, "positionGain": 4,
-    "controlPerPosition": 2.5, "lockAttempt": 8, "cut": 6, "tenEightGap": 42,
+    "controlPerPosition": 2.5, "lockAttempt": 8, "cut": 6, "tenEightPerExchange": 8.4,
     "judges": [
       { "name": "打擊派", "striking": 1.3, "grappling": 0.7 },
       { "name": "摔柔派", "striking": 0.75, "grappling": 1.4 },
@@ -59,7 +65,7 @@
   "corner": {
     "options": [
       { "id": "breathe", "label": "深呼吸", "desc": "多回 25 體力", "stamina": 25 },
-      { "id": "patch", "label": "止血消腫", "desc": "回 8 生命，清 1 個傷痕，止 1 級血", "hp": 8, "clearPip": 1, "clearCut": 1 },
+      { "id": "patch", "label": "止血消腫", "desc": "回 16 生命，清 1 個傷痕，止 1 級血", "hp": 16, "clearPip": 1, "clearCut": 1 },
       { "id": "fire", "label": "教練喊話", "desc": "氣勢 +35", "momentum": 35 }
     ]
   },

@@ -1,5 +1,7 @@
 // Balance simulator. Every game runs through the same engine, hands and AI as the real prototype.
-// Usage: node prototype/web/sim.js [games]
+// Usage: node prototype/web/sim.js [games] [--gate] [--mode=main]
+//   --gate   only the strategy table and the pass conditions (fast)
+//   --mode   match length: standard (default) or main
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +12,8 @@ const load = (name) => JSON.parse(readFileSync(join(here, "rules", name), "utf8"
 export const data = { rules: load("rules.json"), cards: load("cards.json"), fighters: load("fighters.json") };
 
 const TYPES = ["S", "G", "C"];
+const ARGS = process.argv.slice(2);
+const MODE = (ARGS.find((a) => a.startsWith("--mode=")) || "--mode=standard").slice(7);
 
 // ---------- Player strategies. Each returns an array of card ids. ----------
 
@@ -94,8 +98,8 @@ export const strategies = {
 
 // ---------- Game loop ----------
 
-export function playGame(idA, idB, stratA, seed, data_ = data) {
-  const state = createMatch(data_, idA, idB, seed);
+export function playGame(idA, idB, stratA, seed, data_ = data, mode = MODE) {
+  const state = createMatch(data_, idA, idB, seed, mode);
   let exchanges = 0;
   let groundExchanges = 0;
   let minStamina = 100;
@@ -148,15 +152,9 @@ function row(label, r, games) {
   return `${label.padEnd(20)} 勝${pct(r.win, games)} 負${pct(r.loss, games)} | KO${pct(r.KO, games)} TKO${pct(r.TKO, games)} 降${pct(r.SUB, games)} 判${pct(r.DEC, games)} | ${avg(r.exch, games)}手 地面${pct(r.ground, r.exch)} | 暈${avg(r.rocked, games)} 摔${avg(r.takedown, games)} 鎖${avg(r.lock, games)} 招${avg(r.signature, games)} 割${avg(r.cut, games)} 醫${pct(r.doctor, games)} 空${avg(r.whiff, games)} 移${avg(r.range, games)} | 最低體力${(r.minStamina / games).toFixed(0)}`;
 }
 
-function main() {
-  const games = Number(process.argv[2]) || 2000;
-  console.log(`=== 打法勝率（同屬性 測試選手 vs 測試選手 AI，各 ${games} 場）===`);
-  const results = {};
-  for (const [name, strat] of Object.entries(strategies)) {
-    results[name] = batch("neutral", "neutral", strat, games, 1000);
-    console.log(row(name, results[name], games));
-  }
-  console.log(`\n=== AI vs AI 對戰表（各 ${games} 場，列 = A 方）===`);
+function tables(games) {
+  console.log(`
+=== AI vs AI 對戰表（各 ${games} 場，列 = A 方）===`);
   const ids = Object.keys(data.fighters).filter((id) => !data.fighters[id].hidden);
   for (const a of ids) {
     for (const b of ids) {
@@ -164,12 +162,24 @@ function main() {
       console.log(row(`${a} vs ${b}`, batch(a, b, null, games, 5000), games));
     }
   }
-  console.log(`\n=== 玩家看意圖打真實選手（各 ${games} 場）===`);
+  console.log(`
+=== 玩家看意圖打真實選手（各 ${games} 場）===`);
   for (const a of ids) {
     for (const b of ids) {
       console.log(row(`${a} vs ${b}`, batch(a, b, reader, games, 9000), games));
     }
   }
+}
+
+function main() {
+  const games = Number(ARGS.find((a) => /^\d+$/.test(a))) || 2000;
+  console.log(`=== 打法勝率（同屬性 測試選手 vs 測試選手 AI，各 ${games} 場，${MODE}）===`);
+  const results = {};
+  for (const [name, strat] of Object.entries(strategies)) {
+    results[name] = batch("neutral", "neutral", strat, games, 1000);
+    console.log(row(name, results[name], games));
+  }
+  if (!ARGS.includes("--gate")) tables(games);
   const win = (n) => (100 * results[n].win) / games;
   const spams = ["只出打擊（最大）", "只出摔抱（最大）", "只出防反（最大）", "只出打擊（1 能量）", "只出防反（1 能量）", "永遠最猛打擊"];
   const worstSpam = Math.max(...spams.map(win));

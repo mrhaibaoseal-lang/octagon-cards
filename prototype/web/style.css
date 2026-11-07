@@ -177,6 +177,12 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .cmp .tr.l { justify-content: flex-end; }
 .cmp .tr i { display: block; height: 100%; background: #5be49b; }
 .cmp .tr.r i { background: #ff7b7f; }
+.modes { display: flex; gap: 4px; margin-top: 4px; }
+.mode { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 3px 2px; font-size: 12px; font-weight: 800; line-height: 1.15; background: rgba(255,255,255,0.05); }
+.mode small { display: block; font-size: 10px; font-weight: 600; color: var(--dim); }
+.mode.on { border-color: var(--gold); background: rgba(245,197,66,0.16); }
+.mode.on small { color: #f5e2a0; }
+#center-bar .round small { font-size: 10px; font-weight: 700; color: var(--dim); }
 .howto { font-size: 11px; line-height: 1.35; margin-top: 3px; color: #dfe3ee; }
 .howto b { font-weight: 900; }
 #start { grid-column: 1 / -1; background: var(--gold); color: #000; border-radius: 8px; font-size: 18px; font-weight: 900; }

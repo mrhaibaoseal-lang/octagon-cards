@@ -14,7 +14,7 @@ let state = null;
 let selected = []; // indices into the hand
 let bracing = false;
 let shown = null; // HUD values during playback, which trail the engine state
-let picks = { a: "mcgregor", b: "khabib" };
+let picks = { a: "mcgregor", b: "khabib", mode: "standard" };
 let skipping = false;
 let skipWake = null;
 let lastLine = "";
@@ -90,6 +90,7 @@ function renderSelect() {
     <div class="versus">
       <h1>OCTAGON CARDS</h1>
       ${rows}
+      <div class="modes">${Object.entries(data.rules.match.modes).map(([id, m]) => `<button class="mode ${picks.mode === id ? "on" : ""}" data-mode="${id}">${m.label}<small>${m.desc}</small></button>`).join("")}</div>
       <div class="howto">
         <b class="t-S">打擊</b> 克 <b class="t-G">摔抱</b> 克 <b class="t-C">防反</b> 克 <b class="t-S">打擊</b>。<br>
         看對手傾向決定出什麼，<b>投入越多，贏得越多，猜錯也越痛</b>。體力會耗光，氣勢滿了有招牌技。
@@ -101,12 +102,16 @@ function renderSelect() {
     picks[el.dataset.side] = el.dataset.id;
     renderSelect();
   }));
+  box.querySelectorAll(".mode").forEach((el) => el.addEventListener("click", () => {
+    picks.mode = el.dataset.mode;
+    renderSelect();
+  }));
   $("start").addEventListener("click", startMatch);
 }
 
 function startMatch() {
   const seed = Number(new URLSearchParams(location.search).get("seed")) || Math.floor(Math.random() * 1e9);
-  state = createMatch(data, picks.a, picks.b, seed);
+  state = createMatch(data, picks.a, picks.b, seed, picks.mode);
   lastLine = "";
   $("select").classList.add("hidden");
   $("overlay").classList.add("hidden");
@@ -131,7 +136,6 @@ function syncShown() {
 // ---------- HUD ----------
 
 function renderPanel(side) {
-  const m = data.rules.match;
   const v = shown[side];
   const f = fighterOf(side);
   const pips = ["head", "body", "legs"].map((t) => {
@@ -140,13 +144,14 @@ function renderPanel(side) {
     return `<span>${TARGET_NAMES[t]}<span class="pip ${cls}">${"●".repeat(n)}${"○".repeat(data.rules.debuff.maxPips - n)}</span></span>`;
   }).join("");
   const el = $(`panel-${side}`);
+  const pctOf = (hp) => (hp / state.maxHp) * 100;
   const prevGhost = el.dataset.hp ? Number(el.dataset.hp) : v.hp;
   el.dataset.hp = v.hp;
   el.innerHTML = `
     ${portraitHtml(f === undefined ? "" : state[side].id)}
     <div class="stats">
       <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}<span class="pips">${pips}</span></div>
-      <div class="barwrap"><div class="fill ghost" style="width:${prevGhost}%"></div><div class="fill hp ${v.hp <= 30 ? "low" : ""}" style="width:${(v.hp / m.maxHp) * 100}%"></div></div>
+      <div class="barwrap"><div class="fill ghost" style="width:${pctOf(prevGhost)}%"></div><div class="fill hp ${pctOf(v.hp) <= 18 ? "low" : ""}" style="width:${pctOf(v.hp)}%"></div></div>
       <div class="thinrow">
         <div class="barwrap thin"><div class="fill stam ${v.stamina < data.rules.energy.tiredAt ? "low" : ""}" style="width:${v.stamina}%"></div></div>
         <div class="barwrap thin"><div class="fill mom ${v.momentum >= data.rules.momentum.signatureCost ? "ready" : ""}" style="width:${v.momentum}%"></div></div>
@@ -154,7 +159,7 @@ function renderPanel(side) {
     </div>`;
   requestAnimationFrame(() => {
     const ghost = el.querySelector(".ghost");
-    if (ghost) ghost.style.width = `${v.hp}%`;
+    if (ghost) ghost.style.width = `${pctOf(v.hp)}%`;
   });
 }
 
@@ -169,10 +174,10 @@ function placeText(view) {
 }
 
 function renderCenter() {
-  const total = data.rules.match.exchangesPerRound;
+  const total = state.perRound;
   let dots = "";
   for (let i = 1; i <= total; i++) dots += `<span class="dot ${i < state.exchange ? "done" : i === state.exchange ? "now" : ""}"></span>`;
-  $("center-bar").innerHTML = `<div class="round">第 ${state.round} 回合</div><div class="dots">${dots}</div><div class="place">${placeText(state)}</div>`;
+  $("center-bar").innerHTML = `<div class="round">第 ${state.round}<small>/${state.rounds}</small> 回合</div><div class="dots">${dots}</div><div class="place">${placeText(state)}</div>`;
 }
 
 function renderHud() {
@@ -689,7 +694,7 @@ function showCorner() {
   const box = $("overlay");
   box.classList.remove("hidden");
   box.innerHTML = `<div class="sheet">
-    <h2>第 ${card.round} 回合結束：${head}</h2>
+    <h2>第 ${card.round} / ${state.rounds} 回合結束：${head}</h2>
     <div class="judges">${judges}</div>
     <div class="note">角落時間：選一件事，再上場</div>
     <div class="opts">${opts}</div>
@@ -710,7 +715,7 @@ function showResult() {
   const youWon = o.winner === "a";
   const title = o.winner === null ? "平手" : youWon ? "你贏了" : `${fighterOf("b").short} 贏了`;
   const method = o.method === "DEC" ? o.decision : o.method === "SUB" ? "降伏" : o.reason === "doctor" ? "TKO · 醫生叫停" : o.method;
-  const detail = o.method === "DEC" ? "打滿三回合" : `第 ${o.round} 回合第 ${o.exchange} 手`;
+  const detail = o.method === "DEC" ? `打滿 ${state.rounds} 回合` : `第 ${o.round} 回合第 ${o.exchange} 手`;
   const totals = o.totals || (state.roundCards.length ? judgeTotals() : null);
   const judges = o.method === "DEC" && totals ? `<div class="judges">${totals.map((t) => `<div class="judge">${t.name}<b>${t.a} - ${t.b}</b></div>`).join("")}</div>` : "";
   const box = $("overlay");
