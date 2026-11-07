@@ -2,6 +2,12 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-08 · Claude Sonnet 5.5（PixelLab 第一批驗證：O'Malley、Ngannou、Merab）
+- **做了什麼**：三人走完整流程（256 純文字＋全身照寫細節＋骨架 8 格＋受擊 3 格），圖在 `prototype/web/assets/private/{omalley,ngannou,merab}/`，三人對照 `private/batch1_three.png`。轉檔 `pipeline/pl_convert.py`、姿勢參數 `pipeline/pl_poses.json`（不含圖）。本輪 92/2000（剩 1750）。
+- **使用者判斷**：Ngannou 非常好；第一版 O'Malley（髮型臉全不像）、Merab（畫風不同、髮鬍不對）不行。**重生後的版本使用者還沒看**。教訓：提示詞要加「realistic adult proportions, about 8 heads tall, small head, NOT chibi」才不會跑出卡通臉；髮型寫「short cropped / buzz-cut、receding」這類具體描述；**受擊三格不要寫 punched，會把對手的手臂畫進畫面**，改寫「leaning back with the head tilted up, guard hands still near the chest」。
+- **已知瑕疵**：手套上仍有小標記像字（三人皆有）；Ngannou 抱摔、倒地有少量灰色雜點；O'Malley 臉偏動漫；高踢只到腰。
+- **要使用者確認**：新版 O'Malley、Merab 像不像、能不能批量。**下一步**：通過後批量做其餘 29 位（約 14 次／人）；遊戲內每位選手縮放倍數（256 版約 230px 高）要先問使用者再改。
+
 ## 2026-11-07 · Claude Sonnet 5.5 → Opus 5.5（PixelLab 測試：Hooker）
 - **做了什麼**：試了五種做法，圖都在 `prototype/web/assets/private/hooker_pl*/`（gitignore，Gemini 版 `hooker/` 沒動），對照頁 `assets/private/compare_hooker.html`，累計 123/2000。姿勢一律用 skeleton-v3 自寫 8 格（3 次，一格一個姿勢，含過渡格才不糊；倒地要水平鏡像）。
 - **最穩：全身官方照＋pro 128＋提示詞開頭寫「realistic adult proportions, about 8 heads tall, small head, NOT chibi」**（`hooker_pl128r/`，28 次）：比例寫實、刺青位置對、無字，六格乾淨。提示詞開頭寫「Pixel art fighting game character」會變 Q 版（`hooker_pl128/`）。全身照：`_source/hooker_fullbody_ufc.png`，選手頁 og 圖網址去掉 `styles/athlete_bio_full_body/s3/`。
@@ -12,10 +18,3 @@
 - **做了什麼**：換上使用者重生、抱摔已修好（兩隻手、兩手手套一致）的 McGregor 表，重裁頭像。試過在手套、腰帶加 UFC 字樣，AI 畫字會鏡像或亂碼，決定裝備上全無字（寫進 `docs/ART_SPEC.md`）。選角頭像改用官網去背照像素化（`pipeline/portrait.py`），五位都換了，Oliveira 也有頭像了。
 - **驗證**：轉換切出 6 個人、無殘綠；引擎測試 22 項通過；844×390 看過 McGregor 選角頭像、待機與出拳中段。受擊、高踢、抱摔、倒地沒在遊戲裡逐一看，只看過轉換後的六姿勢拼圖。
 - **要使用者確認**：新版 McGregor 像不像、下一位選手（Khabib、Oliveira、Pereira 還沒做）。倒地圖頭已在右邊，轉換不加 `--flip-down`。
-
-## 2026-11-07 · Claude Sonnet 5.5（M1.1 距離、移動、流血）
-- **做了什麼**：站立距離改成四格共用軌道（遠、中、近、纏抱），牌有可用距離，不對就不能出；永遠在手上的前進／後退，加大步衝入、壓步刺拳、後撤反拳等移動牌；步法依三角相剋（贏的生效、輸的取消），連段逐張檢查距離，對轟可能揮空。新增一二連拳、超人拳、轉身後踢、轉身肘、斷頭台；流血 Lv1–3（肘擊割開、Lv2 看不清對手傾向、Lv3 醫生叫停、止血消腫降級）。AI 會往擅長距離走。規格已同步 `docs/GAME_DESIGN.md`。
-- **驗證**：引擎測試 22 項通過；模擬門檻通過（看意圖 75.2%、亂出 37.3%、單一打法最高 19.7%，只是剛好過線）；844×390 打完一整場到判定，無例外；看過遠距灰牌、纏抱、流血標記與血滴。KO、醫生叫停、揮空的演出沒有實際打出來看過。
-- **要使用者確認**：試玩 M1.1 好不好玩（距離太繁瑣？步法夠用？）。Khabib、Oliveira 的 AI 互打只剩約 25% 勝率，等試玩再調。**下一步**：依回饋改，再做 M1.2 地面。
-
-
