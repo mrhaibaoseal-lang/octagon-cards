@@ -1,5 +1,5 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf } from "./engine.js";
+import { loadData, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, previewPlay, describeCard, playError, lockTapChance, phaseOf, cardCost } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -23,8 +23,8 @@ let viewDist = 1; // the distance as the screen currently shows it, which trails
 // ---------- Boot ----------
 
 async function boot() {
-  const [rules, cards, fighters] = await Promise.all(["rules", "cards", "fighters"].map((n) => fetch(`rules/${n}.json`).then((r) => r.json())));
-  data = { rules, cards, fighters };
+  const [rules, cards, fighters, depth] = await Promise.all(["rules", "cards", "fighters", "depth"].map((n) => fetch(`rules/${n}.json`).then((r) => r.json())));
+  data = loadData({ rules, cards, fighters, depth });
   const ids = Object.keys(fighters).filter((id) => !fighters[id].hidden);
   assets = await loadAssets(ids);
   stage = new Stage($("cage"), assets);
@@ -127,7 +127,7 @@ function syncShown() {
   shown = {};
   for (const s of ["a", "b"]) {
     const me = state[s];
-    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips } };
+    shown[s] = { hp: me.hp, stamina: me.stamina, momentum: me.momentum, rocked: me.rocked, cut: me.cut, pips: { ...me.pips }, marks: Object.keys(me.marks) };
   }
   viewDist = state.dist;
   stage.setCuts(shown.a.cut, shown.b.cut);
@@ -143,6 +143,8 @@ function renderPanel(side) {
     const cls = n >= data.rules.debuff.threshold ? "full" : n > 0 ? "on" : "";
     return `<span>${TARGET_NAMES[t]}<span class="pip ${cls}">${"●".repeat(n)}${"○".repeat(data.rules.debuff.maxPips - n)}</span></span>`;
   }).join("");
+  const legHurt = v.pips.legs >= data.rules.debuff.threshold ? `<span class="tag leg">腿傷·步+${data.rules.debuff.legMoveCost}⚡</span>` : "";
+  const markChips = v.marks.map((t) => `<span class="tag mk">${data.rules.tags[t]?.short || t}</span>`).join("");
   const el = $(`panel-${side}`);
   const pctOf = (hp) => (hp / state.maxHp) * 100;
   const prevGhost = el.dataset.hp ? Number(el.dataset.hp) : v.hp;
@@ -150,7 +152,7 @@ function renderPanel(side) {
   el.innerHTML = `
     ${portraitHtml(f === undefined ? "" : state[side].id)}
     <div class="stats">
-      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}<span class="pips">${pips}</span></div>
+      <div class="nameline">${side === "a" ? "你 · " : ""}${f.short}${v.rocked ? '<span class="tag">被打暈</span>' : ""}${v.cut ? `<span class="tag bleed">流血 Lv${v.cut}</span>` : ""}${legHurt}${markChips}<span class="pips">${pips}</span></div>
       <div class="barwrap"><div class="fill ghost" style="width:${pctOf(prevGhost)}%"></div><div class="fill hp ${pctOf(v.hp) <= 18 ? "low" : ""}" style="width:${pctOf(v.hp)}%"></div></div>
       <div class="thinrow">
         <div class="barwrap thin"><div class="fill stam ${v.stamina < data.rules.energy.tiredAt ? "low" : ""}" style="width:${v.stamina}%"></div></div>
@@ -233,11 +235,21 @@ function selectedCards() {
   return selected.map((i) => state.a.hand[i]);
 }
 
+/** The setup line on a card: green when a tag it follows is on, dim when it only could follow, purple when it lays one down. */
+function linkHtml(d) {
+  const short = (t) => data.rules.tags[t]?.short || t;
+  const live = d.follows.find((f) => f.live);
+  if (live) return `<div class="lk live">可接 ${short(live.tag)} +${live.bonus}%</div>`;
+  if (d.setups.length) return `<div class="lk set">鋪路 ${d.setups.map((st) => short(st.tag)).join("")}</div>`;
+  if (d.follows.length) return `<div class="lk">接 ${short(d.follows[0].tag)} +${d.follows[0].bonus}%</div>`;
+  return "";
+}
+
 function renderHand() {
   const b = budget(state, "a");
   const cards = selectedCards();
   const type = cards.length ? data.cards[cards[0]].type : null;
-  const spent = cards.reduce((sum, c) => sum + data.cards[c].cost, 0);
+  const spent = cards.reduce((sum, c) => sum + cardCost(state, "a", c), 0);
   // Dimmed means clicking it would not add to the current play: wrong distance, or not enough energy left.
   const look = (i) => {
     const c = state.a.hand[i];
@@ -254,9 +266,10 @@ function renderHand() {
     const rangeHtml = d.unusable ? `<span class="bad">要在${where}</span>` : where ? `<span>${where}</span>` : "<span></span>";
     const target = card.target && card.power ? `<span>打${TARGET_NAMES[card.target]}</span>` : "";
     return `<button class="card ${isSel ? "sel" : ""} ${affordable ? "" : "dim"} ${d.unusable ? "far" : ""} ${card.signature ? "signature" : ""}" data-i="${i}">
-      <div class="head bg-${card.type}"><span>${label}</span><span class="cost">${"⚡".repeat(card.cost)}</span></div>
+      <div class="head bg-${card.type}"><span>${label}</span><span class="cost">${"⚡".repeat(d.cost)}</span></div>
       <div class="nm">${card.name}</div>
       <div class="fx">${d.effect}</div>
+      ${linkHtml(d)}
       <div class="rng">${rangeHtml}${target}</div>
     </button>`;
   }).join("");
@@ -267,7 +280,7 @@ function renderHand() {
   for (const [id, el, label] of [["step_in", $("step-in"), "前進"], ["step_back", $("step-back"), "後退"]]) {
     const i = state.a.hand.indexOf(id);
     const { isSel, affordable } = look(i);
-    el.innerHTML = `${label}<small>⚡1</small>`;
+    el.innerHTML = `${label}<small>${"⚡".repeat(describeCard(state, "a", id).cost)}</small>`;
     el.className = `${isSel ? "sel" : ""} ${affordable ? "" : "dim"}`;
   }
   $("brace").innerHTML = "硬撐<small>⚡0</small>";
@@ -391,7 +404,7 @@ function renderReveal(e) {
   const flip = (side) => {
     const names = e[side].map((c) => data.cards[c].name).join(" + ");
     const res = e.winner === side ? "win" : e.winner ? "lose" : "";
-    return `<div class="flip ${res}"><div class="head bg-${e.types[side]}">${playLabel(side, e[side], e.types, e.ground)}</div><div class="body">${names}</div><div class="who">${side === "a" ? "你" : fighterOf("b").short} ${"⚡".repeat(e[side].reduce((s, c) => s + data.cards[c].cost, 0))}</div></div>`;
+    return `<div class="flip ${res}"><div class="head bg-${e.types[side]}">${playLabel(side, e[side], e.types, e.ground)}</div><div class="body">${names}</div><div class="who">${side === "a" ? "你" : fighterOf("b").short} ${"⚡".repeat(e.cost[side])}</div></div>`;
   };
   $("reveal").innerHTML = flip("a") + flip("b");
   $("reveal").classList.remove("hidden");
@@ -492,6 +505,13 @@ async function playEvents(events) {
         await wait(620);
         $("verdict").classList.add("hidden");
         break;
+      case "mark": {
+        shown[e.side].marks = [...new Set([...shown[e.side].marks, e.tag])];
+        renderPanel(e.side);
+        stage.floater(e.side, data.rules.tags[e.tag]?.label || e.tag, "#9be7ff", 20);
+        await wait(280);
+        break;
+      }
       case "range": {
         syncLayout({ dist: e.dist });
         // Clinches, scrambles and stand-ups announce themselves, so this only speaks for a plain step.

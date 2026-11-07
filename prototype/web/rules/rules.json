@@ -41,7 +41,14 @@
     "headDebuffBonus": 0.2, "critBonus": 0.2, "min": 0.03, "max": 0.9,
     "flashKoBase": 0.1, "flashKoPerChin": 0.006, "flashKoHpPivot": 80, "flashKoPerHp": 0.003
   },
-  "debuff": { "threshold": 3, "maxPips": 3, "legKickMult": 0.65 },
+  "debuff": { "threshold": 3, "maxPips": 3, "legKickMult": 0.65, "legMoveCost": 1 },
+  "tags": {
+    "opened": { "label": "刺拳開路", "short": "開路" },
+    "winded": { "label": "身體吃重", "short": "吃重" },
+    "tied": { "label": "貼身纏上", "short": "貼身" },
+    "fooled": { "label": "被假動作騙到", "short": "被騙", "sharpen": 1.8, "readBoost": 2 }
+  },
+  "setups": { "clinch": { "tag": "tied", "turns": 1 } },
   "grapple": {
     "statPivot": 70, "scrambleMomentum": 3, "scrambleStamina": 3,
     "drainOnLanding": 6, "positionFromTier": { "graze": -1, "clean": 0, "crit": 1 },

@@ -1,7 +1,7 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay } from "../engine.js";
+import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, budget, playError, nextUnit, checkInvariants, arrange, usableAt, bestPlay, previewPlay, cardCost, loadData } from "../engine.js";
 import { data, playGame, strategies } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
@@ -319,4 +319,77 @@ test("corner recovers stamina and starts the next round", () => {
   assert.equal(state.round, 2);
   assert.equal(state.exchange, 1);
   assert.ok(state.a.stamina > 40);
+});
+
+// ---------- Match length ----------
+
+test("both match lengths run their own number of rounds and exchanges", () => {
+  for (const [mode, m] of Object.entries(data.rules.match.modes)) {
+    const { state } = playGame("neutral", "neutral", strategies["看意圖並控制投入"], 3, data, mode);
+    assert.equal(state.rounds, m.rounds);
+    assert.equal(state.perRound, m.exchanges);
+    assert.equal(state.maxHp, m.hp);
+    assert.ok(state.round <= m.rounds);
+  }
+});
+
+// ---------- Cross-exchange setups ----------
+
+test("a landed jab opens the next exchange: the follow-up crits more, and only for one exchange", () => {
+  let opened = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const state = setup(["jab", "cross"], ["step_in"], 1, seed);
+    state.a.stamina = 100;
+    resolveExchange(state, ["jab"], ["step_in"]);
+    if (!state.a.marks.opened) continue; // a graze lays nothing down
+    opened++;
+    const base = createMatch(data, "neutral", "neutral", 1);
+    base.a.hand = ["cross", "step_in", "step_back"];
+    const plain = previewPlay(base, "a", ["cross"]).critPct;
+    assert.ok(previewPlay(state, "a", ["cross"]).critPct >= plain + 15, "the follow-up gets the bonus");
+    state.b.hand = ["step_in", "step_back"];
+    state.a.hand = ["cross", "step_in", "step_back"];
+    resolveExchange(state, [], ["step_in"]);
+    assert.ok(!state.a.marks.opened, "the tag lasts one exchange");
+  }
+  assert.ok(opened > 5, `opened ${opened}`);
+});
+
+test("a feint that wins makes the fooled fighter easier to read, and the AI still follows the shown numbers", () => {
+  const state = setup(["feint"], ["step_in"], 1);
+  resolveExchange(state, ["feint"], ["step_in"]);
+  assert.ok(state.b.marks.fooled, "the feint won against a charge");
+  state.b.hand = ["jab", "single_leg", "guard_counter", "step_in", "step_back"];
+  const plain = createMatch(data, "neutral", "neutral", 5);
+  plain.b.hand = state.b.hand;
+  const sharp = getIntent(state, "b").probs;
+  const dull = getIntent(plain, "b").probs;
+  const top = (p) => Math.max(p.S, p.G, p.C);
+  assert.ok(top(sharp) > top(dull) + 0.05, `sharper read ${top(sharp)} vs ${top(dull)}`);
+  const counts = { S: 0, G: 0, C: 0 };
+  const n = 4000;
+  for (let i = 0; i < n; i++) {
+    const cards = chooseAI(state, "b").cards;
+    counts[cards.length ? data.cards[cards[0]].type : "C"]++;
+  }
+  for (const t of ["S", "G", "C"]) assert.ok(Math.abs(counts[t] / n - sharp[t]) < 0.04, `${t}: shown ${sharp[t]}, played ${counts[t] / n}`);
+});
+
+test("a leg injury makes steps cost more energy, but never more than the fighter can spend", () => {
+  const state = setup([], [], 1);
+  assert.equal(cardCost(state, "a", "step_in"), 1);
+  state.a.pips.legs = data.rules.debuff.threshold;
+  assert.equal(cardCost(state, "a", "step_in"), 2);
+  assert.equal(cardCost(state, "a", "jab"), 1, "only steps cost more");
+  state.a.stamina = 1;
+  assert.equal(budget(state, "a"), 1);
+  assert.equal(cardCost(state, "a", "step_in"), 1, "a spent fighter can still step");
+  assert.equal(playError(state, "a", ["step_in"]), null);
+});
+
+test("depth.json layers onto the roster without touching the base files", () => {
+  const merged = loadData({ rules: data.rules, cards: { jab: { name: "刺拳", type: "S", cost: 1 } }, fighters: { x: { deck: ["jab", "jab"] } }, depth: { cards: { jab: { follow: { opened: { crit: 0.1 } } }, feint: { type: "S", cost: 1 } }, fighters: { x: { deckSwap: [["jab", "feint"]], chase: 0.3 } } } });
+  assert.deepEqual(merged.fighters.x.deck, ["feint", "jab"]);
+  assert.equal(merged.fighters.x.chase, 0.3);
+  assert.ok(merged.cards.jab.follow && merged.cards.jab.name === "刺拳" && merged.cards.feint);
 });

@@ -6,6 +6,29 @@ const TYPES = ["S", "G", "C"];
 const MASK = (1n << 64n) - 1n;
 
 export const opposite = (side) => (side === "a" ? "b" : "a");
+
+/**
+ * Joins the base rule files with rules/depth.json, which layers cross-hand setups, abilities and tactics on top of the roster.
+ * `cards` and `fighters` entries in depth.json are merged into the base entry of the same id (or added when new);
+ * a fighter's `deckSwap` is a list of [old, new] card pairs applied to their deck.
+ */
+export function loadData({ rules, cards, fighters, depth = {} }) {
+  const merged = { rules, cards: { ...cards }, fighters: { ...fighters } };
+  for (const [id, extra] of Object.entries(depth.cards || {})) merged.cards[id] = { ...merged.cards[id], ...extra };
+  for (const [id, extra] of Object.entries(depth.fighters || {})) {
+    const base = merged.fighters[id];
+    if (!base) continue;
+    const { deckSwap = [], ...rest } = extra;
+    const deck = [...base.deck];
+    for (const [from, to] of deckSwap) {
+      const i = deck.indexOf(from);
+      if (i >= 0) deck[i] = to;
+      else deck.push(to);
+    }
+    merged.fighters[id] = { ...base, ...rest, deck };
+  }
+  return merged;
+}
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ---------- RNG (SplitMix64, same sequence as the Swift SeededRNG) ----------
@@ -52,6 +75,7 @@ export function createMatch(data, idA, idB, seed = 1, mode = "standard") {
     a: makeSide(data, idA, length.hp),
     b: makeSide(data, idB, length.hp),
     history: [],
+    pendingMarks: [], // setups earned this exchange; they take hold when it ends
     roundCards: [],
     roundScore: freshScore(),
     log: [],
@@ -75,6 +99,7 @@ function makeSide(data, id, maxHp) {
     rocked: false,
     pips: { head: 0, body: 0, legs: 0 },
     cut: 0, // bleeding level 0-3
+    marks: {}, // short-lived tags: { tag: { turns, n } }
     draw: [...f.deck],
     discard: [],
     hand: [],
@@ -143,12 +168,26 @@ export function budget(state, s) {
   if (me.stamina < e.gassedAt) b = 1;
   else if (me.stamina < e.tiredAt) b = 2;
   if (state[opposite(s)].rocked) b += e.swarmBonus;
-  return b;
+  for (const [tag, m] of Object.entries(me.marks)) {
+    const def = state.rules.tags[tag] || {};
+    b += (def.budget || 0) * (def.perStack ? m.n : 1);
+  }
+  return Math.max(1, b);
 }
 
 /** Which style table applies: the ground roles, or the outside / inside of the stand-up game. */
 export const phaseOf = (state, s) => (state.ground ? (state.ground.top === s ? "top" : "bottom") : state.dist >= 2 ? "in" : "out");
-const costOf = (state, cards) => cards.reduce((sum, c) => sum + state.cards[c].cost, 0);
+/** What a card costs this fighter right now. A leg injury (or a tag) makes steps dearer, though never beyond what they can spend. */
+export function cardCost(state, s, c) {
+  const card = state.cards[c];
+  let extra = 0;
+  if (card.move) {
+    if (state[s].pips.legs >= state.rules.debuff.threshold) extra += state.rules.debuff.legMoveCost;
+    for (const tag of Object.keys(state[s].marks)) extra += state.rules.tags[tag]?.moveCost || 0;
+  }
+  return extra ? Math.min(card.cost + extra, Math.max(card.cost, budget(state, s))) : card.cost;
+}
+const costOf = (state, cards, s) => cards.reduce((sum, c) => sum + cardCost(state, s, c), 0);
 const typeOfPlay = (state, cards) => (cards.length ? state.cards[cards[0]].type : "C");
 const clampDist = (state, d) => clamp(d, 0, state.rules.dist.names.length - 1);
 
@@ -197,7 +236,7 @@ export function playError(state, s, cards) {
     counts[c]--;
   }
   if (new Set(cards.map((c) => state.cards[c].type)).size > 1) return "mixed types";
-  if (costOf(state, cards) > budget(state, s)) return "over budget";
+  if (costOf(state, cards, s) > budget(state, s)) return "over budget";
   if (!arrange(state, cards)) return "out of range";
   return null;
 }
@@ -215,6 +254,12 @@ function tierOdds(state, s, cards) {
     const card = state.cards[c];
     bonus += card.crit || 0;
     bonus += card.quality || 0;
+    // A card that follows a setup gets its bonus when the tag from last exchange is still on.
+    for (const [tag, eff] of Object.entries(card.follow || {})) if (me.marks[tag]) bonus += (eff.crit || 0) + (eff.quality || 0);
+  }
+  for (const [tag, m] of Object.entries(me.marks)) {
+    const def = state.rules.tags[tag] || {};
+    bonus += (def.crit || 0) * (def.perStack ? m.n : 1);
   }
   return {
     crit: clamp(t.baseCrit + bonus + diff * t.critPerStat, t.minCrit, t.maxCrit),
@@ -257,7 +302,7 @@ export function previewPlay(state, s, cards) {
   const order = arrange(state, cards) || cards;
   return {
     type,
-    cost: costOf(state, cards),
+    cost: costOf(state, cards, s),
     endDist: state.ground ? null : clampDist(state, state.dist + moveOf(state, order)),
     damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1)),
     critPct: Math.round(odds.crit * 100),
@@ -304,7 +349,10 @@ export function describeCard(state, s, cardId) {
   else if (card.pullGuard) effect = "拉進地面，你在下位";
   else effect = `摔倒 → ${state.rules.positions[card.landing || 0]}`;
   if (!g && card.move && !card.moveOnly) effect += card.move > 0 ? ` · 進 ${card.move}` : ` · 退 ${-card.move}`;
-  return { action, effect, unusable: !usableAt(state, card, state.dist), rangeText: rangeText(state, card) };
+  // Setups this card lays down, and the ones it can follow (live when the tag is on).
+  const setups = (card.setup || []).map((st) => ({ tag: st.tag, label: state.rules.tags[st.tag]?.label || st.tag, when: st.when, to: st.to || "self" }));
+  const follows = Object.entries(card.follow || {}).map(([tag, eff]) => ({ tag, label: state.rules.tags[tag]?.label || tag, bonus: Math.round(((eff.crit || 0) + (eff.quality || 0)) * 100), live: Boolean(state[s].marks[tag]) }));
+  return { action, effect, cost: cardCost(state, s, cardId), unusable: !usableAt(state, card, state.dist), rangeText: rangeText(state, card), setups, follows };
 }
 
 /** "近距", "中~近距" or "" for a card that works anywhere. */
@@ -322,7 +370,7 @@ const beaterOf = (triangle, t) => TYPES.find((x) => triangle[x] === t);
 function typeAvailable(state, s, type) {
   if (type === "C") return true; // bracing is always possible
   const b = budget(state, s);
-  return state[s].hand.some((c) => state.cards[c].type === type && state.cards[c].cost <= b && usableAt(state, state.cards[c], state.dist));
+  return state[s].hand.some((c) => state.cards[c].type === type && cardCost(state, s, c) <= b && usableAt(state, state.cards[c], state.dist));
 }
 
 /** How far outside their comfortable range a fighter stands (0 when inside it). */
@@ -340,8 +388,11 @@ export function getIntent(state, s) {
   const w = { S: style.S, G: style.G, C: style.C };
   const tags = [];
 
+  // Having been fooled makes the other side read you better.
+  let readBoost = 1;
+  for (const tag of Object.keys(state[oppSide].marks)) readBoost *= state.rules.tags[tag]?.readBoost || 1;
   const recent = state.history.slice(-ai.adapt.window).map((h) => h[oppSide]);
-  for (const t of recent) w[beaterOf(state.rules.triangle, t)] += ai.adapt.perMatch;
+  for (const t of recent) w[beaterOf(state.rules.triangle, t)] += ai.adapt.perMatch * readBoost;
   if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2]) {
     w[beaterOf(state.rules.triangle, recent[recent.length - 1])] += ai.adapt.repeatBonus;
     tags.push("看穿你的習慣");
@@ -355,6 +406,13 @@ export function getIntent(state, s) {
     else if (state.dist > hi) { w.C += ai.wantOut; tags.push("想拉開距離"); }
   }
 
+  // A fighter caught out by a feint (or any tag that sharpens) shows his hand: the likely type gets likelier.
+  for (const [tag] of Object.entries(me.marks)) {
+    const def = state.rules.tags[tag];
+    if (!def?.sharpen) continue;
+    for (const t of TYPES) w[t] = w[t] ** def.sharpen;
+    tags.push(def.label);
+  }
   for (const t of TYPES) {
     if (!typeAvailable(state, s, t)) w[t] = 0;
     else w[t] = Math.max(w[t], ai.minWeight);
@@ -374,6 +432,13 @@ export function getIntent(state, s) {
   };
 }
 
+/** How much a follow-up bonus that is live right now is worth to the AI when picking cards. */
+function followValue(state, s, card) {
+  let v = 0;
+  for (const [tag, eff] of Object.entries(card.follow || {})) if (state[s].marks[tag]) v += ((eff.crit || 0) + (eff.quality || 0)) * 30;
+  return v;
+}
+
 function cardValue(state, s, cardId) {
   const card = state.cards[cardId];
   const g = state.ground;
@@ -382,11 +447,12 @@ function cardValue(state, s, cardId) {
   if (!g && card.move) step = (distGap(state, s, state.dist) - distGap(state, s, clampDist(state, state.dist + card.move))) * 3;
   if (card.moveOnly) return step > 0 ? 0.5 + step : 0;
   if (card.type === "G") {
-    let v = card.cost + (card.quality || 0) * 4 + (card.landing || 0) + step;
+    let v = card.cost + (card.quality || 0) * 4 + (card.landing || 0) + step + followValue(state, s, card);
     if (g && g.top === s && card.lockTop && g.pos >= state.rules.lock.minTopPosition) v += 3;
     return v;
   }
   let v = cardDamage(state, s, cardId) + step;
+  v += (card.setup ? 2 : 0) + followValue(state, s, card);
   if (card.type === "C" && g && g.top !== s && card.lockBottom) v += 8;
   if (card.catchShot) v += 3;
   if (card.signature) v += 10;
@@ -395,7 +461,7 @@ function cardValue(state, s, cardId) {
 
 /** Highest-value ordered set of `type` cards that can legally be thrown within `limit` energy. Empty means bracing. */
 export function bestPlay(state, s, type, limit) {
-  const hand = state[s].hand.filter((c) => state.cards[c].type === type && state.cards[c].cost <= limit && usableAt(state, state.cards[c], state.dist));
+  const hand = state[s].hand.filter((c) => state.cards[c].type === type && cardCost(state, s, c) <= limit && usableAt(state, state.cards[c], state.dist));
   let best = [];
   // A strike or grapple that was chosen is always thrown, however poor; only a defend falls back to bracing.
   let bestValue = type === "C" ? 0 : -Infinity;
@@ -406,7 +472,7 @@ export function bestPlay(state, s, type, limit) {
     const cards = [];
     for (let i = 0; i < n; i++) {
       if (!(mask & (1 << i))) continue;
-      cost += state.cards[hand[i]].cost;
+      cost += cardCost(state, s, hand[i]);
       value += cardValue(state, s, hand[i]);
       cards.push(hand[i]);
     }
@@ -436,11 +502,11 @@ export function chooseAI(state, s) {
   if (me.stamina < ai.commit.conserveAt) limit = Math.min(limit, 2);
   // Holding back never means failing to throw the type the shown odds promised: spend what the cheapest legal card costs.
   if (type !== "C") {
-    const legal = me.hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist)).map((c) => state.cards[c].cost);
+    const legal = me.hand.filter((c) => state.cards[c].type === type && usableAt(state, state.cards[c], state.dist)).map((c) => cardCost(state, s, c));
     if (legal.length) limit = Math.min(b, Math.max(limit, Math.min(...legal)));
   }
   const sig = state.fighters[me.id].signature;
-  if (me.hand.includes(sig) && state.cards[sig].type === type && state.cards[sig].cost <= b && nextUnit(state) < ai.signatureWeight + 0.4) {
+  if (me.hand.includes(sig) && state.cards[sig].type === type && cardCost(state, s, sig) <= b && nextUnit(state) < ai.signatureWeight + 0.4) {
     return { cards: [sig] };
   }
   return { cards: bestPlay(state, s, type, limit) };
@@ -462,6 +528,38 @@ function addStamina(state, s, delta) {
 function addMomentum(state, s, delta) {
   state[s].momentum = clamp(state[s].momentum + delta, 0, state.rules.match.maxMomentum);
 }
+/** A setup earned this exchange. It takes hold when the exchange ends and lasts `turns` exchanges. `stack` adds a level up to `max`. */
+function queueMark(state, side, tag, turns = 1, stack = false, max = 1) {
+  state.pendingMarks.push({ side, tag, turns, stack, max });
+}
+
+/** Setups that read "when I win the exchange" or "when my card lands". `to` says who gets the tag. */
+function queueSetups(state, side, cards, when) {
+  for (const c of cards) {
+    for (const st of state.cards[c]?.setup || []) {
+      if (st.when !== when) continue;
+      queueMark(state, st.to === "foe" ? opposite(side) : side, st.tag, st.turns || 1, st.stack, st.max);
+    }
+  }
+}
+
+/** Expired tags drop off, then the new ones take hold. Runs at the end of every exchange. */
+function settleMarks(state, events) {
+  for (const s of SIDES) {
+    for (const [tag, m] of Object.entries(state[s].marks)) {
+      m.turns -= 1;
+      if (m.turns <= 0) delete state[s].marks[tag];
+    }
+  }
+  for (const p of state.pendingMarks) {
+    const mine = state[p.side].marks;
+    if (p.stack && mine[p.tag]) mine[p.tag] = { turns: p.turns, n: Math.min(p.max || 1, mine[p.tag].n + 1) };
+    else mine[p.tag] = { turns: p.turns, n: 1 };
+    events.push({ kind: "mark", side: p.side, tag: p.tag, n: mine[p.tag].n });
+  }
+  state.pendingMarks = [];
+}
+
 function score(state, s, kind, amount) {
   state.roundScore[s][kind] += amount;
 }
@@ -516,6 +614,7 @@ function dealHit(state, att, cards, tier, mult, events) {
         return true;
       }
     }
+    if (tier !== "graze") queueSetups(state, att, [c], "hit");
     // Elbows open cuts on any clean hit; everything else needs a critical hit.
     if (target === "head" && (card.cut ? tier !== "graze" : tier === "crit") && cutOpens(state, att, def, events)) return true;
   }
@@ -573,8 +672,8 @@ function setDist(state, next, events, by) {
 }
 const shiftDist = (state, delta, events, by) => delta && setDist(state, state.dist + delta, events, by);
 
-function overcommit(state, loserCards) {
-  const extra = Math.max(0, costOf(state, loserCards) - 1);
+function overcommit(state, loserCards, loser) {
+  const extra = Math.max(0, (state.exchangeCost?.[loser] ?? costOf(state, loserCards, loser)) - 1);
   const d = state.rules.damage;
   // Getting caught on a shot hurts less than walking into a counter: the shooter is already moving under the punch.
   const rate = typeOfPlay(state, loserCards) === "G" ? d.shootOvercommit : d.overcommitPerEnergy;
@@ -628,7 +727,7 @@ function resolveStandingWin(state, w, l, plays, events) {
   const tier = rollTier(state, w, wCards);
   // Only the winner's steps happen. The loser's plan was stopped, so their steps are cancelled.
   if (type === "S") {
-    const ended = dealHit(state, w, wCards, tier, state.rules.damage.winStrikeBonus * overcommit(state, lCards), events);
+    const ended = dealHit(state, w, wCards, tier, state.rules.damage.winStrikeBonus * overcommit(state, lCards, l), events);
     if (ended) return;
     addStamina(state, l, -state.rules.stamina.whiffGrapple);
     shiftDist(state, moveOf(state, wCards), events, w);
@@ -636,7 +735,7 @@ function resolveStandingWin(state, w, l, plays, events) {
   }
   if (type === "C") {
     const lockCard = wCards.find((c) => state.cards[c].lockAnywhere);
-    const ended = dealHit(state, w, wCards, tier, state.rules.damage.counterMult * overcommit(state, lCards), events);
+    const ended = dealHit(state, w, wCards, tier, state.rules.damage.counterMult * overcommit(state, lCards, l), events);
     if (ended) return;
     shiftDist(state, moveOf(state, wCards), events, w);
     if (lockCard) {
@@ -656,7 +755,7 @@ function resolveStandingWin(state, w, l, plays, events) {
     score(state, w, "grappling", sc.exchangeWin);
     return;
   }
-  const drain = state.rules.grapple.drainOnLanding * overcommit(state, lCards);
+  const drain = state.rules.grapple.drainOnLanding * overcommit(state, lCards, l);
   const main = takers.reduce((best, c) => ((state.cards[c].landing || 0) > (state.cards[best].landing || 0) ? c : best), takers[0]);
   const card = state.cards[main];
   addStamina(state, l, -drain - (card.drain || 0));
@@ -700,7 +799,7 @@ function resolveGroundWin(state, w, l, plays, events) {
   const type = typeOfPlay(state, wCards);
   const tier = rollTier(state, w, wCards);
   const isTop = g.top === w;
-  const mult = overcommit(state, lCards);
+  const mult = overcommit(state, lCards, l);
   if (isTop) {
     if (type === "S") {
       dealHit(state, w, wCards, tier, d.winStrikeBonus * d.groundPositionMult[g.pos] * mult, events);
@@ -756,8 +855,8 @@ function resolveGroundWin(state, w, l, plays, events) {
 function resolveTrade(state, plays, events) {
   // Both land. The smaller commitment arrives first, and a rocking shot weakens the reply.
   const d = state.rules.damage;
-  const costA = costOf(state, plays.a);
-  const costB = costOf(state, plays.b);
+  const costA = state.exchangeCost.a;
+  const costB = state.exchangeCost.b;
   let first = "a";
   if (costB < costA) first = "b";
   else if (costB === costA && state.b.attrs.accuracy > state.a.attrs.accuracy) first = "b";
@@ -839,15 +938,16 @@ export function resolveExchange(state, playA, playB) {
   const groundBefore = state.ground ? { ...state.ground } : null;
   const staminaCost = state.rules.stamina.perEnergy;
   const momentum = state.rules.momentum;
+  state.exchangeCost = { a: costOf(state, plays.a, "a"), b: costOf(state, plays.b, "b") }; // priced before the blows change anything
 
   for (const s of SIDES) {
-    addStamina(state, s, -costOf(state, plays[s]) * staminaCost);
+    addStamina(state, s, -state.exchangeCost[s] * staminaCost);
     if (plays[s].some((c) => state.cards[c].signature)) {
       addMomentum(state, s, -momentum.signatureCost);
       events.push({ kind: "signature", side: s, name: state.cards[plays[s][0]].name });
     }
   }
-  events.unshift({ kind: "reveal", a: plays.a, b: plays.b, types, winner, ground: groundBefore, dist: state.dist });
+  events.unshift({ kind: "reveal", a: plays.a, b: plays.b, types, winner, ground: groundBefore, dist: state.dist, cost: { ...state.exchangeCost } });
 
   if (winner) {
     const l = opposite(winner);
@@ -855,6 +955,7 @@ export function resolveExchange(state, playA, playB) {
     addMomentum(state, l, momentum.lose);
     score(state, winner, types[winner] === "G" ? "grappling" : "striking", state.rules.score.exchangeWin);
     events.push({ kind: "verdict", winner, type: types[winner], text: winnerText(state, types[winner], types[l], state.ground, winner, plays[winner]) });
+    queueSetups(state, winner, plays[winner], "win");
   } else {
     events.push({ kind: "verdict", winner: null, type: types.a, text: types.a === "S" ? "對轟" : types.a === "G" ? "互相扭抱" : "誰都不動" });
   }
@@ -867,6 +968,13 @@ export function resolveExchange(state, playA, playB) {
   else if (types.a === "G") resolveScramble(state, events);
   else resolveStandoff(state, plays, events);
 
+  const onClinch = state.rules.setups?.clinch;
+  if (onClinch) {
+    for (const e of events) {
+      const side = e.kind === "clinch" ? e.side : e.kind === "scramble" ? e.winner : null;
+      if (side) queueMark(state, side, onClinch.tag, onClinch.turns || 1);
+    }
+  }
   if (types.a !== "C" || types.b !== "C") state.stall = 0;
 
   state.history.push(types);
@@ -876,6 +984,7 @@ export function resolveExchange(state, playA, playB) {
 
 function endExchange(state, plays, types, wasRocked, events) {
   if (state.over) return;
+  settleMarks(state, events);
   const st = state.rules.stamina;
   for (const s of SIDES) {
     const me = state[s];
@@ -911,6 +1020,7 @@ function endRound(state, events) {
   state.roundCards.push({ round: state.round, judges });
   events.push({ kind: "roundEnd", round: state.round, judges });
   state.roundScore = freshScore();
+  for (const side of SIDES) state[side].marks = {};
   state.a.rocked = false;
   state.b.rocked = false;
   // The cutman works on the cut between rounds.

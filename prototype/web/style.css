@@ -27,9 +27,11 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .panel.mirror { flex-direction: row-reverse; }
 .portrait { width: 38px; height: 38px; flex: none; border-radius: 4px; background: #1b2030; image-rendering: pixelated; object-fit: cover; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; }
 .stats { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.nameline { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; line-height: 1.1; }
+.nameline { display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 12px; font-weight: 800; line-height: 1.1; }
 .mirror .nameline { flex-direction: row-reverse; }
-.nameline .tag { font-size: 10px; font-weight: 800; padding: 0 4px; border-radius: 3px; background: #ff7a1a; color: #000; }
+.nameline .tag { flex: none; font-size: 10px; font-weight: 800; padding: 0 4px; border-radius: 3px; background: #ff7a1a; color: #000; }
+.nameline .tag.mk { background: #9be7ff; color: #00212b; }
+.nameline .tag.leg { background: #ff9f43; color: #000; }
 .nameline .tag.bleed { background: #c1121f; color: #fff; }
 .nameline .pips { margin-left: auto; font-size: 9px; color: var(--dim); display: flex; gap: 4px; font-weight: 600; }
 .mirror .nameline .pips { margin-left: 0; margin-right: auto; }
@@ -107,6 +109,9 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .card .cost { font-size: 11px; letter-spacing: -1px; color: var(--gold); text-shadow: 0 1px 0 rgba(0,0,0,0.6); }
 .card .nm { font-size: 14px; font-weight: 800; padding: 3px 5px 0; line-height: 1.15; }
 .card .fx { font-size: 12px; padding: 2px 5px 0; color: #e8e8ee; font-weight: 600; line-height: 1.15; }
+.card .lk { position: absolute; left: 5px; bottom: 15px; font-size: 10px; font-weight: 800; color: rgba(255,255,255,0.45); line-height: 1.1; }
+.card .lk.live { color: #04120a; background: #5be49b; border-radius: 3px; padding: 0 4px; left: 4px; }
+.card .lk.set { color: #c9a8ff; }
 .card .rng { position: absolute; bottom: 2px; left: 5px; right: 4px; font-size: 10px; font-weight: 700; color: var(--dim); display: flex; justify-content: space-between; }
 .card .rng .bad { color: #ff9f43; }
 .card.sel { transform: translateY(-12px); box-shadow: 0 0 0 2px #fff, 0 6px 14px rgba(0,0,0,0.6); }

@@ -5,11 +5,11 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, bestPlay, budget, nextUnit, opposite, checkInvariants, usableAt, arrange } from "./engine.js";
+import { loadData, cardCost, createMatch, resolveExchange, applyCorner, chooseAI, chooseCorner, getIntent, bestPlay, budget, nextUnit, opposite, checkInvariants, usableAt, arrange } from "./engine.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(here, "rules", name), "utf8"));
-export const data = { rules: load("rules.json"), cards: load("cards.json"), fighters: load("fighters.json") };
+export const data = loadData({ rules: load("rules.json"), cards: load("cards.json"), fighters: load("fighters.json"), depth: load("depth.json") });
 
 const TYPES = ["S", "G", "C"];
 const ARGS = process.argv.slice(2);
@@ -24,9 +24,9 @@ function randomPlay(state, s) {
   const cards = [];
   let left = b;
   for (const c of pool) {
-    if (state.cards[c].cost <= left && nextUnit(state) < 0.5) {
+    if (cardCost(state, s, c) <= left && nextUnit(state) < 0.5) {
       cards.push(c);
-      left -= state.cards[c].cost;
+      left -= cardCost(state, s, c);
     }
   }
   return arrange(state, cards) || [];
@@ -72,7 +72,7 @@ function reader(state, s) {
     else if (state[s].stamina < 50) limit = Math.min(limit, 2);
   }
   const sig = state.fighters[state[s].id].signature;
-  if (state[s].hand.includes(sig) && state.cards[sig].type === bestType && state.cards[sig].cost <= b) return [sig];
+  if (state[s].hand.includes(sig) && state.cards[sig].type === bestType && cardCost(state, s, sig) <= b) return [sig];
   return bestPlay(state, s, bestType, limit);
 }
 

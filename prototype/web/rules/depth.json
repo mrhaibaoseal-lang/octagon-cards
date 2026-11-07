@@ -1,0 +1,32 @@
+{
+  "cards": {
+    "jab": {"setup": [{"tag": "opened", "when": "hit"}]},
+    "step_jab": {"setup": [{"tag": "opened", "when": "hit"}]},
+    "cross": {"follow": {"opened": {"crit": 0.2}}},
+    "left_hand": {"follow": {"opened": {"crit": 0.2}}},
+    "overhand": {"follow": {"opened": {"crit": 0.2}}},
+    "superman": {"follow": {"opened": {"crit": 0.15}}},
+    "head_kick": {"follow": {"opened": {"crit": 0.2}, "winded": {"crit": 0.15}}},
+    "uppercut": {"follow": {"opened": {"crit": 0.12}, "winded": {"crit": 0.15}, "tied": {"crit": 0.12}}},
+    "lead_hook": {"follow": {"winded": {"crit": 0.15}}},
+    "counter_hook": {"follow": {"winded": {"crit": 0.12}}},
+    "body_hook": {"setup": [{"tag": "winded", "when": "hit"}], "follow": {"tied": {"crit": 0.1}}},
+    "body_kick": {"setup": [{"tag": "winded", "when": "hit"}]},
+    "spin_kick": {"setup": [{"tag": "winded", "when": "hit"}]},
+    "knee": {"setup": [{"tag": "winded", "when": "hit"}], "follow": {"tied": {"crit": 0.12}}},
+    "elbow": {"follow": {"tied": {"crit": 0.12}}},
+    "spin_elbow": {"follow": {"tied": {"crit": 0.12}}},
+    "dirty_box": {"follow": {"tied": {"crit": 0.12}}},
+    "single_leg": {"follow": {"tied": {"quality": 0.1}}},
+    "double_leg": {"follow": {"tied": {"quality": 0.1}}},
+    "cage_trip": {"follow": {"tied": {"quality": 0.1}}},
+    "slam": {"follow": {"tied": {"quality": 0.1}}},
+    "feint": {"name": "假動作", "type": "S", "cost": 1, "power": 3, "range": [0, 2], "target": "head", "crit": 0, "setup": [{"tag": "fooled", "when": "win", "to": "foe"}]}
+  },
+  "fighters": {
+    "mcgregor": {"deckSwap": [["jab", "feint"]]},
+    "adesanya": {"deckSwap": [["jab", "feint"]]},
+    "sandhagen": {"deckSwap": [["jab", "feint"]]},
+    "holloway": {"deckSwap": [["jab", "feint"]]}
+  }
+}
