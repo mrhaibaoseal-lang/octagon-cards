@@ -64,6 +64,15 @@ uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.p
 ## 裝備上不要有字（2026-11-07 試過）
 手套與腰帶上的 UFC 字樣，AI 會隨手臂轉向而鏡像、顛倒或變成亂碼（六格只有出拳那格正常），遊戲尺寸下也看不清。**決定：全表無字、無商標**，手套純黑，不要在裝備上畫字。生圖後仍要逐格看有沒有偷偷長出字。
 
+## 頭像（選角畫面）
+改用官網去背大頭照像素化，不再從姿勢表裁。來源：`https://ufc.com/images/<年-月>/<姓>_<名>_<月-日>.png`（選手頁的 og:image，去背、正面），存到 `prototype/web/assets/private/_source/`（被 gitignore，不進 repo、不上傳）。轉換：
+
+```bash
+uv run --no-project --with pillow --with numpy python -I pipeline/portrait.py --photo prototype/web/assets/private/_source/<選手>_ufc.png --fighter <選手> --out prototype/web/assets/private --colors 24 --side 0.65 --contrast 1.1 --saturation 1.05
+```
+
+對比、飽和度調高會變橘色刺眼，維持 1.1 左右。原本從姿勢表裁的頭像舊檔留在 `_source/`。
+
 ## 還沒解決
 - **地面姿勢**：現在用「抱摔」疊在「倒地」上。上位與下位的專屬姿勢，要等 6 姿勢通過後再加一張表。
 - **補間影格**：目前兩個姿勢之間直接切換，加上位移和閃白。如果覺得太硬，再試生成中間動作。
