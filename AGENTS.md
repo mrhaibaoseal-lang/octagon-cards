@@ -44,5 +44,5 @@
 ## 5. 分工（2026-11-08 使用者決定）
 - **Gemini 3.8 Flash 負責所有 3D／像素角色美術**：`pipeline/model3d/` 的流程、Gemini 生圖、白模與頭身比、精靈圖渲染、特效與地面雙人姿勢。待辦在 `docs/TASKS.md`「美術待辦」，做法與踩過的坑在 `pipeline/model3d/README.md`。
 - **Claude 只做遊戲面的策劃與實作**：戰鬥規則、數值、AI、模擬、`prototype/web/` 的玩法與介面、`docs/GAME_DESIGN.md`。不改 `pipeline/model3d/`，也不替美術重畫或調白模。
-- **兩邊交界**：精靈圖接進 `stage.js`，由使用者指定誰做；沒指定前兩邊都不動。`game.js`、`stage.js` 若有別人未 commit 的修改，不要動、不要提交。
+- **兩邊交界**：精靈圖接進 `stage.js` 由 Gemini 做（使用者 2026-11-08 指定）；Claude 不改 `stage.js`，遊戲面需要畫面配合時寫進「美術待辦」。`game.js`、`stage.js` 若有別人未 commit 的修改，不要動、不要提交。
 - 美術要改規格（`docs/ART_SPEC.md`、RULES 的美術段）先讓使用者確認；遊戲規則要改美術需求（例如新增招式需要新姿勢）寫進「美術待辦」，不要直接動手。
