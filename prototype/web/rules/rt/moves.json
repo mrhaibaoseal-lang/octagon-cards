@@ -1,0 +1,123 @@
+{
+ "_doc": "站立招式。kind punch/kick；at head/body/legs；startup/active/recovery 為 tick；reach＝打得到的最遠距離；advance＝出招時往前踏的距離；stun＝打中後對手僵直 tick；blockstun＝被擋時僵直；cost 體力；whiffExtra 打空多出的收招；drain 打中時削對手體力；legs 腿傷。引擎只認欄位，不認招名。",
+ "jab": {
+  "name": "刺拳",
+  "key": "J",
+  "kind": "punch",
+  "at": "head",
+  "startup": 7,
+  "active": 3,
+  "recovery": 10,
+  "reach": 128,
+  "advance": 8,
+  "dmg": 2,
+  "stun": 13,
+  "blockstun": 6,
+  "cost": 4,
+  "whiffExtra": 0
+ },
+ "cross": {
+  "name": "直拳",
+  "key": "K",
+  "kind": "punch",
+  "at": "head",
+  "startup": 14,
+  "active": 3,
+  "recovery": 15,
+  "reach": 122,
+  "advance": 10,
+  "dmg": 5,
+  "stun": 18,
+  "blockstun": 9,
+  "cost": 8,
+  "whiffExtra": 6
+ },
+ "hook": {
+  "name": "鉤拳",
+  "key": "L",
+  "kind": "punch",
+  "at": "head",
+  "startup": 19,
+  "active": 4,
+  "recovery": 18,
+  "reach": 92,
+  "advance": 4,
+  "dmg": 8,
+  "stun": 22,
+  "blockstun": 10,
+  "cost": 10,
+  "whiffExtra": 10
+ },
+ "body": {
+  "name": "打身",
+  "key": "U",
+  "kind": "punch",
+  "at": "body",
+  "startup": 16,
+  "active": 4,
+  "recovery": 16,
+  "reach": 100,
+  "advance": 6,
+  "dmg": 4,
+  "stun": 16,
+  "blockstun": 8,
+  "cost": 9,
+  "whiffExtra": 6,
+  "drain": 14
+ },
+ "lowkick": {
+  "name": "低踢",
+  "key": "I",
+  "kind": "kick",
+  "at": "legs",
+  "startup": 17,
+  "active": 4,
+  "recovery": 17,
+  "reach": 145,
+  "advance": 0,
+  "dmg": 3,
+  "stun": 12,
+  "blockstun": 8,
+  "cost": 8,
+  "whiffExtra": 6,
+  "legs": 1
+ },
+ "headkick": {
+  "name": "高踢",
+  "key": "O",
+  "kind": "kick",
+  "at": "head",
+  "startup": 30,
+  "active": 5,
+  "recovery": 24,
+  "reach": 155,
+  "advance": 0,
+  "dmg": 14,
+  "stun": 30,
+  "blockstun": 14,
+  "cost": 16,
+  "whiffExtra": 12
+ },
+ "_special": {
+  "slip": {
+   "name": "閃躲",
+   "key": "Shift",
+   "total": 20,
+   "dodgeFrom": 2,
+   "dodgeTo": 13,
+   "doc": "躲開打頭的拳（不躲踢、不躲打身）；躲成功後一小段時間內出招打中算反擊"
+  },
+  "feint": {
+   "name": "假動作",
+   "key": "F",
+   "total": 12,
+   "looksLike": "cross",
+   "doc": "前段看起來和直拳一樣，不打人、不花體力"
+  },
+  "guard": {
+   "name": "架高",
+   "key": "Space",
+   "doc": "按住：打頭的拳腳只吃一小部分；打身、低踢照樣吃"
+  }
+ }
+}

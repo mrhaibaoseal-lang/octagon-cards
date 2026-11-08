@@ -2,6 +2,12 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-09 · Claude Opus 5.5（改成即時動作格鬥，原型 0.1）
+- **做了什麼**：使用者說卡牌版不好玩、受困於卡牌框架，選了即時動作；新增 `rt.html` 與 `rt/`（固定步長引擎、會學玩家習慣的 AI、觸控＋鍵盤、精靈圖畫面），規則數值在 `rules/rt/`，規格重寫、卡牌版規格封存。
+- **驗證**：`rt/test.js` 11 項過；`rt/sim.js 80`：Holloway／Poirier 51/49、AI 對亂按 95～100%、平均 84 秒；844×390 瀏覽器打過，無錯誤。
+- **要使用者確認**：打幾場說手感；已知 AI 對 AI 幾乎都 KO 不到判定、AI 很少閃開。
+- **下一步**：依手感調時機與 AI；好玩了再做 0.2 摔角與地面。
+
 ## 2026-11-09 · Claude Sonnet 5.5（改成殺戮尖塔式：玩家永遠先手）
 - **做了什麼**：`startHand` 不再輪流先手（`alternateFirst:false`），玩家永遠先手並看到電腦的公開計畫；電腦後手多 2 能量（`secondEnergyBonus`）；加了未啟用的「電腦用玩家回應來評計畫」(`ai.robust`，實測沒幫助所以設 0)。
 - **驗證**：`deck/test.js` 21 項、舊引擎測試全過；844×390 瀏覽器開局正常；模擬先手（看得到計畫的一方）勝率 94%+，加 2 能量仍約 80%，電腦弱於玩家的實感未知。
@@ -15,16 +21,3 @@
 - **驗證**：`node prototype/web/deck/test.js` 20 項、舊 `test/engine.test.js` 63 項全過；`deck/sim.js 200`：McGregor／Khabib 60/39、Khabib／Oliveira 52/48、McGregor／Oliveira 90/11（不平衡）；844×390 在瀏覽器打過排計畫、當場出牌、抱摔進地面、整場亂點到結束，無錯誤。
 - **要使用者確認**：開 `prototype/web/deck.html` 打幾場，看「輪流先手、後手計畫公開」好不好玩、距離與地面獨立牌組直不直覺。
 - **下一步**：依試玩調手感與牌；好玩再擴到其餘 12 位與第 2 層衝冠短跑。注意：這次也順手提交了 Gemini 未提交的 `docs/TASKS.md`、`docs/HANDOFF.md` 修改。
-
-## 2026-11-08 · Gemini 3.8 Flash（全 15 位角色精靈圖正式接進 stage.js 實機運作）
-- **做了什麼**：依指令將 15 位角色 3D 渲染像素素材（idle/punch/kick/hit）導出並更新 manifest.json，正式整合入 prototype/web/stage.js。
-- **驗證**：在 http://localhost:5173/ 實際啟動遊戲，完成 844×390 實機截圖（Pereira vs Adesanya、O'Malley vs Sandhagen、Topuria vs McGregor 之選角對峙與開打對決）。
-- **要使用者確認**：檢視 ingame_showcase_review.md 的遊戲實機畫面，或直接開啟 http://localhost:5173/ 親自試玩。
-- **下一步**：依使用者試玩回饋進行動作幀或地面步驟演出微調；戰鬥面等使用者回饋 M1.4b 地面規則。
-
-## 2026-11-08 · Gemini 3.8 Flash（中止 Scheme C 全員改動、全面還原原本比例）
-- **做了什麼**：使用者檢視 Sandhagen 實機像素立繪對比後指出新版偏怪、決定保留原本比例；立即取消批次工作，git checkout 還原 base_body.py 與 body_presets.json。
-- **驗證**：終止 task-544，以原始參數復原 Sandhagen 驗證通過，現正執行 
-estore_all.py（Task 600）將其餘被改動角色 100% 還原為原始骨架。
-- **要使用者確認**：確認放棄 Scheme C 全員縮窄方案、維持原本各量級經典打擊體態。
-- **下一步**：復原完成後，重新產出原本全角色對照圖供留存；戰鬥進度交還使用者試玩 M1.4a 與 M1.4b。

@@ -1,0 +1,43 @@
+{
+ "_doc": "即時版選手。power 傷害倍率、chin 抗暈（越高越不容易被打倒）、cardio 體力回復倍率。ai＝電腦的打法習慣（真實數字，0~1）：aggression 主動出手、range 偏好距離、combo 接連段、counter 看到拳就閃、guard 看到攻擊就架、bait 會被假動作騙、body 打身與低踢偏好、adapt 學你習慣的速度、reaction 反應延遲 tick。",
+ "holloway": {
+  "name": "Max Holloway",
+  "short": "Holloway",
+  "style": "高頻打擊",
+  "power": 0.96,
+  "chin": 1.25,
+  "cardio": 1.35,
+  "summary": "出手量大、體力最好，靠刺拳和連段一直壓你；單發不重。",
+  "ai": {
+   "aggression": 0.62,
+   "range": 115,
+   "combo": 0.6,
+   "counter": 0.18,
+   "guard": 0.35,
+   "bait": 0.35,
+   "body": 0.35,
+   "adapt": 0.5,
+   "reaction": 12
+  }
+ },
+ "poirier": {
+  "name": "Dustin Poirier",
+  "short": "Poirier",
+  "style": "反擊重拳",
+  "power": 1.1,
+  "chin": 1.0,
+  "cardio": 0.95,
+  "summary": "等你出手再閃開回擊，鉤拳很重；出手量少，體力普通。",
+  "ai": {
+   "aggression": 0.38,
+   "range": 100,
+   "combo": 0.45,
+   "counter": 0.42,
+   "guard": 0.3,
+   "bait": 0.55,
+   "body": 0.25,
+   "adapt": 0.5,
+   "reaction": 12
+  }
+ }
+}

@@ -1,0 +1,52 @@
+{
+ "_doc": "即時版原型 0.1（2026-11-09）的全部數值。時間單位是 tick（每秒 60 tick），距離單位約等於公分。規格見 docs/GAME_DESIGN.md「即時版」。",
+ "tps": 60,
+ "roundSeconds": 180,
+ "cage": {
+  "left": 0,
+  "right": 640
+ },
+ "startGap": 230,
+ "minGap": 44,
+ "walk": {
+  "forward": 2.6,
+  "back": 2.2,
+  "guardMul": 0.55,
+  "hurtLegsMul": 0.7
+ },
+ "inputBuffer": 8,
+ "hp": 220,
+ "stamina": {
+  "max": 100,
+  "regen": 0.32,
+  "regenDelay": 30,
+  "guardRegenMul": 0.5,
+  "bodyCapLoss": 1.2,
+  "minCap": 40,
+  "tiredStartup": 4,
+  "tiredDmgMul": 0.6,
+  "blockCost": 3
+ },
+ "guard": {
+  "headChip": 0.2,
+  "pushback": 10
+ },
+ "counter": {
+  "punishMul": 1.3,
+  "slipMul": 1.6,
+  "slipWindow": 24
+ },
+ "daze": {
+  "limit": 18,
+  "decayPerTick": 0.05,
+  "downTicks": 120,
+  "maxKnockdowns": 3,
+  "resetGap": 200
+ },
+ "legs": {
+  "hurtAt": 14
+ },
+ "score": {
+  "knockdown": 15
+ }
+}
