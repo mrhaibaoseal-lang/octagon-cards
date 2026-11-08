@@ -287,3 +287,143 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 #resist .needle { position: absolute; top: -2px; bottom: -2px; width: 5px; margin-left: -2px; background: #fff; border-radius: 2px; box-shadow: 0 0 6px #fff; }
 #resist .hit { margin-top: 8px; width: 100%; background: var(--gold); color: #000; border-radius: 8px; font-size: 18px; font-weight: 900; padding: 8px 0; }
 #resist .res { margin-top: 8px; font-size: 20px; font-weight: 900; min-height: 26px; }
+
+
+/* ---------- M1.4a: stand-up footwork, leading and responding ---------- */
+.bg-high { background: var(--s); } .bg-mid { background: #e07a1f; } .bg-low { background: #b8941a; } .bg-grab { background: var(--g); } .bg-feint { background: #6b7288; }
+#nameline-lead, .nameline .tag.lead { background: #5be49b; color: #041b0f; }
+.nameline .tag.edge { background: rgba(245, 197, 66, 0.3); color: var(--gold); }
+#intent .kind { display: block; text-align: right; font-size: 9px; font-weight: 800; color: var(--dim); text-shadow: 0 1px 2px #000; margin-bottom: 1px; }
+#intent .bar3.covered { background: rgba(9, 11, 17, 0.7); }
+#intent .cover-note { flex: 1; font-size: 10px; color: var(--dim); font-weight: 700; }
+#tray { --hand-h: 98px; }
+
+/* Footwork choice */
+#fwpanel { position: absolute; left: 0; right: 126px; bottom: 0; height: 104px; display: flex; flex-direction: column; gap: 3px; }
+.fwchips { display: flex; gap: 4px; height: 46px; flex: none; }
+.fwhint { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--dim); background: rgba(9, 11, 17, 0.6); border-radius: 6px; }
+.fwchip { flex: 1; min-width: 0; background: rgba(9, 11, 17, 0.86); border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: 6px; padding: 2px 5px; overflow: hidden; }
+.fwchip b { display: block; font-size: 12px; font-weight: 900; line-height: 1.2; }
+.fwchip span { display: block; font-size: 9.5px; font-weight: 600; color: #cfd6e6; line-height: 1.15; }
+.fwbtns { display: flex; gap: 5px; flex: 1; min-height: 0; }
+.fwbtn { flex: 1; min-width: 0; position: relative; background: #1b2132; border: 2px solid var(--c); border-radius: 8px; padding: 3px 4px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
+.fwbtn b { font-size: 16px; font-weight: 900; line-height: 1.1; }
+.fwbtn small { font-size: 9.5px; font-weight: 600; color: #cfd6e6; line-height: 1.15; }
+.fwbtn i { font-style: normal; font-size: 9.5px; font-weight: 800; color: var(--gold); line-height: 1.1; }
+.fwbtn.sel { background: color-mix(in srgb, var(--c) 30%, #1b2132); box-shadow: 0 0 0 2px #fff; }
+.fwbtn.dim { opacity: 0.35; }
+
+/* Leading: a row of small move tiles and the combo bar */
+#hand.tiles { gap: 3px; right: 126px; --hand-h: 86px; }
+.tile { position: relative; flex: 1; min-width: 0; max-width: 72px; height: 86px; background: #171b28; border: 2px solid var(--line); border-radius: 6px; padding: 0; overflow: hidden; text-align: left; display: flex; flex-direction: column; transition: transform 0.12s, opacity 0.12s, box-shadow 0.12s; }
+.tile .th { display: flex; justify-content: space-between; align-items: center; padding: 1px 4px; font-weight: 900; color: #fff; }
+.tile .hb { font-size: 13px; line-height: 1.1; }
+.tile .sp { font-size: 10px; opacity: 0.95; }
+.tile .tn { font-size: 12px; font-weight: 800; padding: 2px 4px 0; line-height: 1.15; }
+.tile .tf { font-size: 10.5px; font-weight: 600; padding: 1px 4px 0; color: #e8e8ee; line-height: 1.15; }
+.tile .lk { position: static; margin: 1px 4px 0; font-size: 9px; font-weight: 800; color: rgba(255, 255, 255, 0.5); line-height: 1.1; white-space: nowrap; overflow: hidden; }
+.tile .lk.live { color: #04120a; background: #5be49b; border-radius: 3px; padding: 0 3px; left: auto; }
+.tile .lk.set { color: #c9a8ff; }
+.tile .tr { margin: auto 4px 11px; display: flex; justify-content: space-between; font-size: 9px; font-weight: 700; color: var(--dim); white-space: nowrap; }
+.tile .tr .bad { color: #ff9f43; }
+.tile .seen, .tile .quick { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; font-size: 8.5px; font-weight: 800; line-height: 10px; }
+.tile .seen { background: rgba(255, 159, 67, 0.9); color: #000; }
+.tile .quick { background: rgba(91, 228, 155, 0.2); color: #5be49b; }
+.tile.sel { transform: translateY(-10px); box-shadow: 0 0 0 2px #fff, 0 6px 12px rgba(0, 0, 0, 0.6); }
+.tile.dim { opacity: 0.34; }
+.tile.far .tn { color: rgba(255, 255, 255, 0.55); }
+.tile.signature { border-color: var(--gold); box-shadow: 0 0 10px rgba(245, 197, 66, 0.7); }
+.tile.deny { animation: deny 0.22s; }
+#combo { position: absolute; left: 0; right: 126px; bottom: 92px; display: flex; align-items: center; gap: 4px; height: 22px; font-size: 11px; font-weight: 700; }
+#combo .lbl { font-size: 11px; font-weight: 800; color: var(--gold); background: var(--panel); border-radius: 5px; padding: 0 6px; line-height: 20px; }
+#combo i { font-style: normal; color: var(--dim); }
+#combo .slot { min-width: 54px; height: 20px; padding: 0 6px; border-radius: 5px; border: 1px dashed rgba(255, 255, 255, 0.3); color: var(--dim); text-align: center; line-height: 18px; font-size: 11px; }
+#combo .slot.full { border: 1px solid #fff; background: rgba(255, 255, 255, 0.16); color: #fff; font-weight: 800; }
+#choice .bad { color: #ff9f43; }
+
+/* Responding */
+#bets { position: absolute; left: 0; right: 126px; bottom: 0; height: 44px; display: flex; gap: 3px; }
+.bet { flex: 1; min-width: 0; background: #1e2536; border: 1px solid var(--line); border-radius: 6px; padding: 1px 2px; text-align: center; display: flex; flex-direction: column; justify-content: center; }
+.bet b { font-size: 14px; font-weight: 900; }
+.bet small { font-size: 8.5px; font-weight: 600; color: var(--dim); line-height: 1.15; }
+.bet.sel { border: 2px solid #fff; background: rgba(245, 197, 66, 0.2); }
+.bet.dim { opacity: 0.35; }
+#counterpick { position: absolute; left: 0; right: 126px; bottom: 48px; display: flex; gap: 4px; align-items: center; height: 36px; flex-wrap: nowrap; overflow: hidden; }
+#counterpick .lbl { font-size: 11px; font-weight: 800; color: var(--gold); background: var(--panel); border-radius: 5px; padding: 0 6px; line-height: 20px; flex: none; }
+.chip { flex: none; min-width: 58px; height: 34px; background: #1e2536; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; font-weight: 800; padding: 0 6px; line-height: 1.1; }
+.chip small { display: block; font-size: 9px; font-weight: 600; color: var(--dim); }
+.chip.sel { border: 2px solid #fff; background: rgba(245, 197, 66, 0.22); }
+#pass { height: 28px; background: #1e2536; border: 1px solid var(--line); border-radius: 7px; font-size: 13px; font-weight: 800; }
+.flip.reply .head { color: #fff; }
+.flip .body small { font-size: 10px; font-weight: 600; color: var(--dim); }
+#actions { gap: 4px; }
+#reveal .flip { width: 128px; }
+#reveal .flip .body { min-height: 32px; }
+
+#tray[data-mode="footwork"] #choice { bottom: 110px; }
+#tray[data-mode="lead"] #choice { bottom: 116px; max-width: 700px; }
+#tray[data-mode="respond"] #choice { bottom: 52px; max-width: 700px; }
+#tray[data-mode="respond"][data-pick="1"] #choice { bottom: 90px; }
+
+/* An empty hand row must not sit on top of the footwork and response buttons. */
+#hand:empty { display: none; }
+#tray > * { pointer-events: none; }
+#tray button, #tray #actions { pointer-events: auto; }
+
+/* The name row: the name and the pips never get pushed out; tags give way (they scroll off the right) instead. */
+.nameline .nm { flex: none; }
+.nameline .tags { flex: 1 1 0; min-width: 0; display: flex; gap: 3px; overflow: hidden; align-items: center; }
+.mirror .nameline .tags { flex-direction: row-reverse; }
+.nameline .tags .tag { flex: none; }
+.nameline .pips { flex: none; margin-left: 0; }
+.mirror .nameline .pips { margin-right: 0; }
+
+/* Cards turning over: small, and clear of the fighters' heads. */
+#reveal { top: 62px; gap: 70px; }
+#reveal .flip { width: 100px; }
+#reveal .flip .head { font-size: 12px; padding: 1px 2px; }
+#reveal .flip .body { font-size: 12px; padding: 2px 3px; min-height: 0; line-height: 1.2; }
+#reveal .flip .who { font-size: 9px; padding-bottom: 1px; }
+#reveal .flip .body small { font-size: 9px; }
+
+/* ---------- Readability pass (2026-11-08) ---------- */
+/* Footwork: four plain buttons; the outcomes sit under his tendency bar. */
+#fwpanel { height: 52px; }
+.fwbtns { height: 52px; }
+.fwbtn { padding: 2px 4px; gap: 2px; }
+.fwbtn b { font-size: 18px; }
+.fwbtn i { font-size: 11px; }
+#tray[data-mode="footwork"] #choice { bottom: 60px; }
+#fwpreview { position: absolute; top: 92px; right: 6px; width: 354px; background: rgba(9, 11, 17, 0.88); border: 1px solid var(--line); border-radius: 6px; padding: 4px 5px; }
+#fwpreview .pvtitle { font-size: 11px; font-weight: 800; color: var(--gold); margin-bottom: 3px; }
+#fwpreview .pvgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.pvcell { border-left: 3px solid var(--c); background: rgba(255, 255, 255, 0.05); border-radius: 3px; padding: 2px 5px; }
+.pvcell b { display: flex; justify-content: space-between; font-size: 12px; font-weight: 900; }
+.pvcell b em { font-style: normal; color: var(--gold); }
+.pvcell span { display: block; font-size: 10.5px; font-weight: 600; color: #d8deeb; line-height: 1.3; }
+
+/* Move tiles: height and speed on top, the name, one number. */
+#hand.tiles { --hand-h: 66px; height: 66px; gap: 4px; }
+.tile { height: 66px; max-width: 76px; justify-content: flex-start; }
+.tile .th { padding: 2px 5px 0; }
+.tile .hb { font-size: 13px; }
+.tile .sp { font-size: 11px; font-weight: 900; border-radius: 3px; padding: 0 4px; line-height: 15px; }
+.tile .sp.fast { background: rgba(0, 0, 0, 0.35); color: #9ff0c4; }
+.tile .sp.slow { background: #ff9f43; color: #000; }
+.tile .tn { font-size: 13px; padding: 3px 5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .tf { font-size: 15px; font-weight: 900; color: var(--gold); padding: 1px 5px 0; }
+.tile .tf .bad { font-size: 12px; color: #ff9f43; }
+.tile .live { position: absolute; right: 3px; bottom: 3px; font-style: normal; font-size: 9px; font-weight: 900; background: #5be49b; color: #04120a; border-radius: 3px; padding: 0 3px; }
+#combo { bottom: 72px; }
+#tray[data-mode="lead"] #choice { bottom: 98px; line-height: 1.45; }
+#choice .good, #last .good { color: #5be49b; }
+#last .bad { color: #ff7b7f; }
+
+/* The hand log: every step stays readable on the left. */
+#last { width: 214px; max-height: 200px; overflow: hidden; color: #e8ecf5; background: rgba(9, 11, 17, 0.82); border: 1px solid var(--line); line-height: 1.35; padding: 4px 7px; }
+#last .lt { font-size: 10px; font-weight: 800; color: var(--gold); margin-bottom: 1px; }
+#last div { font-size: 11px; }
+#last div.sub { padding-left: 14px; color: #c6cede; }
+#last b { color: #fff; }
+
+#fwpreview { top: 104px; }

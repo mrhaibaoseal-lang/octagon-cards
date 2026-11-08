@@ -1,136 +1,1136 @@
 {
   "version": 1,
   "match": {
-    "handSize": 5, "maxStamina": 100, "maxMomentum": 100,
-    "finalExchange": { "energyBonus": 1, "scoreMult": 1.5 },
+    "handSize": 4,
+    "maxStamina": 100,
+    "maxMomentum": 100,
+    "finalExchange": {
+      "energyBonus": 1,
+      "scoreMult": 1.5
+    },
     "modes": {
-      "standard": { "label": "一般賽", "rounds": 3, "exchanges": 10, "hp": 190, "desc": "3 回合 × 10 手" },
-      "main": { "label": "主賽", "rounds": 5, "exchanges": 8, "hp": 250, "desc": "5 回合 × 8 手" }
-    }
+      "standard": {
+        "label": "一般賽",
+        "rounds": 3,
+        "exchanges": 10,
+        "hp": 190,
+        "desc": "3 回合 × 10 手"
+      },
+      "main": {
+        "label": "主賽",
+        "rounds": 5,
+        "exchanges": 8,
+        "hp": 250,
+        "desc": "5 回合 × 8 手"
+      }
+    },
+    "basics": [
+      "jab",
+      "cross",
+      "lead_hook",
+      "body_hook",
+      "calf_kick",
+      "single_leg"
+    ]
   },
-  "triangle": { "S": "G", "G": "C", "C": "S" },
-  "typeNames": { "S": "打擊", "G": "摔抱", "C": "防反" },
-  "positions": ["全防守", "半防守", "側控", "騎乘", "背後"],
-  "dist": { "names": ["遠距", "中距", "近距", "纏抱"], "short": ["遠", "中", "近", "纏"], "start": 1, "standUp": 2, "clinch": 3 },
-  "cut": { "max": 3, "blindAt": 2, "doctorAt": 3, "roundHeal": 1 },
-  "energy": { "base": 3, "tiredAt": 40, "gassedAt": 18, "rockedBudget": 1, "swarmBonus": 1 },
+  "typeNames": {
+    "S": "打擊",
+    "G": "摔抱",
+    "C": "防反"
+  },
+  "positions": [
+    "全防守",
+    "半防守",
+    "側控",
+    "騎乘",
+    "背後"
+  ],
+  "dist": {
+    "names": [
+      "遠距",
+      "中距",
+      "近距",
+      "纏抱"
+    ],
+    "short": [
+      "遠",
+      "中",
+      "近",
+      "纏"
+    ],
+    "start": 1,
+    "standUp": 2,
+    "clinch": 3
+  },
+  "cut": {
+    "max": 3,
+    "blindAt": 2,
+    "doctorAt": 3,
+    "roundHeal": 1
+  },
+  "energy": {
+    "base": 3,
+    "tiredAt": 40,
+    "gassedAt": 18,
+    "rockedBudget": 1,
+    "swarmBonus": 1
+  },
   "stamina": {
-    "perEnergy": 4.5, "regenPerExchange": 3, "cardioRegenBonus": 2, "counterRegen": 2,
-    "cornerBase": 18, "cornerCardio": 0.2, "bodyDebuffRegen": -2,
-    "whiffGrapple": 3, "tiredDamageMult": 0.85
+    "perEnergy": 4.5,
+    "regenPerExchange": 3,
+    "cardioRegenBonus": 2,
+    "counterRegen": 2,
+    "cornerBase": 18,
+    "cornerCardio": 0.2,
+    "bodyDebuffRegen": -2,
+    "whiffGrapple": 3,
+    "tiredDamageMult": 0.85
   },
   "tiers": {
-    "baseCrit": 0.15, "baseGraze": 0.25, "critPerStat": 0.004, "grazePerStat": 0.003,
-    "minCrit": 0.03, "maxCrit": 0.6, "minGraze": 0.05, "maxGraze": 0.55,
-    "grazeMult": 0.6, "cleanMult": 1.0, "critMult": 1.5
+    "baseCrit": 0.15,
+    "baseGraze": 0.25,
+    "critPerStat": 0.004,
+    "grazePerStat": 0.003,
+    "minCrit": 0.03,
+    "maxCrit": 0.6,
+    "minGraze": 0.05,
+    "maxGraze": 0.55,
+    "grazeMult": 0.6,
+    "cleanMult": 1,
+    "critMult": 1.5
   },
   "damage": {
-    "powerBase": 0.6, "powerPerStat": 0.0055,
-    "winStrikeBonus": 1.1, "counterMult": 1.1, "tradeMult": 0.85,
-    "overcommitPerEnergy": 0.4, "shootOvercommit": 0.15, "swarmMult": 1.25,
+    "powerBase": 0.6,
+    "powerPerStat": 0.0055,
+    "winStrikeBonus": 1.1,
+    "counterMult": 1.1,
+    "tradeMult": 0.85,
+    "overcommitPerEnergy": 0.4,
+    "shootOvercommit": 0.15,
+    "swarmMult": 1.25,
     "tradeInterruptMult": 0.5,
-    "groundPositionMult": [1.05, 1.2, 1.4, 1.65, 1.65], "bottomStrikeMult": 0.8,
-    "bottomCounterMult": 0.5, "slamToGround": 1.0,
+    "groundPositionMult": [
+      1.05,
+      1.2,
+      1.4,
+      1.65,
+      1.65
+    ],
+    "bottomStrikeMult": 0.8,
+    "bottomCounterMult": 0.5,
+    "slamToGround": 1,
     "limit": 60
   },
   "rocked": {
-    "minDamage": 11, "base": 0.3, "perDamage": 0.02, "perChin": 0.006, "chinPivot": 70,
-    "headDebuffBonus": 0.2, "critBonus": 0.2, "min": 0.03, "max": 0.9,
-    "flashKoBase": 0.1, "flashKoPerChin": 0.006, "flashKoHpPivot": 80, "flashKoPerHp": 0.003
+    "minDamage": 11,
+    "base": 0.3,
+    "perDamage": 0.02,
+    "perChin": 0.006,
+    "chinPivot": 70,
+    "headDebuffBonus": 0.2,
+    "critBonus": 0.2,
+    "min": 0.03,
+    "max": 0.9,
+    "flashKoBase": 0.1,
+    "flashKoPerChin": 0.006,
+    "flashKoHpPivot": 80,
+    "flashKoPerHp": 0.003
   },
-  "debuff": { "threshold": 3, "maxPips": 3, "legKickMult": 0.65, "legMoveCost": 1 },
+  "debuff": {
+    "threshold": 3,
+    "maxPips": 3,
+    "legKickMult": 0.65,
+    "legMoveCost": 1,
+    "legFootCost": 2
+  },
   "tags": {
-    "opened": { "label": "刺拳開路", "short": "開路" },
-    "winded": { "label": "身體吃重", "short": "吃重" },
-    "tied": { "label": "貼身纏上", "short": "貼身" },
-    "released": { "label": "放他起來，佔上風", "short": "佔先", "crit": 0.1 },
-    "flow": { "label": "步法流動", "short": "流動", "crit": 0.12 },
-    "crowded": { "label": "被管住距離", "short": "被管", "moveCost": 1 },
-    "smothered": { "label": "被壓得喘不過氣", "short": "窒息", "budget": -1 },
-    "rhythm": { "label": "連打節奏", "short": "節奏", "perStack": true, "crit": 0.04, "first": 2, "budget": 1, "budgetAt": 3 },
-    "fooled": { "label": "被看穿，傾向更好讀", "short": "被看穿", "sharpen": 1.8, "readBoost": 2 }
+    "opened": {
+      "label": "刺拳開路",
+      "short": "開路"
+    },
+    "winded": {
+      "label": "身體吃重",
+      "short": "吃重"
+    },
+    "tied": {
+      "label": "貼身纏上",
+      "short": "貼身"
+    },
+    "released": {
+      "label": "放他起來，佔上風",
+      "short": "佔先",
+      "crit": 0.1
+    },
+    "flow": {
+      "label": "步法流動",
+      "short": "流動",
+      "crit": 0.12
+    },
+    "crowded": {
+      "label": "被管住距離",
+      "short": "被管",
+      "moveCost": 1,
+      "footCost": 4
+    },
+    "smothered": {
+      "label": "被壓得喘不過氣",
+      "short": "窒息",
+      "budget": -1,
+      "combo": -1
+    },
+    "rhythm": {
+      "label": "連打節奏",
+      "short": "節奏",
+      "perStack": true,
+      "crit": 0.04,
+      "speed": 8,
+      "speedAt": 2,
+      "budget": 1,
+      "budgetAt": 3,
+      "combo": 1,
+      "comboAt": 3
+    },
+    "fooled": {
+      "label": "被看穿，傾向更好讀",
+      "short": "被看穿",
+      "sharpen": 1.8,
+      "readBoost": 2
+    },
+    "read": {
+      "label": "刺拳量過距離，看清他的傾向",
+      "short": "看透"
+    }
   },
   "tactics": {
-    "probe": { "label": "試探", "short": "試探", "desc": "穩住節奏：每手多回 2 體力、少冒險；傷害 -10%", "regen": 2, "dmgOut": 0.9, "commit": -0.15, "style": { "S": -0.1, "G": -0.05, "C": 0.2 } },
-    "press": { "label": "壓迫抱摔", "short": "壓迫", "desc": "貼上去纏鬥：摔抱成功率 +8%、更快把他逼到籠邊；傷害 -5%", "gQuality": 0.08, "pressure": 1, "dmgOut": 0.95, "style": { "S": -0.1, "G": 0.25, "C": -0.1 } },
-    "points": { "label": "搶分", "short": "搶分", "desc": "多出手拿分：每手的裁判分數 +25%；傷害 -5%", "scoreMult": 1.25, "dmgOut": 0.95, "commit": 0.05, "style": { "S": 0.1, "G": 0, "C": -0.05 } },
-    "ko": { "label": "拼 KO", "short": "拼KO", "desc": "賭一把：傷害 +12%、爆擊 +5%；但挨的傷害 +10%、每手少回 1 體力", "dmgOut": 1.12, "dmgIn": 1.1, "crit": 0.05, "regen": -1, "commit": 0.15, "style": { "S": 0.2, "G": -0.05, "C": -0.15 } }
+    "probe": {
+      "label": "試探",
+      "short": "試探",
+      "desc": "穩住節奏：多守多繞、每手多回 2 體力；傷害 -10%",
+      "regen": 2,
+      "dmgOut": 0.9,
+      "commit": -0.15,
+      "style": {
+        "S": -0.1,
+        "G": -0.05,
+        "C": 0.2
+      },
+      "fw": {
+        "hold": 0.25,
+        "circle": 0.15,
+        "press": -0.15
+      }
+    },
+    "press": {
+      "label": "壓迫抱摔",
+      "short": "壓迫",
+      "desc": "貼上去逼他：更常壓上、更快把他逼到籠邊；摔倒成功率 +8%；傷害 -5%",
+      "gQuality": 0.08,
+      "pressure": 1,
+      "dmgOut": 0.95,
+      "style": {
+        "S": -0.1,
+        "G": 0.25,
+        "C": -0.1
+      },
+      "fw": {
+        "press": 0.3,
+        "retreat": -0.1
+      }
+    },
+    "points": {
+      "label": "搶分",
+      "short": "搶分",
+      "desc": "多出手拿分：每手的裁判分數 +25%；傷害 -5%",
+      "scoreMult": 1.25,
+      "dmgOut": 0.95,
+      "commit": 0.05,
+      "style": {
+        "S": 0.1,
+        "G": 0,
+        "C": -0.05
+      },
+      "fw": {
+        "circle": 0.1,
+        "press": 0.1
+      }
+    },
+    "ko": {
+      "label": "拼 KO",
+      "short": "拼KO",
+      "desc": "賭一把：更敢壓上；傷害 +12%、爆擊 +5%，挨的傷害 +10%、每手少回 1 體力",
+      "dmgOut": 1.12,
+      "dmgIn": 1.1,
+      "crit": 0.05,
+      "regen": -1,
+      "commit": 0.15,
+      "style": {
+        "S": 0.2,
+        "G": -0.05,
+        "C": -0.15
+      },
+      "fw": {
+        "press": 0.15,
+        "hold": -0.05
+      }
+    }
   },
-  "signature": { "glanceMult": 0.55, "winCrit": 0.08 },
-  "setups": { "clinch": { "tag": "tied", "turns": 1 } },
-  "cage": { "pressureAt": 2, "ttl": 4, "closeDist": 2, "takedownBonus": 0.12, "pinnerG": 0.25, "pinnedC": 0.2, "pinnedG": 0.1, "escapeDist": 1, "pushDist": 2 },
-  "chase": { "default": 0.6, "tiredFoeBonus": 0.15, "dangerPivot": 80, "perSubmission": 0.004, "tag": "released", "turns": 2 },
+  "signature": {
+    "glanceMult": 0.55,
+    "winCrit": 0.08
+  },
+  "setups": {
+    "clinch": {
+      "tag": "tied",
+      "turns": 1
+    }
+  },
+  "cage": {
+    "pressureAt": 2,
+    "ttl": 4,
+    "closeDist": 2,
+    "takedownBonus": 0.12,
+    "escapeDist": 1,
+    "pinnedCircle": 0.7,
+    "pinnedPress": 0.2,
+    "pinnerPress": 0.3,
+    "pressureScore": 5
+  },
+  "chase": {
+    "default": 0.6,
+    "tiredFoeBonus": 0.15,
+    "dangerPivot": 80,
+    "perSubmission": 0.004,
+    "tag": "released",
+    "turns": 2
+  },
   "grapple": {
-    "statPivot": 70, "scrambleMomentum": 3, "scrambleStamina": 3,
-    "drainOnLanding": 6, "positionFromTier": { "graze": -1, "clean": 0, "crit": 1 },
+    "statPivot": 70,
+    "scrambleMomentum": 3,
+    "scrambleStamina": 3,
+    "drainOnLanding": 6,
+    "positionFromTier": {
+      "graze": -1,
+      "clean": 0,
+      "crit": 1
+    },
     "topControlDrain": 6
   },
   "lock": {
-    "tapDepth": 3, "maxStart": 2, "edgeDeep": 32, "lowStaminaAt": 30,
-    "resist": { "base": 0.42, "perSkill": 0.004, "perAttacker": 0.003, "perDepth": 0.1, "lowStamina": -0.15, "min": 0.15, "max": 0.75 },
-    "holdDrain": 4, "escapePenalty": 4,
-    "beats": { "tighten": "handfight", "angle": "turn", "leg": "yank" },
-    "attack": { "tighten": "收緊", "angle": "換角度", "leg": "腿鎖" },
-    "defend": { "handfight": "拉手", "turn": "轉身", "yank": "硬拔" }
+    "tapDepth": 3,
+    "maxStart": 2,
+    "edgeDeep": 32,
+    "lowStaminaAt": 30,
+    "resist": {
+      "base": 0.42,
+      "perSkill": 0.004,
+      "perAttacker": 0.003,
+      "perDepth": 0.1,
+      "lowStamina": -0.15,
+      "min": 0.15,
+      "max": 0.75
+    },
+    "holdDrain": 4,
+    "escapePenalty": 4,
+    "beats": {
+      "tighten": "handfight",
+      "angle": "turn",
+      "leg": "yank"
+    },
+    "attack": {
+      "tighten": "收緊",
+      "angle": "換角度",
+      "leg": "腿鎖"
+    },
+    "defend": {
+      "handfight": "拉手",
+      "turn": "轉身",
+      "yank": "硬拔"
+    }
   },
   "ground": {
     "handSize": 5,
     "cats": {
-      "punch":   { "label": "砸拳", "side": "top", "type": "S" },
-      "pass":    { "label": "過位", "side": "top", "type": "G" },
-      "lock":    { "label": "鎖技", "side": "top", "type": "G" },
-      "hold":    { "label": "穩壓", "side": "top", "type": "C", "free": true },
-      "frame":   { "label": "撐架", "side": "bottom", "type": "C" },
-      "counter": { "label": "反制", "side": "bottom", "type": "C" },
-      "escape":  { "label": "逃脫", "side": "bottom", "type": "G" },
-      "cover":   { "label": "抱頭", "side": "bottom", "type": "C", "free": true }
+      "punch": {
+        "label": "砸拳",
+        "side": "top",
+        "type": "S"
+      },
+      "pass": {
+        "label": "過位",
+        "side": "top",
+        "type": "G"
+      },
+      "lock": {
+        "label": "鎖技",
+        "side": "top",
+        "type": "G"
+      },
+      "hold": {
+        "label": "穩壓",
+        "side": "top",
+        "type": "C",
+        "free": true
+      },
+      "frame": {
+        "label": "撐架",
+        "side": "bottom",
+        "type": "C"
+      },
+      "counter": {
+        "label": "反制",
+        "side": "bottom",
+        "type": "C"
+      },
+      "escape": {
+        "label": "逃脫",
+        "side": "bottom",
+        "type": "G"
+      },
+      "cover": {
+        "label": "抱頭",
+        "side": "bottom",
+        "type": "C",
+        "free": true
+      }
     },
     "matrix": {
-      "punch": { "frame": "top", "counter": "bottom", "escape": "top", "cover": "top" },
-      "pass":  { "frame": "bottom", "counter": "top", "escape": "top", "cover": "top" },
-      "lock":  { "frame": "top", "counter": "top", "escape": "bottom", "cover": "top" },
-      "hold":  { "frame": "none", "counter": "none", "escape": "top", "cover": "none" }
+      "punch": {
+        "frame": "top",
+        "counter": "bottom",
+        "escape": "top",
+        "cover": "top"
+      },
+      "pass": {
+        "frame": "bottom",
+        "counter": "top",
+        "escape": "top",
+        "cover": "top"
+      },
+      "lock": {
+        "frame": "top",
+        "counter": "top",
+        "escape": "bottom",
+        "cover": "top"
+      },
+      "hold": {
+        "frame": "none",
+        "counter": "none",
+        "escape": "top",
+        "cover": "none"
+      }
     },
     "coverMult": 0.5,
-    "escapeTo": [-1, 0, 1, 1, 3],
+    "escapeTo": [
+      -1,
+      0,
+      1,
+      1,
+      3
+    ],
     "sweepPos": 0,
-    "short": ["守", "半", "側", "騎", "背"],
+    "short": [
+      "守",
+      "半",
+      "側",
+      "騎",
+      "背"
+    ],
     "lockShare": 0.15,
     "wins": {
-      "punch": "砸拳得手", "pass": "過位成功", "lock": "鎖住了", "hold": "穩穩壓住",
-      "frame": "撐架擋下過位", "counter": "反制了砸拳", "escape": "逃出鎖技",
+      "punch": "砸拳得手",
+      "pass": "過位成功",
+      "lock": "鎖住了",
+      "hold": "穩穩壓住",
+      "frame": "撐架擋下過位",
+      "counter": "反制了砸拳",
+      "escape": "逃出鎖技",
       "stalemate": "互相僵持"
     }
   },
-  "momentum": { "win": 11, "crit": 6, "rocked": 12, "trade": 4, "lose": -3, "standoff": -5, "signatureCost": 100, "landing": 6 },
-  "stall": { "limit": 2 },
+  "momentum": {
+    "win": 11,
+    "crit": 6,
+    "rocked": 12,
+    "trade": 4,
+    "lose": -3,
+    "standoff": -5,
+    "signatureCost": 100,
+    "landing": 6
+  },
+  "stall": {
+    "limit": 2
+  },
   "score": {
-    "damage": 1.0, "exchangeWin": 3, "rocked": 10, "takedown": 8, "positionGain": 4,
-    "controlByPos": [2.5, 4, 5.5, 7.5, 8], "lockAttempt": 8, "cut": 6, "tenEightPerExchange": 8.4,
+    "damage": 1,
+    "exchangeWin": 3,
+    "rocked": 10,
+    "takedown": 8,
+    "positionGain": 4,
+    "controlByPos": [
+      2.5,
+      4,
+      5.5,
+      7.5,
+      8
+    ],
+    "lockAttempt": 8,
+    "cut": 6,
+    "tenEightPerExchange": 8.4,
     "judges": [
-      { "name": "打擊派", "striking": 1.3, "grappling": 0.7 },
-      { "name": "摔柔派", "striking": 0.75, "grappling": 1.4 },
-      { "name": "均衡派", "striking": 1.0, "grappling": 1.0 }
+      {
+        "name": "打擊派",
+        "striking": 1.3,
+        "grappling": 0.7
+      },
+      {
+        "name": "摔柔派",
+        "striking": 0.75,
+        "grappling": 1.4
+      },
+      {
+        "name": "均衡派",
+        "striking": 1,
+        "grappling": 1
+      }
     ]
   },
   "corner": {
     "options": [
-      { "id": "breathe", "label": "深呼吸", "desc": "多回 25 體力", "stamina": 25 },
-      { "id": "patch", "label": "止血消腫", "desc": "回 16 生命，清 1 個傷痕，止 1 級血", "hp": 16, "clearPip": 1, "clearCut": 1 },
-      { "id": "fire", "label": "教練喊話", "desc": "氣勢 +35", "momentum": 35 }
+      {
+        "id": "breathe",
+        "label": "深呼吸",
+        "desc": "多回 25 體力",
+        "stamina": 25
+      },
+      {
+        "id": "patch",
+        "label": "止血消腫",
+        "desc": "回 16 生命，清 1 個傷痕，止 1 級血",
+        "hp": 16,
+        "clearPip": 1,
+        "clearCut": 1
+      },
+      {
+        "id": "fire",
+        "label": "教練喊話",
+        "desc": "氣勢 +35",
+        "momentum": 35
+      }
     ]
   },
   "ai": {
     "minWeight": 0.08,
-    "adapt": { "window": 3, "perMatch": 0.22, "repeatBonus": 0.15 },
-    "lowStaminaCounter": 0.25, "lowStaminaAt": 30,
-    "rockedCounter": 0.7, "swarmStrike": 0.7, "wantClose": 0.3, "wantOut": 0.3,
-    "commit": { "fullChance": 0.55, "conserveAt": 40 },
+    "adapt": {
+      "window": 3,
+      "perMatch": 0.22,
+      "repeatBonus": 0.15
+    },
+    "lowStaminaCounter": 0.25,
+    "lowStaminaAt": 30,
+    "rockedCounter": 0.7,
+    "swarmStrike": 0.7,
+    "wantClose": 0.3,
+    "wantOut": 0.3,
+    "commit": {
+      "fullChance": 0.55,
+      "conserveAt": 40
+    },
     "signatureWeight": 0.35,
     "tells": {
-      "S": ["肩膀繃緊，準備出手", "重心前移，想要開火", "盯著你的下巴"],
-      "G": ["壓低重心，看著你的腿", "雙手放低，準備往前衝", "腳步貼近，想抓住你"],
-      "C": ["站穩不動，等你先動", "手護得很緊，在等破綻", "呼吸放慢，很有耐心"]
+      "S": [
+        "肩膀繃緊，準備出手",
+        "重心前移，想要開火",
+        "盯著你的下巴"
+      ],
+      "G": [
+        "壓低重心，看著你的腿",
+        "雙手放低，準備往前衝",
+        "腳步貼近，想抓住你"
+      ],
+      "C": [
+        "站穩不動，等你先動",
+        "手護得很緊，在等破綻",
+        "呼吸放慢，很有耐心"
+      ]
+    },
+    "lead": {
+      "styles": {
+        "puncher": {
+          "heights": {
+            "high": 0.55,
+            "mid": 0.18,
+            "low": 0.1,
+            "grab": 0.17
+          },
+          "len": [
+            0.2,
+            0.4,
+            0.3,
+            0.1
+          ],
+          "feint": 0.12,
+          "shootAfter": 0.1
+        },
+        "kicker": {
+          "heights": {
+            "high": 0.35,
+            "mid": 0.28,
+            "low": 0.27,
+            "grab": 0.1
+          },
+          "len": [
+            0.25,
+            0.4,
+            0.25,
+            0.1
+          ],
+          "feint": 0.15,
+          "shootAfter": 0.12
+        },
+        "volume": {
+          "heights": {
+            "high": 0.5,
+            "mid": 0.18,
+            "low": 0.2,
+            "grab": 0.12
+          },
+          "len": [
+            0.08,
+            0.27,
+            0.35,
+            0.3
+          ],
+          "feint": 0.18,
+          "shootAfter": 0.15
+        },
+        "brawler": {
+          "heights": {
+            "high": 0.5,
+            "mid": 0.2,
+            "low": 0.15,
+            "grab": 0.15
+          },
+          "len": [
+            0.15,
+            0.35,
+            0.3,
+            0.2
+          ],
+          "feint": 0.05,
+          "shootAfter": 0.15
+        },
+        "wrestler": {
+          "heights": {
+            "high": 0.2,
+            "mid": 0.08,
+            "low": 0.07,
+            "grab": 0.65
+          },
+          "len": [
+            0.3,
+            0.35,
+            0.25,
+            0.1
+          ],
+          "feint": 0.1,
+          "shootAfter": 0.35
+        },
+        "grappler": {
+          "heights": {
+            "high": 0.22,
+            "mid": 0.18,
+            "low": 0.1,
+            "grab": 0.5
+          },
+          "len": [
+            0.3,
+            0.4,
+            0.2,
+            0.1
+          ],
+          "feint": 0.1,
+          "shootAfter": 0.3
+        },
+        "balanced": {
+          "heights": {
+            "high": 0.4,
+            "mid": 0.2,
+            "low": 0.15,
+            "grab": 0.25
+          },
+          "len": [
+            0.25,
+            0.4,
+            0.25,
+            0.1
+          ],
+          "feint": 0.1,
+          "shootAfter": 0.2
+        }
+      }
+    },
+    "respond": {
+      "styles": {
+        "counter": {
+          "high": 0.2,
+          "mid": 0.1,
+          "low": 0.08,
+          "cover": 0.05,
+          "evade": 0.17,
+          "counter": 0.3,
+          "shoot": 0.05,
+          "preempt": 0.05
+        },
+        "guard": {
+          "high": 0.3,
+          "mid": 0.18,
+          "low": 0.12,
+          "cover": 0.12,
+          "evade": 0.1,
+          "counter": 0.13,
+          "shoot": 0.03,
+          "preempt": 0.02
+        },
+        "evasive": {
+          "high": 0.2,
+          "mid": 0.1,
+          "low": 0.08,
+          "cover": 0.05,
+          "evade": 0.35,
+          "counter": 0.17,
+          "shoot": 0.03,
+          "preempt": 0.02
+        },
+        "wrestler": {
+          "high": 0.22,
+          "mid": 0.08,
+          "low": 0.2,
+          "cover": 0.08,
+          "evade": 0.05,
+          "counter": 0.1,
+          "shoot": 0.22,
+          "preempt": 0.05
+        },
+        "grappler": {
+          "high": 0.2,
+          "mid": 0.1,
+          "low": 0.18,
+          "cover": 0.1,
+          "evade": 0.08,
+          "counter": 0.12,
+          "shoot": 0.17,
+          "preempt": 0.05
+        },
+        "balanced": {
+          "high": 0.25,
+          "mid": 0.14,
+          "low": 0.12,
+          "cover": 0.1,
+          "evade": 0.13,
+          "counter": 0.15,
+          "shoot": 0.08,
+          "preempt": 0.03
+        }
+      }
+    },
+    "heightWords": {
+      "high": "頭",
+      "mid": "身",
+      "low": "腿",
+      "grab": "抱摔"
+    },
+    "footTells": {
+      "press": [
+        "重心前移，要壓上來",
+        "腳步貼近，盯著你的距離"
+      ],
+      "hold": [
+        "站穩不動，等你先動",
+        "手護得很緊，在等破綻"
+      ],
+      "circle": [
+        "腳步側移，繞著圈走",
+        "肩膀放鬆，在找角度"
+      ],
+      "retreat": [
+        "重心後坐，準備退",
+        "拉開距離，等你上前"
+      ]
+    },
+    "engage": {
+      "reactVisible": 0.75,
+      "preemptMinStamina": 45,
+      "adaptHeight": 0.25,
+      "shootSmall": 0.02
     }
+  },
+  "footwork": {
+    "order": [
+      "press",
+      "hold",
+      "circle",
+      "retreat"
+    ],
+    "moves": {
+      "press": {
+        "label": "壓上",
+        "short": "壓",
+        "desc": "逼近一格搶帶頭；他守著你吃反擊更痛",
+        "cost": 2.5
+      },
+      "hold": {
+        "label": "守中線",
+        "short": "守",
+        "desc": "站穩，反擊更快更準；不耗體力",
+        "cost": 0,
+        "regen": 0
+      },
+      "circle": {
+        "label": "繞圈",
+        "short": "繞",
+        "desc": "側步繞開易閃；能脫離籠邊",
+        "cost": 1.5
+      },
+      "retreat": {
+        "label": "後撤",
+        "short": "撤",
+        "desc": "退一格等反擊；退多了被逼籠邊",
+        "cost": 1
+      }
+    },
+    "pairs": {
+      "press|press": {
+        "dist": 2,
+        "lead": "roll",
+        "a": {
+          "dmgIn": 1.1,
+          "crit": 0.03
+        },
+        "b": {
+          "dmgIn": 1.1,
+          "crit": 0.03
+        },
+        "text": "兩人對衝，一口氣貼到近距，搶先手看速度"
+      },
+      "press|hold": {
+        "dist": 1,
+        "lead": "first",
+        "a": {
+          "dmgIn": 1.15,
+          "power": 1.05
+        },
+        "b": {
+          "counterSpeed": 5,
+          "crit": 0.03,
+          "react": 4
+        },
+        "text": "壓上的人帶頭，但守的人反擊更快，壓上的人吃反擊更痛"
+      },
+      "press|circle": {
+        "dist": 0,
+        "lead": "first",
+        "gave": "second",
+        "a": {
+          "power": 1.05
+        },
+        "b": {
+          "evade": 0.12,
+          "counterSpeed": 2
+        },
+        "text": "壓上的人帶頭，截住繞圈的人的路，把他往籠邊趕；繞的人側步容易閃開"
+      },
+      "press|retreat": {
+        "dist": 0,
+        "lead": "first",
+        "gave": "second",
+        "a": {
+          "dmgIn": 1.1
+        },
+        "b": {
+          "counterSpeed": 5
+        },
+        "text": "壓上的人帶頭，把退的人逼向籠邊；退的人邊退邊找反擊"
+      },
+      "hold|hold": {
+        "dist": 0,
+        "lead": "roll",
+        "a": {
+          "stam": 1
+        },
+        "b": {
+          "stam": 1
+        },
+        "text": "雙方互相試探，各回 1 體力，搶先手看速度"
+      },
+      "hold|circle": {
+        "dist": 0,
+        "lead": "second",
+        "a": {
+          "counterSpeed": 2,
+          "react": 3
+        },
+        "b": {
+          "evade": 0.1,
+          "crit": 0.04
+        },
+        "text": "繞的人搶到角度帶頭，爆擊更易；守的人站在原地"
+      },
+      "hold|retreat": {
+        "dist": -1,
+        "lead": "roll",
+        "bias": 0.12,
+        "gave": "second",
+        "a": {},
+        "b": {
+          "counterSpeed": 4
+        },
+        "text": "守的人稍佔先手；退的人拉開一格，讓出地盤"
+      },
+      "circle|circle": {
+        "dist": 0,
+        "lead": "roll",
+        "a": {
+          "evade": 0.1
+        },
+        "b": {
+          "evade": 0.1
+        },
+        "text": "雙方繞圈，都容易閃開，搶先手看速度"
+      },
+      "circle|retreat": {
+        "dist": -1,
+        "lead": "roll",
+        "a": {
+          "evade": 0.08
+        },
+        "b": {
+          "counterSpeed": 2
+        },
+        "text": "繞的人跟著拉開一格，搶先手看速度"
+      },
+      "retreat|retreat": {
+        "dist": -2,
+        "lead": "roll",
+        "a": {
+          "stam": 2
+        },
+        "b": {
+          "stam": 2
+        },
+        "text": "雙方都退，拉開兩格，各回 2 體力"
+      }
+    },
+    "leadRoll": {
+      "perInit": 0.012,
+      "edge": 0.3,
+      "min": 0.15,
+      "max": 0.85,
+      "perHeight": 0.3,
+      "perMomentum": 0.05
+    },
+    "lean": {
+      "press": {
+        "hold": 0.6,
+        "circle": 0.4
+      },
+      "hold": {
+        "circle": 0.5,
+        "press": 0.5
+      },
+      "circle": {
+        "press": 0.6,
+        "hold": 0.4
+      },
+      "retreat": {
+        "press": 0.8,
+        "circle": 0.2
+      }
+    },
+    "styles": {
+      "outfighter": {
+        "out": {
+          "press": 0.15,
+          "hold": 0.25,
+          "circle": 0.4,
+          "retreat": 0.2
+        },
+        "in": {
+          "press": 0.15,
+          "hold": 0.25,
+          "circle": 0.3,
+          "retreat": 0.3
+        }
+      },
+      "counter": {
+        "out": {
+          "press": 0.1,
+          "hold": 0.4,
+          "circle": 0.25,
+          "retreat": 0.25
+        },
+        "in": {
+          "press": 0.12,
+          "hold": 0.35,
+          "circle": 0.23,
+          "retreat": 0.3
+        }
+      },
+      "pressure": {
+        "out": {
+          "press": 0.5,
+          "hold": 0.2,
+          "circle": 0.2,
+          "retreat": 0.1
+        },
+        "in": {
+          "press": 0.45,
+          "hold": 0.25,
+          "circle": 0.2,
+          "retreat": 0.1
+        }
+      },
+      "wrestler": {
+        "out": {
+          "press": 0.55,
+          "hold": 0.2,
+          "circle": 0.15,
+          "retreat": 0.1
+        },
+        "in": {
+          "press": 0.4,
+          "hold": 0.35,
+          "circle": 0.1,
+          "retreat": 0.15
+        }
+      },
+      "grappler": {
+        "out": {
+          "press": 0.4,
+          "hold": 0.3,
+          "circle": 0.15,
+          "retreat": 0.15
+        },
+        "in": {
+          "press": 0.35,
+          "hold": 0.4,
+          "circle": 0.1,
+          "retreat": 0.15
+        }
+      },
+      "volume": {
+        "out": {
+          "press": 0.35,
+          "hold": 0.15,
+          "circle": 0.35,
+          "retreat": 0.15
+        },
+        "in": {
+          "press": 0.35,
+          "hold": 0.2,
+          "circle": 0.3,
+          "retreat": 0.15
+        }
+      },
+      "brawler": {
+        "out": {
+          "press": 0.45,
+          "hold": 0.25,
+          "circle": 0.1,
+          "retreat": 0.2
+        },
+        "in": {
+          "press": 0.4,
+          "hold": 0.3,
+          "circle": 0.1,
+          "retreat": 0.2
+        }
+      },
+      "balanced": {
+        "out": {
+          "press": 0.3,
+          "hold": 0.25,
+          "circle": 0.25,
+          "retreat": 0.2
+        },
+        "in": {
+          "press": 0.3,
+          "hold": 0.25,
+          "circle": 0.25,
+          "retreat": 0.2
+        }
+      }
+    }
+  },
+  "engage": {
+    "perCost": 3.2,
+    "dmgScale": 0.85,
+    "comboLen": [
+      [
+        55,
+        4
+      ],
+      [
+        35,
+        3
+      ],
+      [
+        16,
+        2
+      ],
+      [
+        0,
+        1
+      ]
+    ],
+    "critStep": 0.04,
+    "feintCrit": 0.2,
+    "block": {
+      "mult": 0.25,
+      "drainResp": 2,
+      "drainLeader": 3,
+      "streakDrain": 2
+    },
+    "mismatchMult": 0.7,
+    "coverMult": 0.55,
+    "coverRegen": 1,
+    "evade": {
+      "base": 0.3,
+      "perDiff": 0.012,
+      "min": 0.05,
+      "max": 0.85,
+      "cost": 2,
+      "failCrit": 0.08
+    },
+    "punishMult": 1,
+    "counter": {
+      "secondMult": 0.35,
+      "grabMult": 1.2,
+      "wrongMult": 1,
+      "wrongCrit": 0.08,
+      "blindPenalty": 18,
+      "failCrit": 0.12,
+      "failMult": 1.2
+    },
+    "shoot": {
+      "bonus": 0.12,
+      "cost": 5,
+      "stuffMult": 1.2
+    },
+    "preempt": {
+      "cost": 14
+    },
+    "comboDrain": 4,
+    "speedAttr": {
+      "pivot": 75,
+      "perPoint": 0.25
+    },
+    "reaction": {
+      "tired": -8,
+      "gassed": -18,
+      "blind": -12
+    },
+    "edgeScore": 3,
+    "sprawl": 0.15,
+    "stepCost": 0.3
   }
 }

@@ -1,7 +1,8 @@
 {
+  "_doc": "疊在 cards.json / fighters.json 上的層：鋪路（setup）與可接（follow）、選手的特殊技牌組（deck，只放特殊技，基本招人人都有）、反應力與出手速度、走位／出招／應對風格、能力、戰術口味。",
   "cards": {
-    "jab": {"setup": [{"tag": "opened", "when": "hit"}]},
-    "step_jab": {"setup": [{"tag": "opened", "when": "hit"}]},
+    "jab": {"setup": [{"tag": "opened", "when": "hit"}, {"tag": "read", "when": "hit"}]},
+    "step_jab": {"setup": [{"tag": "opened", "when": "hit"}, {"tag": "read", "when": "hit"}]},
     "cross": {"follow": {"opened": {"crit": 0.2}}},
     "left_hand": {"follow": {"opened": {"crit": 0.2}}},
     "overhand": {"follow": {"opened": {"crit": 0.2}}},
@@ -20,27 +21,117 @@
     "single_leg": {"follow": {"tied": {"quality": 0.1}}},
     "double_leg": {"follow": {"tied": {"quality": 0.1}}},
     "cage_trip": {"follow": {"tied": {"quality": 0.1}}},
-    "slam": {"follow": {"tied": {"quality": 0.1}}},
-    "cage_push": {"name": "推籠反轉", "type": "G", "cost": 2, "cageOnly": true, "basic": true, "cage": "push"},
-    "cage_turn": {"name": "轉身脫離", "type": "C", "cost": 1, "cageOnly": true, "basic": true, "cage": "turn"},
-    "feint": {"name": "假動作", "type": "S", "cost": 1, "power": 3, "range": [0, 2], "target": "head", "crit": 0, "setup": [{"tag": "fooled", "when": "win", "to": "foe"}]}
+    "slam": {"follow": {"tied": {"quality": 0.1}}}
   },
   "fighters": {
-    "mcgregor": {"deckSwap": [["jab", "feint"]], "chase": 0.35, "ability": {"name": "看穿", "desc": "防反贏下後，看穿他的下一手傾向", "triggers": [{"on": "win", "type": "C", "do": [{"to": "foe", "tag": "fooled"}]}]}, "tactics": {"probe": 1, "press": 0.3, "points": 0.8, "ko": 1.6}},
-    "adesanya": {"deckSwap": [["jab", "feint"]], "chase": 0.35, "ability": {"name": "風格大師", "desc": "防反贏下後，自己拉開 1 格，並看清他的下一手", "triggers": [{"on": "win", "type": "C", "do": [{"dist": -1}, {"to": "foe", "tag": "fooled"}]}]}, "tactics": {"probe": 1.6, "press": 0.3, "points": 1.2, "ko": 0.9}},
-    "sandhagen": {"deckSwap": [["jab", "feint"]], "chase": 0.45, "ability": {"name": "流動步法", "desc": "靠步法移動後，下一手爆擊率 +12%", "triggers": [{"on": "moved", "do": [{"tag": "flow"}]}]}, "tactics": {"probe": 1.2, "press": 0.5, "points": 1.4, "ko": 0.8}},
-    "holloway": {"deckSwap": [["jab", "feint"]], "chase": 0.4, "ability": {"name": "連打加速", "desc": "連續出打擊，每手疊一層節奏：爆擊更高、搶先出手，疊滿 3 層多 1 能量", "triggers": [{"on": "play", "type": "S", "do": [{"tag": "rhythm", "stack": true, "max": 3, "turns": 1}]}]}, "tactics": {"probe": 0.8, "press": 0.5, "points": 2, "ko": 0.8}},
-    "khabib": {"deckSwap": [["rnc", "single_leg"], ["arm_triangle", "counter_hook"]], "chase": 0.95, "ability": {"name": "死纏爛打", "desc": "把你摔倒後，你更難站起來", "passive": {"escapePenalty": 1}}, "tactics": {"probe": 0.8, "press": 2, "points": 0.8, "ko": 0.5}},
-    "oliveira": {"deckSwap": [["rnc", "single_leg"], ["triangle", "slip_back"], ["triangle", "check_kick"], ["armbar", "back_counter"]], "chase": 0.8, "ability": {"name": "下位鎖技", "desc": "從下位上的鎖技，一開始就更深", "passive": {"lockDepthBottom": 1}}, "tactics": {"probe": 0.8, "press": 1.4, "points": 0.6, "ko": 1}},
-    "hooker": {"chase": 0.5, "ability": {"name": "長臂消耗", "desc": "打擊命中後，對手額外損失 3 體力", "triggers": [{"on": "hit", "type": "S", "do": [{"to": "foe", "stamina": -3}]}]}, "tactics": {"probe": 1.2, "press": 0.6, "points": 1.5, "ko": 0.8}},
-    "jones": {"chase": 0.75, "ability": {"name": "管住距離", "desc": "打擊贏下後，對手下一手步法多耗 1 能量", "triggers": [{"on": "win", "type": "S", "do": [{"to": "foe", "tag": "crowded"}]}]}, "tactics": {"probe": 1.2, "press": 1.2, "points": 1.2, "ko": 0.6}},
-    "makhachev": {"deckSwap": [["rnc", "single_leg"], ["arm_triangle", "check_kick"]], "chase": 0.95, "ability": {"name": "窒息壓制", "desc": "摔抱贏下後（地面過位、鎖技、逃脫也算），對手下一手少 1 能量", "triggers": [{"on": "win", "type": "G", "ground": true, "do": [{"to": "foe", "tag": "smothered"}]}]}, "tactics": {"probe": 1, "press": 2, "points": 0.8, "ko": 0.5}},
-    "poirier": {"deckSwap": [["rnc", "cage_trip"]], "chase": 0.6, "ability": {"name": "換拳狠勁", "desc": "雙方對轟時，他的傷害 +15%", "passive": {"tradeBonus": 0.15}}, "tactics": {"probe": 0.8, "press": 0.6, "points": 0.8, "ko": 1.6}},
-    "pereira": {"chase": 0.4, "ability": {"name": "左鉤拳終結", "desc": "被打暈的對手再挨頭部重擊，更容易直接 KO", "passive": {"rockedKoBonus": 0.12}}, "tactics": {"probe": 1.2, "press": 0.4, "points": 0.5, "ko": 2}},
-    "topuria": {"deckSwap": [["rnc", "double_leg"]], "chase": 0.6, "ability": {"name": "反擊壓上", "desc": "防反贏下後，上前一步並開路，下一手重拳更易爆擊", "triggers": [{"on": "win", "type": "C", "do": [{"dist": 1}, {"tag": "opened"}]}]}, "tactics": {"probe": 0.8, "press": 1, "points": 0.8, "ko": 1.5}},
-    "omalley": {"chase": 0.35, "ability": {"name": "遠距離狙擊", "desc": "在遠、中距離打擊贏下後，下一手開路", "triggers": [{"on": "win", "type": "S", "dist": [0, 1], "do": [{"tag": "opened"}]}]}, "tactics": {"probe": 1.4, "press": 0.3, "points": 1.2, "ko": 1.2}},
-    "chimaev": {"deckSwap": [["rnc", "single_leg"], ["arm_triangle", "counter_hook"]], "chase": 0.95, "ability": {"name": "瞬間壓制", "desc": "摔倒對手後，對手立刻損失 12 體力", "triggers": [{"on": "takedown", "do": [{"to": "foe", "stamina": -12}]}]}, "tactics": {"probe": 0.6, "press": 2.2, "points": 0.6, "ko": 0.8}},
-    "neutral": {"deckSwap": [["rnc", "clinch"], ["triangle", "check_kick"]]},
-    "gaethje": {"chase": 0.4, "ability": {"name": "腿踢累積", "desc": "踢中腿部會多累積 1 個傷痕，對手更快被腿傷拖慢步法", "passive": {"extraPips": {"legs": 1}}}, "tactics": {"probe": 0.6, "press": 0.8, "points": 0.8, "ko": 1.8}}
+    "mcgregor": {
+      "deck": ["feint", "left_hand", "left_hand", "head_kick", "spin_kick", "front_kick", "counter_hook", "back_counter", "pivot_counter"],
+      "speed": 84, "reaction": 64, "fwStyle": "outfighter", "leadStyle": "puncher", "respondStyle": "counter",
+      "chase": 0.35,
+      "ability": {"name": "看穿", "desc": "反擊成功後，看穿他的下一手傾向", "triggers": [{"on": "counter", "do": [{"to": "foe", "tag": "fooled"}]}]},
+      "tactics": {"probe": 1, "press": 0.3, "points": 0.8, "ko": 1.6}
+    },
+    "adesanya": {
+      "deck": ["feint", "step_jab", "front_kick", "body_kick", "head_kick", "spin_kick", "knee", "back_counter", "pivot_counter", "counter_hook"],
+      "speed": 82, "reaction": 74, "fwStyle": "counter", "leadStyle": "kicker", "respondStyle": "evasive",
+      "chase": 0.35,
+      "ability": {"name": "風格大師", "desc": "反擊成功後，自己拉開 1 格，並看清他的下一手", "triggers": [{"on": "counter", "do": [{"dist": -1}, {"to": "foe", "tag": "fooled"}]}]},
+      "tactics": {"probe": 1.6, "press": 0.3, "points": 1.2, "ko": 0.9}
+    },
+    "sandhagen": {
+      "deck": ["feint", "one_two", "step_jab", "superman", "body_kick", "head_kick", "knee", "counter_hook", "back_counter"],
+      "speed": 86, "reaction": 72, "fwStyle": "volume", "leadStyle": "kicker", "respondStyle": "evasive",
+      "chase": 0.45,
+      "ability": {"name": "流動步法", "desc": "用繞圈或後撤後，下一手爆擊率 +12%", "triggers": [{"on": "footwork", "moves": ["circle", "retreat"], "do": [{"tag": "flow"}]}]},
+      "tactics": {"probe": 1.2, "press": 0.5, "points": 1.4, "ko": 0.8}
+    },
+    "holloway": {
+      "deck": ["feint", "one_two", "step_jab", "uppercut", "knee", "body_kick", "head_kick", "back_counter", "counter_hook"],
+      "speed": 84, "reaction": 70, "fwStyle": "volume", "leadStyle": "volume", "respondStyle": "evasive",
+      "chase": 0.4,
+      "ability": {"name": "連打加速", "desc": "帶頭連出 2 張以上打擊，疊一層節奏：爆擊更高、出手更快，疊滿 3 層連段多 1 張", "triggers": [{"on": "play", "type": "S", "min": 2, "do": [{"tag": "rhythm", "stack": true, "max": 3, "turns": 1}]}]},
+      "tactics": {"probe": 0.8, "press": 0.5, "points": 2, "ko": 0.8}
+    },
+    "khabib": {
+      "deck": ["double_leg", "double_leg", "cage_trip", "slam", "clinch", "overhand", "knee", "guard_counter"],
+      "speed": 60, "reaction": 58, "fwStyle": "wrestler", "leadStyle": "wrestler", "respondStyle": "wrestler",
+      "chase": 0.95,
+      "ability": {"name": "死纏爛打", "desc": "把你摔倒後，你更難站起來", "passive": {"escapePenalty": 1}},
+      "tactics": {"probe": 0.8, "press": 2, "points": 0.8, "ko": 0.5}
+    },
+    "oliveira": {
+      "deck": ["knee", "elbow", "spin_elbow", "pull_guard", "pull_guard", "double_leg", "counter_hook", "guillotine", "back_counter"],
+      "speed": 68, "reaction": 62, "fwStyle": "grappler", "leadStyle": "grappler", "respondStyle": "grappler",
+      "chase": 0.8,
+      "ability": {"name": "下位鎖技", "desc": "從下位上的鎖技，一開始就更深", "passive": {"lockDepthBottom": 1}},
+      "tactics": {"probe": 0.8, "press": 1.4, "points": 0.6, "ko": 1}
+    },
+    "hooker": {
+      "deck": ["body_kick", "head_kick", "front_kick", "knee", "elbow", "clinch", "counter_hook", "guillotine", "check_kick"],
+      "speed": 74, "reaction": 66, "fwStyle": "outfighter", "leadStyle": "kicker", "respondStyle": "guard",
+      "chase": 0.5,
+      "ability": {"name": "長臂消耗", "desc": "打擊命中後，對手額外損失 3 體力", "triggers": [{"on": "hit", "type": "S", "do": [{"to": "foe", "stamina": -3}]}]},
+      "tactics": {"probe": 1.2, "press": 0.6, "points": 1.5, "ko": 0.8}
+    },
+    "jones": {
+      "deck": ["step_jab", "front_kick", "body_kick", "spin_elbow", "elbow", "knee", "cage_trip", "clinch", "check_kick", "guillotine"],
+      "speed": 76, "reaction": 78, "fwStyle": "outfighter", "leadStyle": "kicker", "respondStyle": "guard",
+      "chase": 0.75,
+      "ability": {"name": "管住距離", "desc": "踢中對手後，他下一手的走位多耗體力", "triggers": [{"on": "hit", "kick": true, "do": [{"to": "foe", "tag": "crowded"}]}]},
+      "tactics": {"probe": 1.2, "press": 1.2, "points": 1.2, "ko": 0.6}
+    },
+    "makhachev": {
+      "deck": ["elbow", "knee", "double_leg", "double_leg", "cage_trip", "slam", "clinch", "guillotine", "check_kick"],
+      "speed": 66, "reaction": 66, "fwStyle": "wrestler", "leadStyle": "wrestler", "respondStyle": "wrestler",
+      "chase": 0.95,
+      "ability": {"name": "窒息壓制", "desc": "抱摔得手後（地面過位、鎖技、逃脫也算），對手下一手少 1 能量／連段少 1 張", "triggers": [{"on": "grab", "do": [{"to": "foe", "tag": "smothered"}]}, {"on": "win", "type": "G", "ground": true, "do": [{"to": "foe", "tag": "smothered"}]}]},
+      "tactics": {"probe": 1, "press": 2, "points": 0.8, "ko": 0.5}
+    },
+    "poirier": {
+      "deck": ["overhand", "uppercut", "knee", "clinch", "cage_trip", "counter_hook", "guillotine", "back_counter"],
+      "speed": 78, "reaction": 62, "fwStyle": "brawler", "leadStyle": "puncher", "respondStyle": "guard",
+      "chase": 0.6,
+      "ability": {"name": "換拳狠勁", "desc": "雙方互換重拳時，他的傷害 +15%", "passive": {"tradeBonus": 0.15}},
+      "tactics": {"probe": 0.8, "press": 0.6, "points": 0.8, "ko": 1.6}
+    },
+    "pereira": {
+      "deck": ["left_hand", "uppercut", "body_kick", "head_kick", "spin_kick", "knee", "counter_hook", "check_kick"],
+      "speed": 76, "reaction": 66, "fwStyle": "counter", "leadStyle": "puncher", "respondStyle": "counter",
+      "chase": 0.4,
+      "ability": {"name": "左鉤拳終結", "desc": "被打暈的對手再挨頭部重擊，更容易直接 KO", "passive": {"rockedKoBonus": 0.12}},
+      "tactics": {"probe": 1.2, "press": 0.4, "points": 0.5, "ko": 2}
+    },
+    "topuria": {
+      "deck": ["one_two", "step_jab", "overhand", "uppercut", "knee", "cage_trip", "clinch", "double_leg", "counter_hook", "back_counter"],
+      "speed": 84, "reaction": 72, "fwStyle": "pressure", "leadStyle": "puncher", "respondStyle": "counter",
+      "chase": 0.6,
+      "ability": {"name": "反擊壓上", "desc": "反擊成功後，上前一步並開路，下一手重拳更易爆擊", "triggers": [{"on": "counter", "do": [{"dist": 1}, {"tag": "opened"}]}]},
+      "tactics": {"probe": 0.8, "press": 1, "points": 0.8, "ko": 1.5}
+    },
+    "omalley": {
+      "deck": ["step_jab", "front_kick", "body_kick", "head_kick", "spin_kick", "superman", "counter_hook", "back_counter", "guillotine"],
+      "speed": 84, "reaction": 76, "fwStyle": "outfighter", "leadStyle": "kicker", "respondStyle": "evasive",
+      "chase": 0.35,
+      "ability": {"name": "遠距離狙擊", "desc": "在遠、中距離打中後，下一手開路", "triggers": [{"on": "hit", "dist": [0, 1], "do": [{"tag": "opened"}]}]},
+      "tactics": {"probe": 1.4, "press": 0.3, "points": 1.2, "ko": 1.2}
+    },
+    "chimaev": {
+      "deck": ["overhand", "knee", "double_leg", "double_leg", "cage_trip", "slam", "clinch", "counter_hook", "guard_counter"],
+      "speed": 70, "reaction": 56, "fwStyle": "pressure", "leadStyle": "wrestler", "respondStyle": "wrestler",
+      "chase": 0.95,
+      "ability": {"name": "瞬間壓制", "desc": "摔倒對手後，對手立刻損失 12 體力", "triggers": [{"on": "takedown", "do": [{"to": "foe", "stamina": -12}]}]},
+      "tactics": {"probe": 0.6, "press": 2.2, "points": 0.6, "ko": 0.8}
+    },
+    "gaethje": {
+      "deck": ["overhand", "uppercut", "body_kick", "knee", "clinch", "counter_hook", "check_kick", "step_jab"],
+      "speed": 74, "reaction": 62, "fwStyle": "brawler", "leadStyle": "brawler", "respondStyle": "guard",
+      "chase": 0.4,
+      "ability": {"name": "腿踢累積", "desc": "踢中腿部會多累積 1 個傷痕，對手更快被腿傷拖慢", "passive": {"extraPips": {"legs": 1}}},
+      "tactics": {"probe": 0.6, "press": 0.8, "points": 0.8, "ko": 1.8}
+    },
+    "neutral": {
+      "deck": ["elbow", "double_leg", "cage_trip", "clinch", "guard_counter", "counter_hook", "check_kick", "body_kick"],
+      "speed": 75, "reaction": 62, "fwStyle": "balanced", "leadStyle": "balanced", "respondStyle": "balanced"
+    }
   }
 }
