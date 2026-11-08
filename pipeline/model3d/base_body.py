@@ -27,6 +27,7 @@ ap.add_argument("--arm-back", type=float, default=25.0, help="degrees the arms s
 ap.add_argument("--arm-raise", type=float, default=28.0, help="degrees the arms are lifted from the A pose")
 ap.add_argument("--leg-spread", type=float, default=6.0, help="degrees each leg is opened")
 ap.add_argument("--bulk", type=float, help="0-1 (default: preset's, else 0): extra muscle targets (chest, lats, abs, shoulders, arms, legs, neck) on top of the macros")
+ap.add_argument("--targets", default="", help="extra MPFB targets, e.g. stomach/stomach-pregnant-incr=0.3,torso/torso-vshape-decr=0.2")
 ap.add_argument("--view-px", type=int, default=640, help="pixel width of one view; height is 1.35x")
 args = ap.parse_args(argv)
 preset = {}
@@ -59,9 +60,9 @@ body.name = "Body"
 
 # Extra muscle on top of MakeHuman's macros (muscle is already at its maximum there). Weights are at bulk=1.
 BULK_TARGETS = {
-    "torso/torso-muscle-pectoral-incr": 0.7, "torso/torso-muscle-dorsi-incr": 0.6, "torso/torso-vshape-incr": 0.4,
+    "torso/torso-muscle-pectoral-incr": 0.7, "torso/torso-muscle-dorsi-incr": 0.6,
     "torso/measure-shoulder-dist-incr": 0.3, "torso/torso-scale-depth-incr": 0.15,
-    "stomach/stomach-tone-incr": 1.0, "stomach/stomach-pregnant-incr": 0.12,
+    "stomach/stomach-tone-incr": 1.0,
     "arms/l-upperarm-muscle-incr": 0.7, "arms/r-upperarm-muscle-incr": 0.7,
     "arms/l-upperarm-shoulder-muscle-incr": 0.7, "arms/r-upperarm-shoulder-muscle-incr": 0.7,
     "arms/l-lowerarm-muscle-incr": 0.5, "arms/r-lowerarm-muscle-incr": 0.5,
@@ -69,8 +70,13 @@ BULK_TARGETS = {
     "legs/l-lowerleg-muscle-incr": 0.5, "legs/r-lowerleg-muscle-incr": 0.5,
     "neck/measure-neck-circ-incr": 0.5,
 }
+# The base mesh's belly sits well behind the chest, so a muscular body looks hollow under the ribs (user, 2026-11-08):
+# fill the stomach and waist so the side profile runs straight from chest to belt. No V-shape widening for the same reason.
+TORSO_FILL = {"stomach/stomach-pregnant-incr": 0.3, "torso/measure-waist-circ-incr": 0.35}
 extra = {t: w * args.bulk for t, w in BULK_TARGETS.items()} if args.bulk > 0 else {}
-for t, w in preset.get("targets", {}).items():
+if args.bulk > 0:
+    extra.update(TORSO_FILL)
+for t, w in list(preset.get("targets", {}).items()) + [(kv.split("=")[0], float(kv.split("=")[1])) for kv in args.targets.split(",") if kv]:
     extra[t] = extra.get(t, 0.0) + w
 if extra:
     from bl_ext.blender_org.mpfb.services.targetservice import TargetService  # noqa: E402
