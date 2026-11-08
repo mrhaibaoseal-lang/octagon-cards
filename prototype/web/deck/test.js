@@ -234,8 +234,20 @@ test("committed plan: out-of-range card is not thrown and stays in hand; a chang
   assert.ok(replanned);
 });
 
-test("the seat that sees the plan alternates every hand", () => {
+test("the seat that sees the plan is always the same one (Slay-the-Spire style)", () => {
   const s = createMatch(data, "khabib", "mcgregor", 4);
+  const firsts = [];
+  for (let i = 0; i < 4; i++) {
+    startHand(s);
+    firsts.push(s.first);
+    endFirstPhase(s);
+  }
+  assert.deepEqual(firsts, ["a", "a", "a", "a"]);
+});
+
+test("alternateFirst: true brings back the swap", () => {
+  const d = { ...data, config: { ...data.config, match: { ...data.config.match, alternateFirst: true } } };
+  const s = createMatch(d, "khabib", "mcgregor", 4);
   const firsts = [];
   for (let i = 0; i < 4; i++) {
     startHand(s);
@@ -258,7 +270,8 @@ test("head hits that go through build to a stun; stunned fighters take more and 
   commitPlan(s, "b", []);
   endFirstPhase(s);
   startHand(s);
-  assert.equal(s.b.energy, 2);
+  const m = data.config.match;
+  assert.equal(s.b.energy, m.energy + (m.secondEnergyBonus || 0) - data.config.status.dizzy.energyLoss);
 });
 
 test("AI plans are legal and the look-ahead seat never plays an illegal line", () => {

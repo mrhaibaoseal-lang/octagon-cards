@@ -159,17 +159,17 @@ export function startHand(state) {
   state.lastLog = state.log;
   state.log = [];
   state.progress = false;
+  // Slay-the-Spire style (2026-11-09): the opener always plays live and sees the other seat's public plan, so the information edge never flips. `alternateFirst: true` brings back the old swap.
+  state.first = cfg.match.alternateFirst && state.stats.hands % 2 === 0 ? other(state.opener) : state.opener;
   for (const side of ["a", "b"]) {
     const S = state[side];
-    S.energy = cfg.match.energy - (S.stunned ? cfg.status.dizzy.energyLoss : 0);
+    S.energy = cfg.match.energy + (side === state.first ? 0 : cfg.match.secondEnergyBonus || 0) - (S.stunned ? cfg.status.dizzy.energyLoss : 0);
     S.stunned = false;
     S.steps = 0;
     const n = state.hand === 1 ? 0 : Math.max(0, cfg.match.drawPerHand - S.windedLoss);
     S.windedLoss = 0;
     if (n) draw(state, side, n);
   }
-  // The seat that sees the other's plan alternates every hand, so neither side always has the information edge.
-  state.first = state.stats.hands % 2 === 1 ? state.opener : other(state.opener);
   state.phase = state.first;
   state.plan = null;
   beginPhase(state, state.first);

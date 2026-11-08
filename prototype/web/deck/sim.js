@@ -22,11 +22,11 @@ export function rngOf(seed) {
 }
 
 /** One hand: the second seat commits blind, the first seat looks at the plan and plays, then the plan runs. */
-export function playHand(state, rng, { firstLook = true } = {}) {
+export function playHand(state, rng, { firstLook = true, firstLeaves } = {}) {
   startHand(state);
   const second = other(state.first);
   commitPlan(state, second, plan(state, second, { look: false, rng }));
-  playLive(state, state.first, { look: firstLook, rng });
+  playLive(state, state.first, { look: firstLook, rng, maxLeaves: firstLeaves });
   endFirstPhase(state, (st, seat) => plan(st, seat, { look: false, rng }));
 }
 

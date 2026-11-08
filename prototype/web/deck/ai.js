@@ -1,7 +1,7 @@
 // Card-play AI. It runs the same engine, hands and rules as the player: it enumerates the plays it can legally make, scores the result, and picks the best.
 // `look: true` is the seat that moves first and can see the other seat's committed plan, so it scores the whole exchange; `look: false` plans blind.
 
-import { other, clone, perform, options, beginPhase, planSignature, commitPlan } from "./engine.js";
+import { other, clone, perform, options, beginPhase, planSignature, commitPlan, endFirstPhase } from "./engine.js";
 
 const TAKEDOWN_EFFECTS = new Set(["takedown", "pull"]);
 
@@ -39,7 +39,7 @@ function leafScore(st, me, base, prof, blind, handCrowded) {
 }
 
 /** The best list of actions for `side` this phase. */
-export function plan(state, side, { look = false, rng = Math.random, maxLeaves } = {}) {
+export function plan(state, side, { look = false, rng = Math.random, maxLeaves, robust } = {}) {
   const cfg = state.data.config;
   const limit = maxLeaves ?? cfg.ai.maxLeaves;
   const prof = profile(state, side);
@@ -107,6 +107,25 @@ export function plan(state, side, { look = false, rng = Math.random, maxLeaves }
       }
       const score = sum + rng() * 0.8;
       if (score > best.score) best = { score, seq: cand.seq };
+      cand.blindScore = score;
+    }
+    // Robust planning: the other seat sees this plan and answers it live (Slay-the-Spire rules), so judge each of the best candidates by what the best answer leaves, not by how it looks in a vacuum.
+    const n = robust ?? cfg.ai.robust ?? 0;
+    if (n > 0 && state.first !== side) {
+      const cands = top.filter((c) => c.blindScore !== undefined).sort((x, y) => y.blindScore - x.blindScore).slice(0, n);
+      cands.push({ seq: [] });
+      let bestR = -Infinity;
+      for (const cand of cands) {
+        const c = clone(state);
+        commitPlan(c, side, cand.seq);
+        playLive(c, state.first, { look: true, rng, maxLeaves: cfg.ai.replyLeaves });
+        endFirstPhase(c, (st, seat) => plan(st, seat, { look: false, rng, maxLeaves: cfg.ai.replyLeaves, robust: 0 }));
+        const score = leafScore(c, side, base, prof, false, crowded) + rng() * 0.8;
+        if (score > bestR) {
+          bestR = score;
+          best = { score, seq: cand.seq };
+        }
+      }
     }
   }
   return best.seq;
@@ -119,9 +138,9 @@ export function endsPlan(st, sigBefore, action) {
 }
 
 /** The seat that moves first plays live: plan, play until something changes the picture, then plan again with what is left. */
-export function playLive(state, side, { look = true, rng = Math.random } = {}) {
+export function playLive(state, side, { look = true, rng = Math.random, maxLeaves } = {}) {
   for (let guard = 8; guard > 0 && !state.over; guard--) {
-    const acts = plan(state, side, { look, rng });
+    const acts = plan(state, side, { look, rng, maxLeaves });
     if (!acts.length) return;
     for (const a of acts) {
       const sig = planSignature(state);

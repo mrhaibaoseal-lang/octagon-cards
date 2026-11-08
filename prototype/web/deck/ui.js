@@ -2,6 +2,7 @@
 import { createMatch, startHand, commitPlan, beginSecondPhase, runPlan, closeHand, perform, options, previewPlan, clone, other, eventText, cardText, rangeText, whyText, zoneOf, roleOf } from "./engine.js";
 import { plan, playLive, endsPlan } from "./ai.js";
 import { planSignature } from "./engine.js";
+import { createArena } from "./arena.js";
 
 const load = async (n) => (await fetch(`rules/deck/${n}.json`)).json();
 const data = { config: await load("config"), cards: await load("cards"), fighters: await load("fighters") };
@@ -10,7 +11,10 @@ const rng = Math.random;
 const $app = document.getElementById("app");
 
 let S = null;
-const ui = { mode: "select", me: "khabib", foe: "mcgregor", queue: [], showPiles: false };
+const arena = createArena(data);
+const seen = (() => { try { return localStorage.getItem("deckHelpSeen") === "1"; } catch { return false; } })();
+const ui = { mode: "select", me: "khabib", foe: "mcgregor", queue: [], showPiles: false, help: !seen };
+const markSeen = () => { try { localStorage.setItem("deckHelpSeen", "1"); } catch {} };
 
 const nm = (side) => data.fighters[S[side].id].short;
 const cardName = (id) => data.cards[id].name;
@@ -30,6 +34,7 @@ const stepText = (a) => (a.k === "step" ? (a.d > 0 ? "拉近一格" : "拉開一
 
 function startMatch() {
   S = createMatch(data, ui.me, ui.foe, (Math.random() * 1e9) >>> 0);
+  arena.load([ui.me, ui.foe]);
   nextHand();
 }
 
@@ -133,16 +138,12 @@ function fighterPanel(side) {
 function midPanel() {
   const rounds = data.config.match.rounds;
   const hands = data.config.match.handsPerRound;
-  const info = S.first === "a" ? "這手：你先出牌，看得到對手的計畫" : "這手：你先排計畫，對手看了才出牌";
-  let ground = "";
+  let body;
   if (S.pos === "ground") {
     const cm = data.config.ground;
-    const bar = (v, max, col) => `<span class="bar"><i style="width:${(v / max) * 100}%;background:${col}"></i></span>`;
-    ground = `<div class="ground-badge">地面｜上位：${nm(S.top)}<br>控制 ${bar(S.control, cm.controlMax, "#ffb547")} ${S.control}/${cm.controlMax}<br>鎖技 你 ${bar(S.lock.a, cm.lockThreshold, "#4aa3ff")}${S.lock.a} ‖ 他 ${bar(S.lock.b, cm.lockThreshold, "#ff6b5e")}${S.lock.b}<br><span style="color:var(--dim);font-weight:400">鎖滿 ${cm.lockThreshold} 就降伏・${S.stall ? "沒進展，快被叫起" : "有進展"}</span></div>`;
-  } else {
-    ground = `<div class="track">${dist.map((d, i) => `<div class="${i === S.dist ? "cur" : ""}">${d}</div>`).join("")}</div>`;
-  }
-  return `<div id="mid"><div class="rh">第 ${S.round}/${rounds} 回合・第 ${S.hand}/${hands} 手 <button data-act="menu" style="padding:0 .3rem;font-size:.65rem">選單</button></div>${ground}<div class="rh">${info}</div></div>`;
+    body = `<span class="gb">地面｜上位 ${nm(S.top)}｜控制 ${S.control}/${cm.controlMax}｜鎖技 你 ${S.lock.a}・他 ${S.lock.b}（滿 ${cm.lockThreshold} 降伏）${S.stall ? "｜沒進展，快被叫起" : ""}</span>`;
+  } else body = `<span class="track">${dist.map((d, i) => `<span class="${i === S.dist ? "cur" : ""}">${d}</span>`).join("")}</span>`;
+  return `<div id="mid"><span>第 ${S.round}/${rounds} 回合・第 ${S.hand}/${hands} 手</span>${body}<button data-act="menu">選單</button></div>`;
 }
 
 function intentPanel() {
@@ -169,7 +170,57 @@ function intentPanel() {
     return `<span class="step${bad ? " whiff" : ""}"><b>${stepLabel(a)}</b>${detail}</span>`;
   });
   const dmg = pre.tap ? `<span class="dmgnote">⚠ 會鎖到降伏！</span>` : pre.ko ? `<span class="dmgnote">⚠ 會被 KO！</span>` : pre.damage ? `<span class="dmgnote">預計你受到 ${pre.damage} 傷害</span>` : `<span class="dmgnote safe">預計你不會受傷</span>`;
-  return `<h4><span>${nm("b")} 這手的計畫（現在這個局面下）</span></h4><div class="row">${chips.join('<span class="arrow">▶</span>')}${dmg}</div>`;
+  return `<h4><span>⚠ ${nm("b")} 這手要做的事（照順序；你出完牌後才執行）</span></h4><div class="row">${chips.join('<span class="arrow">▶</span>')}${dmg}</div>`;
+}
+
+/** A plain-language "what now" bar under the plan: what the opponent is about to do and which of your cards answer it. */
+function guidePanel() {
+  const m = ui.mode;
+  const F = S.a;
+  const foe = nm("b");
+  let head = "";
+  let body = "";
+  if (m === "recap") {
+    head = "這手結束了";
+    body = "右邊的紀錄寫了這手每個動作的結果。看完按右下角「下一手」。";
+  } else if (m === "over") {
+    return "";
+  } else {
+    const live = m === "play" || m === "play2";
+    const stale = S.plan && S.plan.sig !== planSignature(S);
+    const acts = !stale && S.plan ? S.plan.actions : [];
+    const types = new Set(acts.flatMap((a) => (a.k === "card" ? data.cards[a.id].effects.map((e) => e.t) : [])));
+    const pre = acts.length ? previewPlan(S) : null;
+    const tips = [];
+    if (m === "play2") tips.push("位置變了，對手的計畫作廢，你可以當場再出牌。");
+    else if (!acts.length) tips.push(`${foe} 這手沒有動作，放手進攻吧。`);
+    else {
+      if (types.has("hit")) tips.push(`${foe} 要打你（${pre.damage ? `預計 ${pre.damage} 傷害` : "但你現在擋得住"}）：出藍色「格擋」吸收傷害、「閃身」躲下一擊，或先打他搶在前面。`);
+      if (types.has("takedown")) tips.push("他要抱摔：出「防摔」擋住，或把距離拉開（他的抱摔打不到就落空）。");
+      if (types.has("pull")) tips.push("他想把你拉進地面。");
+      if (types.has("lock")) tips.push("他在鎖你：出紫色拆鎖牌，鎖技滿 12 就降伏。");
+      if (types.has("control") || types.has("escape")) tips.push("他在地面做動作：看你的位置能出什麼牌。");
+    }
+    head = live ? `輪到你出牌　你有 ${F.energy} 能量` : "排你的計畫";
+    body = `${tips.join("　")}　<span class="dim">牌左上角黃圈＝花費能量；灰色牌現在出不了（看牌下方原因）。出完按「結束這手」，對手的計畫才會執行。</span>`;
+  }
+  return `<div id="guide"><b>${head}</b><span>${body}</span><button data-act="help">怎麼玩</button></div>`;
+}
+
+function helpModal() {
+  return `<div class="overlay" data-act="closehelp"><div class="box help"><h2>怎麼玩</h2>
+    <div class="cols3">
+      <div><h3>① 目標</h3>把對手 HP 打到 0（KO）；或在地面把鎖技累積到 12（降伏）；3 回合打完比 HP（判定）。</div>
+      <div><h3>② 一手的流程</h3><b>對手先排好計畫並公開</b>（上方紅色格子），<b>你看了再出牌</b>，你出完按「結束這手」，他的計畫才照順序執行。你出的擋和閃身會撐到他計畫打完。</div>
+      <div><h3>③ 能量</h3>每手你有 3 能量（對手更多），每張牌左上角的數字是花費。用不完不會留到下一手。上步／後退也要 1 能量。</div>
+      <div><h3>④ 距離</h3>站立分 遠／中／近／纏抱 四格。牌上寫的「距離」不對就出不了。想打到他或躲開他，就用上步、後退調距離。</div>
+      <div><h3>⑤ 牌色</h3><b style="color:#ffb3ab">紅</b>＝攻擊　<b style="color:#9cc9ff">藍</b>＝防守　<b style="color:#ffd9a1">橘</b>＝抱摔／地面控制　<b style="color:#d9b3ff">紫</b>＝鎖技。</div>
+      <div><h3>⑥ 牌庫＝體力</h3>每手補抽 2 張，回合中間不洗牌。打到抽牌堆見底就只剩弱的基本招（累了），3 回合各自開頭全部洗回。打對手身體會讓他喘、少抽牌。</div>
+      <div><h3>⑦ 狀態</h3>頭部連續被打會暈眩（受傷更多、少 1 能量）；腿被踢會讓步法變貴。</div>
+      <div><h3>⑧ 地面</h3>被抱摔後換用「地面牌組」：上位累積控制、砸拳、鎖技；下位逃脫、拆鎖、反轉。</div>
+      <div><h3>小提醒</h3>每手先看紅色格子下方的「預計你受到 N 傷害」，再決定要擋、閃、還是搶攻。</div>
+    </div>
+    <div class="row2"><button class="primary" data-act="closehelp">知道了</button></div></div></div>`;
 }
 
 function logPanel() {
@@ -259,7 +310,7 @@ function selectScreen() {
     <div>你選：</div><div class="pick">${FIGHTERS.map((id) => opt(id, ui.me, "me")).join("")}</div>
     <div>對手：</div><div class="pick foe">${FIGHTERS.map((id) => opt(id, ui.foe, "foe")).join("")}</div>
     <div class="cols">${deck(ui.me)}${deck(ui.foe)}</div>
-    <div class="row2"><button class="primary" data-act="start">開打</button></div></div></div>`;
+    <div class="row2"><button data-act="help">怎麼玩</button><button class="primary" data-act="start">開打</button></div></div></div>`;
 }
 
 function overScreen() {
@@ -271,17 +322,23 @@ function overScreen() {
 
 function render() {
   if (ui.mode === "select") {
-    $app.innerHTML = selectScreen();
+    $app.innerHTML = selectScreen() + (ui.help ? helpModal() : "");
     return;
   }
   const logEl = document.getElementById("log");
   const keep = logEl ? logEl.scrollTop : 0;
   $app.className = ui.mode === "recap" || ui.mode === "over" ? "recap" : "";
-  $app.innerHTML = `<div id="top">${fighterPanel("a")}${midPanel()}${fighterPanel("b")}</div>
+  $app.innerHTML = `<div id="top">${fighterPanel("a")}<div id="stage">${midPanel()}</div>${fighterPanel("b")}</div>
     <div id="mids"><div id="intent">${intentPanel()}</div>${logPanel()}</div>
-    ${handPanel()}${ui.showPiles ? pilesModal() : ""}${ui.mode === "over" ? overScreen() : ""}`;
+    ${guidePanel()}${handPanel()}${ui.showPiles ? pilesModal() : ""}${ui.help ? helpModal() : ""}${ui.mode === "over" ? overScreen() : ""}`;
   const l = document.getElementById("log");
   if (l) l.scrollTop = l.scrollHeight || keep;
+  const stage = document.getElementById("stage");
+  if (stage) {
+    stage.prepend(arena.canvas);
+    arena.sync(S);
+    arena.draw();
+  }
 }
 
 // ---------- input ----------
@@ -304,6 +361,15 @@ $app.addEventListener("click", (ev) => {
   } else if (act === "closepiles") {
     if (ev.target.classList.contains("overlay") || el.tagName === "BUTTON") {
       ui.showPiles = false;
+      render();
+    }
+  } else if (act === "help") {
+    ui.help = true;
+    render();
+  } else if (act === "closehelp") {
+    if (ev.target.classList.contains("overlay") || el.tagName === "BUTTON") {
+      ui.help = false;
+      markSeen();
       render();
     }
   } else if (act === "main") onMain();

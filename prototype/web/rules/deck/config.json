@@ -11,7 +11,9 @@
     "groundEntryDraw": 4,
     "healBetweenRounds": 12,
     "startDistance": 1,
-    "whiffSpends": false
+    "whiffSpends": false,
+    "alternateFirst": false,
+    "secondEnergyBonus": 2
   },
   "distance": {
     "names": [
@@ -68,6 +70,8 @@
     "safe": 1.1,
     "card": 1.3,
     "expect": 9,
-    "maxLeaves": 700
+    "maxLeaves": 700,
+    "robust": 0,
+    "replyLeaves": 250
   }
 }
