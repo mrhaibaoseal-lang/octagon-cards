@@ -14,6 +14,7 @@
 ## 每位選手的步驟
 1. **身體與白模**（身高 cm、體重 lb 取自 `rules/fighters.json`）：
    `B -b -P pipeline/model3d/base_body.py -- --out D --height 170 --weight 145`
+   `--bulk 0~1` 另外加胸、背闊、腹肌、肩、手腳肌肉（預設 0＝原本的身體）。
    → `base_body.blend`（引導姿勢：手臂抬開、雙腿分開、眼球）、`guide_sheet.png`（正面、3/4 右、背面）、`guide_views.json`
 2. **Gemini 畫身體皮膚**（1 張）：`uv run --no-project --with google-genai --with google-auth --with pillow python -I pipeline/model3d/paint_skin.py --fighter topuria`
    → `painted_sheet.png`。新選手要先加進 `paint_skin.py` 的 `FIGHTERS`（外觀、短褲）。

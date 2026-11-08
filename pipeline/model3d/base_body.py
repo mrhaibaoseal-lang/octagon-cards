@@ -25,6 +25,7 @@ ap.add_argument("--weight", type=float, default=170.0, help="lb (fight weight)")
 ap.add_argument("--arm-back", type=float, default=25.0, help="degrees the arms swing back, so three-quarter views do not see them across the torso")
 ap.add_argument("--arm-raise", type=float, default=28.0, help="degrees the arms are lifted from the A pose")
 ap.add_argument("--leg-spread", type=float, default=6.0, help="degrees each leg is opened")
+ap.add_argument("--bulk", type=float, default=0.0, help="0-1: extra muscle targets (chest, lats, abs, shoulders, arms, legs, neck) on top of the macros")
 ap.add_argument("--view-px", type=int, default=640, help="pixel width of one view; height is 1.35x")
 args = ap.parse_args(argv)
 args.out = os.path.abspath(args.out)
@@ -47,6 +48,24 @@ macro = {
 }
 body = HumanService.create_human(macro_detail_dict=macro, scale=0.1)
 body.name = "Body"
+
+# Extra muscle on top of MakeHuman's macros (muscle is already at its maximum there). Weights are at bulk=1.
+BULK_TARGETS = {
+    "torso/torso-muscle-pectoral-incr": 0.7, "torso/torso-muscle-dorsi-incr": 0.6, "torso/torso-vshape-incr": 0.4,
+    "torso/measure-shoulder-dist-incr": 0.3, "torso/torso-scale-depth-incr": 0.15,
+    "stomach/stomach-tone-incr": 1.0, "stomach/stomach-pregnant-incr": 0.12,
+    "arms/l-upperarm-muscle-incr": 0.7, "arms/r-upperarm-muscle-incr": 0.7,
+    "arms/l-upperarm-shoulder-muscle-incr": 0.7, "arms/r-upperarm-shoulder-muscle-incr": 0.7,
+    "arms/l-lowerarm-muscle-incr": 0.5, "arms/r-lowerarm-muscle-incr": 0.5,
+    "legs/l-upperleg-muscle-incr": 0.6, "legs/r-upperleg-muscle-incr": 0.6,
+    "legs/l-lowerleg-muscle-incr": 0.5, "legs/r-lowerleg-muscle-incr": 0.5,
+    "neck/measure-neck-circ-incr": 0.5,
+}
+if args.bulk > 0:
+    from bl_ext.blender_org.mpfb.services.targetservice import TargetService  # noqa: E402
+    tdir = os.path.join(os.path.dirname(sys.modules[HumanService.__module__].__file__), "..", "data", "targets")
+    for t, w in BULK_TARGETS.items():
+        TargetService.load_target(body, os.path.abspath(os.path.join(tdir, t + ".target.gz")), weight=w * args.bulk)
 
 # Scale to the real height in metres.
 zs = [(body.matrix_world @ v.co).z for v in body.data.vertices]
