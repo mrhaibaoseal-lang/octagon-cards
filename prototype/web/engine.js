@@ -80,6 +80,8 @@ export function createMatch(data, idA, idB, seed = 1, mode = "standard") {
     seed,
     dist: data.rules.dist.start, // 0 far, 1 mid, 2 close, 3 clinch. Shared by both fighters while standing.
     ground: null,
+    gh: null, // the hand on the mat in progress (see groundHand)
+    gHist: { lead: { a: [], b: [] }, ans: { a: [], b: [] } }, // what each side led with and answered with on the mat, for the AI to read habits
     cage: null, // { side, ttl }: the fighter whose back is to the fence
     pending: null, // a choice the winner of a takedown still has to make
     engage: null, // the stand-up hand in progress once the footwork is in: { leader, resp, combo, plan, ... }
@@ -156,29 +158,30 @@ const isBasic = (state, c) => Boolean(state.cards[c].basic);
 
 /** "top" or "bottom" for a fighter on the mat. */
 export const roleOf = (state, s) => (state.ground.top === s ? "top" : "bottom");
-const GROUND_CATS = (state) => state.rules.ground.cats;
-/** The kind of a ground play: a card's category, or the free option (hold on top, cover underneath) for an empty play. */
-export function groundCatOf(state, s, cards) {
-  if (cards.length) return state.cards[cards[0]].cat || state.cards[cards[0]].lockMove;
-  return roleOf(state, s) === "top" ? "hold" : "cover";
-}
-/** Can this ground card be thrown by `s` from where the mat stands now? */
-function groundCardUsable(state, s, card) {
-  if (!card.cat) return false;
-  if (state.ground.lock) return false;
-  const cat = GROUND_CATS(state)[card.cat];
-  return cat.side === roleOf(state, s) && state.ground.pos >= card.pos[0] && state.ground.pos <= card.pos[1];
-}
-/** The three attack or defence moves of a lock fight, as hand cards. */
-function lockHand(state, s) {
-  const side = state.ground.lock.attacker === s ? "attack" : "defend";
-  return Object.keys(state.cards).filter((c) => state.cards[c].lockSide === side);
-}
+const GR = (state) => state.rules.ground;
+const POINTS = ["wrist", "neck", "hip"];
+/** Who leads on the mat: whoever holds a lock, otherwise the man on top. The other man answers. */
+export const groundLeader = (state) => (state.ground.lock ? state.ground.lock.attacker : state.ground.top);
 
 /**
- * On the mat a fighter holds ground cards only (the stand-up hand is kept aside). Cards that still work stay; the rest go back,
- * and the hand is topped up so that every kind of play this role has here (punch / pass / lock, or frame / counter / escape) is in it.
- * In a lock fight the hand is the three attack or defence moves.
+ * Can `s` play this ground card where the mat stands now? Cards are tied to a role and a range of positions.
+ * Once a lock is on, the man holding it has one step left (tighten) and the man in it can only try to escape.
+ */
+function groundCardUsable(state, s, card) {
+  if (!card.cat) return false;
+  const g = state.ground;
+  const leading = groundLeader(state) === s;
+  if (card.cat === "tighten") return leading;
+  if (g.lock) return !leading && card.cat === "escape" && g.pos >= card.pos[0] && g.pos <= card.pos[1];
+  if (card.side !== roleOf(state, s)) return false;
+  return g.pos >= card.pos[0] && g.pos <= card.pos[1];
+}
+
+const GROUND_ORDER = ["punch", "ctrl", "pass", "lock", "tighten", "counter", "escape"];
+
+/**
+ * On the mat a fighter holds ground cards only (the stand-up hand is kept aside): the basic steps everyone has that fit this role
+ * and position, plus a few of his own special moves drawn from his ground deck. Special moves that stop fitting go back.
  */
 function refillGround(state, s) {
   const me = state[s];
@@ -186,13 +189,8 @@ function refillGround(state, s) {
     me.stand = me.hand;
     me.hand = [];
   }
-  if (state.ground.lock) {
-    me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat));
-    me.hand = lockHand(state, s);
-    return;
-  }
-  const keep = me.hand.filter((c) => groundCardUsable(state, s, state.cards[c]));
-  me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat && !keep.includes(c)));
+  const keep = me.hand.filter((c) => !isBasic(state, c) && groundCardUsable(state, s, state.cards[c]));
+  me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat && !isBasic(state, c) && !keep.includes(c)));
   const hand = keep;
   const take = (pred) => {
     let i = me.gdraw.findIndex(pred);
@@ -203,21 +201,16 @@ function refillGround(state, s) {
     }
     return i < 0 ? null : me.gdraw.splice(i, 1)[0];
   };
-  const role = roleOf(state, s);
   const usable = (c) => groundCardUsable(state, s, state.cards[c]);
-  for (const [cat, def] of Object.entries(GROUND_CATS(state))) {
-    if (def.side !== role || def.free || hand.some((c) => state.cards[c].cat === cat)) continue;
-    const c = take((x) => usable(x) && state.cards[x].cat === cat);
-    if (c) hand.push(c);
-  }
-  while (hand.length < state.rules.ground.handSize) {
+  while (hand.length < GR(state).handSize) {
     const c = take(usable);
     if (!c) break;
     hand.push(c);
   }
-  const order = Object.keys(GROUND_CATS(state));
-  hand.sort((x, y) => order.indexOf(state.cards[x].cat) - order.indexOf(state.cards[y].cat) || state.cards[x].cost - state.cards[y].cost);
-  me.hand = hand;
+  const basics = GR(state).basics.filter((c) => usable(c));
+  const all = [...hand, ...basics];
+  all.sort((x, y) => GROUND_ORDER.indexOf(state.cards[x].cat) - GROUND_ORDER.indexOf(state.cards[y].cat) || Number(Boolean(state.cards[x].basic)) - Number(Boolean(state.cards[y].basic)) || state.cards[x].cost - state.cards[y].cost);
+  me.hand = all;
 }
 
 // ---------- Queries used by AI, simulator and UI ----------
@@ -272,11 +265,7 @@ const clampDist = (state, d) => clamp(d, 0, state.rules.dist.names.length - 1);
 
 /** Can this card be thrown from distance `d`? On the ground distance does not apply, but steps do not exist there. */
 export function usableAt(state, card, d, s) {
-  if (state.ground) {
-    // On the mat only ground cards work, and only the ones that fit this role and position. In a lock fight only the lock moves.
-    if (card.lockMove) return Boolean(state.ground.lock) && (!s || card.lockSide === (state.ground.lock.attacker === s ? "attack" : "defend"));
-    return Boolean(s) && groundCardUsable(state, s, card);
-  }
+  if (state.ground) return Boolean(s) && groundCardUsable(state, s, card);
   if (card.cat || card.lockMove) return false;
   // A fighter against the fence has nowhere to back off to.
   if (s && state.cage?.side === s && card.move < 0) return false;
@@ -359,20 +348,11 @@ export function lockResistChance(state) {
   return clamp(p, r.min, r.max);
 }
 
-/** Would these two lock moves be a wrong guess by the defender (so that he has to resist)? For the screen to know when to ask. */
-export function lockGuessWrong(state, playA, playB) {
-  const lock = state.ground?.lock;
-  if (!lock || !playA.length || !playB.length) return false;
-  const plays = { a: playA, b: playB };
-  const atk = lock.attacker;
-  return state.rules.lock.beats[state.cards[plays[atk][0]].lockMove] !== state.cards[plays[opposite(atk)][0]].lockMove;
-}
-
 /** Where a lock fight stands: the stage (1 to tapDepth - 1; reaching tapDepth is the tap), who holds it and what it is called. */
 export function lockStatus(state) {
   const lock = state.ground?.lock;
   if (!lock) return null;
-  return { attacker: lock.attacker, name: lock.name, depth: lock.depth, tapDepth: state.rules.lock.tapDepth };
+  return { attacker: lock.attacker, name: lock.name, aim: lock.aim, depth: lock.depth, tapDepth: state.rules.lock.tapDepth };
 }
 
 
@@ -401,148 +381,517 @@ function distGap(state, s, d) {
   return d < lo ? lo - d : d > hi ? d - hi : 0;
 }
 
+// ---------- Ground: steps, answers, AI ----------
+
+const G_AIMS = ["punch", "wrist", "neck", "hip", "pass", "lock", "hold"];
+const G_ANSWERS = ["cover", "frame", "shrimp", "hands", "escape", "counter"];
+/** The answer that stops each aim for good. A punch is answered by a counter or a cover; a lock by its point's answer or an escape. */
+const ANSWER_FOR = { wrist: "hands", neck: "frame", hip: "shrimp", pass: "frame" };
+
+/** What a ground step goes for: a punch, one of the three points, the pass; a lock or a tighten goes for the point it works on. */
+export function aimOf(state, cardId) {
+  const c = state.cards[cardId];
+  if (c.cat === "punch") return "punch";
+  if (c.cat === "tighten") return state.ground?.lock?.aim || "wrist";
+  return c.aim || "punch";
+}
+
+/** How many steps the man in charge can string together: more stamina, longer chain; stunned, one. */
+export function groundMax(state, s) {
+  const me = state[s];
+  if (me.rocked) return 1;
+  let n = GR(state).steps.find(([min]) => me.stamina >= min)[1];
+  n += tagSum(state, s, "combo");
+  if (isFinal(state)) n += 1;
+  return clamp(n, 1, 4);
+}
+
+/** The hand on the mat in progress. Created when first asked for: the leader is the man on top (or whoever holds a lock). */
+export function groundHand(state) {
+  if (!state.ground) throw new Error("not on the mat");
+  if (!state.gh) {
+    const L = groundLeader(state);
+    state.gh = { leader: L, resp: opposite(L), started: false, combo: [], i: 0, plan: null, stop: null, edge: null, thrown: { a: [], b: [] }, wasRocked: { a: state.a.rocked, b: state.b.rocked }, landed: 0 };
+  }
+  return state.gh;
+}
+
+/** Why this chain of steps cannot be played, or null. A lock card needs its point already under control (a control step earlier in the chain counts). */
+export function groundComboError(state, s, cards) {
+  const g = state.ground;
+  const H = groundHand(state);
+  if (H.leader !== s) return "not leading";
+  if (H.started) return "already started";
+  if (g.lock && !cards.length) return "choose a move";
+  if (cards.length > groundMax(state, s)) return "too long";
+  const have = {};
+  for (const c of state[s].hand) have[c] = (have[c] || 0) + 1;
+  const used = {};
+  const pts = { ...g.pts };
+  let lock = Boolean(g.lock);
+  for (const c of cards) {
+    const card = state.cards[c];
+    if (!card || !have[c]) return "not in hand";
+    if (!card.basic) {
+      used[c] = (used[c] || 0) + 1;
+      if (used[c] > have[c]) return "not in hand";
+    }
+    if (!groundCardUsable(state, s, card)) return "not usable here";
+    if (card.cat === "ctrl") pts[card.aim] = Math.min(GR(state).ctrl.max, pts[card.aim] + 1);
+    else if (card.cat === "lock") {
+      if (lock) return "already locked";
+      if (pts[card.aim] < 1) return "control first";
+      lock = true;
+    } else if (card.cat === "tighten" && !lock) return "no lock to tighten";
+  }
+  return null;
+}
+
+/** Why this answer cannot be played, or null. An answer picked live (a slow step was seen coming) works the same way. */
+export function groundPlanError(state, s, plan) {
+  const k = plan?.kind;
+  const me = state[s];
+  if (!GR(state).answers[k]) return "unknown response";
+  const H = groundHand(state);
+  if (H.resp !== s) return "not responding";
+  if (me.rocked && !["cover", "frame", "hands", "shrimp"].includes(k)) return "stunned";
+  if (k === "counter" || k === "escape") {
+    const card = state.cards[plan.card];
+    if (!card || !me.hand.includes(plan.card)) return "not in hand";
+    if (card.cat !== k) return "wrong card";
+    if (!groundCardUsable(state, s, card)) return "not usable here";
+    if (!card.basic && H.thrown[s].includes(plan.card)) return "already used";
+  }
+  return null;
+}
+
+/** The cards that can back a counter or an escape from here. */
+export function groundAnswerCards(state, s, kind) {
+  return state[s].hand.filter((c) => state.cards[c].cat === kind && groundCardUsable(state, s, state.cards[c]) && !(!state.cards[c].basic && state.gh?.thrown[s].includes(c)));
+}
+
+/** The next step of the chain and whether the man answering can see it coming (null when the chain is over). */
+export function groundWaiting(state) {
+  const H = state.gh;
+  if (!H?.started || H.stop || H.i >= H.combo.length) return null;
+  const cid = H.combo[H.i];
+  const speed = cardSpeed(state, H.leader, cid);
+  const reaction = reactionOf(state, H.resp);
+  return { index: H.i, of: H.combo.length, card: cid, aim: aimOf(state, cid), speed: Math.round(speed), reaction: Math.round(reaction), visible: speed < reaction };
+}
+
+/** The leader has laid out his steps and the other man his answer. A held position (no steps) resolves at once. Returns events. */
+export function groundStart(state, combo, plan = { kind: "cover" }) {
+  const g = state.ground;
+  const H = groundHand(state);
+  const L = H.leader;
+  const S = H.resp;
+  const err = groundComboError(state, L, combo);
+  if (err) throw new Error(`${L} illegal chain: ${err} (${combo.join(",")})`);
+  const perr = groundPlanError(state, S, plan);
+  if (perr) throw new Error(`${S} illegal answer: ${perr}`);
+  H.started = true;
+  H.combo = [...combo];
+  H.plan = { ...plan };
+  const hist = (state.gHist ||= { lead: { a: [], b: [] }, ans: { a: [], b: [] } });
+  hist.ans[S].push(plan.kind);
+  hist.lead[L].push(combo.length ? aimOf(state, combo[0]) : "hold");
+  const events = [{ kind: "gengage", leader: L, resp: S, n: combo.length, pts: { ...g.pts }, posture: g.posture, answer: plan.kind }];
+  if (!combo.length) {
+    groundHold(state, H, events);
+    return finishGround(state, events);
+  }
+  state.stall = 0;
+  return events;
+}
+
+/** Drives a whole hand: `react(state, waiting)` answers steps the man underneath can see (return an answer, or null to stay with the bet). */
+export function resolveGround(state, combo, plan, react = null) {
+  const events = groundStart(state, combo, plan);
+  while (state.gh) {
+    const w = groundWaiting(state);
+    const reaction = w?.visible && react ? react(state, w) : null;
+    events.push(...groundStep(state, reaction));
+  }
+  return events;
+}
+
+/** Nobody moves: he stays heavy. It catches an escape, drains him either way, and a referee stands them up if it drags on. */
+function groundHold(state, H, events) {
+  const R = GR(state);
+  const L = H.leader;
+  const S = H.resp;
+  const caught = H.plan.kind === "escape";
+  addStamina(state, S, -R.holdDrain * (caught ? R.caughtMult : 0.5));
+  events.push({ kind: "ride", side: L, caught });
+  if (caught) {
+    H.edge = L;
+    state.stall = 0;
+    return;
+  }
+  state.stall += 1;
+  events.push({ kind: "standoff", stall: state.stall, ground: true });
+  if (state.stall >= state.rules.stall.limit) {
+    addMomentum(state, "a", state.rules.momentum.standoff);
+    addMomentum(state, "b", state.rules.momentum.standoff);
+    state.stall = 0;
+    standUp(state, events, "referee");
+  }
+}
+
+/** Turns over the next step against the bet (or against `reaction`, an answer to a step that was seen coming). */
+export function groundStep(state, reaction = null) {
+  const H = state.gh;
+  if (!H?.started) throw new Error("no ground hand in progress");
+  const R = GR(state);
+  const L = H.leader;
+  const S = H.resp;
+  const events = [];
+  const cid = H.combo[H.i];
+  const card = state.cards[cid];
+  const speed = cardSpeed(state, L, cid);
+  const visible = speed < reactionOf(state, S);
+  let resp = H.plan;
+  let fromPlan = true;
+  if (visible && reaction) {
+    const err = groundPlanError(state, S, reaction);
+    if (err) throw new Error(`${S} illegal reaction: ${err}`);
+    resp = reaction;
+    fromPlan = false;
+  }
+  const g = state.ground;
+  const aim = aimOf(state, cid);
+  addStamina(state, L, -standCost(state, cid) * (1 + R.stepCost * H.i));
+  H.thrown[L].push(cid);
+  events.push({ kind: "gcard", side: L, card: cid, name: card.name, index: H.i, of: H.combo.length, aim, speed: Math.round(speed), visible, reply: { ...resp }, posture: g.posture });
+  H.i += 1;
+  runGroundStep(state, H, cid, aim, resp, fromPlan, speed, events);
+  if (state.ground) state.ground.posture = state.ground.lock ? 0 : card.post ?? 1;
+  if (state.over || H.stop || H.i >= H.combo.length) return finishGround(state, events);
+  return events;
+}
+
+/** A step meets an answer. The answer either stops it, eases it, hijacks it (counter, escape) or does nothing. */
+function runGroundStep(state, H, cid, aim, resp, fromPlan, speed, events) {
+  const R = GR(state);
+  const card = state.cards[cid];
+  const A = R.answers[resp.kind];
+  const spent = () => {
+    if (fromPlan && (resp.kind === "counter" || resp.kind === "escape")) H.plan = { kind: "cover" };
+  };
+  if (resp.kind === "counter" && card.cat === "punch") {
+    spent();
+    groundCounter(state, H, cid, speed, resp, events);
+    return;
+  }
+  if (resp.kind === "escape" && card.cat !== "punch") {
+    spent();
+    if (groundEscape(state, H, cid, resp, events)) return;
+  } else if ((A.stops || []).includes(aim)) {
+    groundStopped(state, H, cid, aim, resp, events);
+    return;
+  }
+  const eased = (A.eases || []).includes(aim);
+  switch (card.cat) {
+    case "punch": landPunch(state, H, cid, resp, events); break;
+    case "ctrl": landCtrl(state, H, cid, events); break;
+    case "pass": landPass(state, H, cid, eased, events); break;
+    case "lock": landLock(state, H, cid, events); break;
+    case "tighten": landTighten(state, H, cid, events); break;
+    default: break;
+  }
+}
+
+const resetPts = (g) => {
+  for (const p of POINTS) g.pts[p] = 0;
+};
+
+/** The answer stops the step: the chain ends, the man on top loses some of his hold, and the man underneath has the edge. */
+function groundStopped(state, H, cid, aim, resp, events) {
+  const R = GR(state);
+  const g = state.ground;
+  const L = H.leader;
+  const S = H.resp;
+  const card = state.cards[cid];
+  events.push({ kind: "gstop", side: S, by: resp.kind, aim, card: cid, name: card.name });
+  H.stop = "stop";
+  H.edge = S;
+  addStamina(state, L, -R.stop.drainLeader);
+  addStamina(state, S, -R.stop.drainResp);
+  for (const p of POINTS) g.pts[p] = Math.max(0, g.pts[p] - R.stop.ptsLoss);
+  if (card.cat === "tighten" && g.lock) easeLock(state, S, events);
+}
+
+/** A lock gives up a stage; at the first stage it is gone. */
+function easeLock(state, side, events) {
+  const g = state.ground;
+  const lock = g.lock;
+  lock.depth -= 1;
+  if (lock.depth <= 0) {
+    g.lock = null;
+    events.push({ kind: "lockEscape", side, name: lock.name });
+  } else events.push({ kind: "lockEase", side, name: lock.name, depth: lock.depth });
+}
+
+function landPunch(state, H, cid, resp, events, scale = 1) {
+  const R = GR(state);
+  const D = state.rules.damage;
+  const g = state.ground;
+  const L = H.leader;
+  const tier = rollTier(state, L, [cid], R.posture.topEdge[g.posture]);
+  let m = D.winStrikeBonus * D.groundPositionMult[g.pos] * R.posture.dmg[g.posture] * R.punchScale * scale;
+  if (resp.kind === "cover") m *= R.coverMult;
+  else if (R.answers[resp.kind]?.punch) m *= R.answers[resp.kind].punch;
+  H.landed += 1;
+  return dealHit(state, L, [cid], tier, m, events);
+}
+
+function landCtrl(state, H, cid, events) {
+  const R = GR(state);
+  const g = state.ground;
+  const L = H.leader;
+  const aim = state.cards[cid].aim;
+  // A hold already firm is harder to tighten further.
+  const tier = rollTier(state, L, [cid], R.posture.topEdge[g.posture] - 0.04 * g.pts[aim]);
+  const before = g.pts[aim];
+  g.pts[aim] = Math.min(R.ctrl.max, before + R.ctrl[tier]);
+  H.landed += 1;
+  if (g.pts[aim] > before) score(state, L, "grappling", state.rules.score.positionGain * 0.25);
+  events.push({ kind: "gctrl", side: L, point: aim, level: g.pts[aim], gained: g.pts[aim] - before, tier });
+}
+
+function landPass(state, H, cid, eased, events) {
+  const R = GR(state);
+  const g = state.ground;
+  const L = H.leader;
+  const S = H.resp;
+  const card = state.cards[cid];
+  const tier = rollTier(state, L, [cid], R.posture.topEdge[g.posture] + R.passHip * g.pts.hip);
+  let step = (tier === "graze" ? 0 : tier === "crit" ? 2 : 1) + (card.advanceBonus || 0);
+  if (eased) {
+    step = Math.floor(step / 2);
+    events.push({ kind: "geased", side: S, aim: "pass" });
+  }
+  H.landed += 1;
+  if (step > 0) {
+    g.pts.hip = Math.max(0, g.pts.hip - 1);
+    setPosition(state, g.pos + step, events, L);
+    addStamina(state, S, -state.rules.grapple.drainOnLanding);
+  } else events.push({ kind: "ride", side: L });
+}
+
+function landLock(state, H, cid, events) {
+  const R = GR(state);
+  const g = state.ground;
+  const L = H.leader;
+  const card = state.cards[cid];
+  const aim = card.aim;
+  if (g.pts[aim] < 1) {
+    // The hold was lost on the way (an earlier step failed): the lock has nothing to grab.
+    events.push({ kind: "gctrl", side: L, point: aim, level: g.pts[aim], gained: 0, fail: true });
+    return;
+  }
+  const tier = rollTier(state, L, [cid], R.posture.topEdge[g.posture]);
+  if (tier === "graze") {
+    events.push({ kind: "ride", side: L });
+    return;
+  }
+  H.landed += 1;
+  startLock(state, L, card.lock, card.lockDepth || 1, events, (g.pts[aim] >= 2 ? 1 : 0) + (tier === "crit" ? 1 : 0), aim);
+}
+
+function landTighten(state, H, cid, events) {
+  const g = state.ground;
+  const L = H.leader;
+  const S = H.resp;
+  const lock = g.lock;
+  if (!lock || lock.attacker !== L) return;
+  const R = GR(state);
+  const tier = rollTier(state, L, [cid], R.posture.topEdge[g.posture]);
+  if (tier === "graze") {
+    events.push({ kind: "ride", side: L, held: true });
+    return;
+  }
+  H.landed += 1;
+  addStamina(state, S, -state.rules.lock.holdDrain);
+  // The man in it may still hold on: his skill and stamina against the lock's depth. Rolled for both sides; the screen shows the chance.
+  const chance = lockResistChance(state);
+  if (nextUnit(state) < chance) {
+    events.push({ kind: "lockResist", side: S, name: lock.name, depth: lock.depth, chance });
+    return;
+  }
+  lock.depth += 1;
+  score(state, L, "grappling", state.rules.score.lockAttempt);
+  if (lock.depth >= state.rules.lock.tapDepth) {
+    events.push({ kind: "tap", attacker: L, name: lock.name });
+    finish(state, L, "SUB", events);
+    return;
+  }
+  events.push({ kind: "lockDeepen", attacker: L, name: lock.name, depth: lock.depth });
+}
+
+/** The man underneath hits first (or not): a counter thrown at a punch. Quicker than the punch, it stops it; slower, they trade. */
+function groundCounter(state, H, cid, speed, resp, events) {
+  const R = GR(state);
+  const D = state.rules.damage;
+  const g = state.ground;
+  const S = H.resp;
+  const c = resp.card;
+  const cc = state.cards[c];
+  addStamina(state, S, -standCost(state, c));
+  H.thrown[S].push(c);
+  const cs = cardSpeed(state, S, c);
+  const first = cs > speed;
+  events.push({ kind: "gcounter", side: S, card: c, name: cc.name, first, speed: Math.round(cs), vs: Math.round(speed) });
+  if (!first) {
+    // Too slow: the punch lands (a little softened) and his own blow only grazes.
+    if (landPunch(state, H, cid, resp, events, D.tradeMult)) return;
+    dealHit(state, S, [c], "graze", D.tradeInterruptMult, events);
+    return;
+  }
+  H.stop = "counter";
+  H.edge = S;
+  const tier = rollTier(state, S, [c], R.posture.bottomEdge[g.posture]);
+  if (dealHit(state, S, [c], tier, D.bottomCounterMult, events)) return;
+  // Catching a punch is not enough for a lock from underneath: it needs a critical read.
+  if (cc.lockBottom && tier === "crit") {
+    if (passive(state, S).lockDepthBottom) showAbility(state, S, events);
+    startLock(state, S, cc.lock, cc.lockDepth || 1, events, passive(state, S).lockDepthBottom || 0, cc.aim);
+    return;
+  }
+  if (tier === "crit") sweepOver(state, S, events);
+  else if (tier === "clean") setPosition(state, g.pos - 1, events, S);
+}
+
+/**
+ * The man underneath goes for the exit the moment something other than a punch comes. Returns true when it works (the chain ends).
+ * His chance is the card's own plus the top man's posture, less what the man on top already controls.
+ */
+function groundEscape(state, H, cid, resp, events) {
+  const R = GR(state);
+  const g = state.ground;
+  const L = H.leader;
+  const S = H.resp;
+  const card = state.cards[cid];
+  const ec = state.cards[resp.card];
+  addStamina(state, S, -standCost(state, resp.card));
+  H.thrown[S].push(resp.card);
+  const total = POINTS.reduce((n, p) => n + g.pts[p], 0);
+  const extra = R.posture.bottomEdge[g.posture] - R.escapePts * total - (g.lock ? R.escapeLock * g.lock.depth : 0);
+  const grades = ["graze", "clean", "crit"];
+  let tier = rollTier(state, S, [resp.card], extra);
+  // A heavy top man (escapePenalty) makes every escape one grade worse.
+  if (passive(state, L).escapePenalty) {
+    const worse = grades[Math.max(0, grades.indexOf(tier) - 1)];
+    if (worse !== tier) showAbility(state, L, events);
+    tier = worse;
+  }
+  events.push({ kind: "gescape", side: S, card: resp.card, name: ec.name, tier });
+  if (tier === "graze") return false;
+  H.stop = "escape";
+  H.edge = S;
+  if (g.lock) {
+    if (tier === "crit") {
+      const name = g.lock.name;
+      g.lock = null;
+      events.push({ kind: "lockEscape", side: S, name });
+    } else easeLock(state, S, events);
+    return true;
+  }
+  if (card.cat === "lock") return true;
+  if (tier === "crit") {
+    sweepOver(state, S, events);
+    return true;
+  }
+  const to = R.escapeTo[g.pos];
+  resetPts(g);
+  if (to < 0) standUp(state, events, "getup");
+  else setPosition(state, to, events, S);
+  return true;
+}
+
+/** The man underneath turns the tables: he becomes the top man at the bottom of the pile. */
+function sweepOver(state, w, events) {
+  const g = state.ground;
+  g.top = w;
+  g.pos = state.rules.ground.sweepPos;
+  g.lock = null;
+  g.hist = [];
+  resetPts(g);
+  g.posture = 1;
+  score(state, w, "grappling", state.rules.score.takedown);
+  events.push({ kind: "sweep", side: w, name: state.rules.positions[g.pos] });
+}
+
+/** Everything a ground hand leaves behind: the edge, abilities, scores, the cards played and the next hands. */
+function finishGround(state, events) {
+  const H = state.gh;
+  const R = GR(state);
+  const L = H.leader;
+  const S = H.resp;
+  if (H.combo.length && !H.stop && !state.over && H.i >= H.combo.length) {
+    H.stop = "done";
+    H.edge = L;
+    addStamina(state, S, -R.comboDrain);
+    events.push({ kind: "comboDone", side: L, n: H.combo.length });
+  }
+  const rockedNow = (s) => state[s].rocked && state[s].rockedAt === state.history.length;
+  if (rockedNow(S) && !rockedNow(L)) H.edge = L;
+  if (rockedNow(L) && !rockedNow(S)) H.edge = S;
+  const typeOfAnswer = R.answers[H.plan.kind]?.type || "C";
+  const firstStep = H.combo.length ? state.cards[H.combo[0]].type : "C";
+  const punchy = H.combo.some((c) => state.cards[c].cat === "punch");
+  const types = { [L]: H.combo.length ? (punchy && firstStep === "S" ? "S" : "G") : "C", [S]: typeOfAnswer };
+  if (H.edge && !state.over) {
+    addMomentum(state, H.edge, state.rules.momentum.win);
+    addMomentum(state, opposite(H.edge), state.rules.momentum.lose);
+    score(state, H.edge, H.thrown[H.edge].some((c) => ["punch", "counter"].includes(state.cards[c].cat)) ? "striking" : "grappling", state.rules.score.exchangeWin);
+  }
+  state.history.push(types);
+  if (!state.over) applyAbilities(state, types, H.edge, state.dist, true, events);
+  state.cage = null; // nobody is pinned on the mat
+  for (const s of SIDES) state[s].pressure = 0;
+  state.gh = null;
+  endExchange(state, H.thrown, types, H.wasRocked, events);
+  state.exchangeCost = null;
+  return events;
+}
+
 // ---------- Ground AI ----------
 
-/** Who comes out ahead when the man on top plays `top` and the man underneath plays `bottom`: "top", "bottom" or "none". */
-export const groundOutcome = (state, top, bottom) => state.rules.ground.matrix[top][bottom];
-
-/** The plays that beat `oppCat` for a fighter in `role`. Empty when nothing does. */
-export function groundWinners(state, role, oppCat) {
-  const cats = state.rules.ground.cats;
-  const own = Object.keys(cats).filter((c) => cats[c].side === role);
-  if (!cats[oppCat] || cats[oppCat].side === role) return [];
-  return own.filter((c) => (role === "top" ? groundOutcome(state, c, oppCat) === "top" : groundOutcome(state, oppCat, c) === "bottom"));
-}
-
-function catAvailable(state, s, cat) {
-  const def = state.rules.ground.cats[cat];
-  if (def.free) return true;
-  const b = budget(state, s);
-  return state[s].hand.some((c) => state.cards[c].cat === cat && cardCost(state, s, c) <= b && usableAt(state, state.cards[c], state.dist, s));
-}
-
-/** The tendencies of a fighter on the mat. Same shape as the stand-up intent, but keyed by the ground plays (or lock moves). */
-function groundIntent(state, s) {
-  const R = state.rules;
-  const ai = R.ai;
-  const g = state.ground;
-  const me = state[s];
-  const oppSide = opposite(s);
-  const f = state.fighters[me.id];
+function groundStyle(state, s) {
+  const f = state.fighters[state[s].id];
+  const st = f.style[roleOf(state, s)];
   const plan = tactic(state, s);
-  const tags = [];
-  const w = {};
-  let ids;
-  let labels;
-  let typeOf;
-  let kind;
-  let readBoost = 1;
-  for (const tag of Object.keys(state[oppSide].marks)) readBoost *= R.tags[tag]?.readBoost || 1;
-  const window = ai.adapt.window;
-  if (g.lock) {
-    const attacking = g.lock.attacker === s;
-    kind = attacking ? "attack" : "defend";
-    ids = attacking ? Object.keys(R.lock.beats) : Object.values(R.lock.beats);
-    labels = attacking ? R.lock.attack : R.lock.defend;
-    typeOf = Object.fromEntries(ids.map((id, i) => [id, ["S", "G", "C"][i]]));
-    const mix = attacking ? ids.map((id) => f.lockMix?.[id] ?? 1) : ids.map(() => 1);
-    const sum = mix.reduce((a, b) => a + b, 0);
-    ids.forEach((id, i) => { w[id] = mix[i] / sum; });
-    const recent = (g.lock.hist || []).slice(-window).map((h) => h[oppSide]);
-    // The defender reads the attacker's habits; an attacker steers clear of the move the defender keeps expecting.
-    const shift = (move, amount) => {
-      if (attacking) {
-        const k = ids.find((x) => R.lock.beats[x] === move);
-        w[k] = Math.max(0, w[k] - amount);
-      } else w[R.lock.beats[move]] += amount;
-    };
-    for (const m of recent) shift(m, ai.adapt.perMatch * readBoost);
-    if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2]) {
-      shift(recent[recent.length - 1], ai.adapt.repeatBonus);
-      tags.push(attacking ? "他在避開你的老招" : "看穿你的習慣");
-    }
-  } else {
-    const role = roleOf(state, s);
-    kind = role;
-    const cats = R.ground.cats;
-    ids = Object.keys(cats).filter((c) => cats[c].side === role);
-    labels = Object.fromEntries(ids.map((c) => [c, cats[c].label]));
-    typeOf = Object.fromEntries(ids.map((c) => [c, cats[c].type]));
-    const style = f.style[role];
-    const st = { S: style.S + (plan.style?.S || 0), G: style.G + (plan.style?.G || 0), C: style.C + (plan.style?.C || 0) };
-    if (role === "top") {
-      const lockW = st.G * R.ground.lockShare * (0.5 + me.attrs.submission / 100);
-      Object.assign(w, { punch: st.S, pass: st.G * (1 - R.ground.lockShare), lock: lockW, hold: st.C });
-      if (g.pos >= 3) { w.lock *= 1.4; tags.push("占了高位，想找鎖技"); }
-    } else {
-      Object.assign(w, { escape: st.G * 0.6, frame: st.G * 0.4, counter: st.S + st.C * 0.5, cover: st.C * 0.5 });
-    }
-    const free = ids.find((c) => cats[c].free);
-    if (me.rocked) { w[free] += ai.rockedCounter; tags.push("被打暈，想撐過去"); }
-    if (state[oppSide].rocked && role === "top") { w.punch += ai.swarmStrike; tags.push("要衝上來追擊"); }
-    if (me.stamina < ai.lowStaminaAt) { w[free] += ai.lowStaminaCounter; tags.push("快沒力了"); }
-    const recent = (g.hist || []).slice(-window).map((h) => h[oppSide]);
-    const lean = (cat, amount) => {
-      const wins = groundWinners(state, role, cat);
-      for (const c of wins) w[c] += amount / wins.length;
-    };
-    for (const c of recent) lean(c, ai.adapt.perMatch * readBoost);
-    if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2]) {
-      lean(recent[recent.length - 1], ai.adapt.repeatBonus);
-      tags.push("看穿你的習慣");
-    }
-  }
-  for (const [tag] of Object.entries(me.marks)) {
-    const def = R.tags[tag];
-    if (!def?.sharpen) continue;
-    for (const id of ids) w[id] = w[id] ** def.sharpen;
-    tags.push(def.label);
-  }
-  for (const id of ids) {
-    const open = g.lock ? true : catAvailable(state, s, id);
-    w[id] = open ? Math.max(w[id], ai.minWeight) : 0;
-  }
-  const total = ids.reduce((sum, id) => sum + w[id], 0);
-  const probs = Object.fromEntries(ids.map((id) => [id, w[id] / total]));
-  const top = ids.reduce((best, id) => (probs[id] > probs[best] ? id : best), ids[0]);
-  const tells = ai.tells[typeOf[top]];
-  return {
-    ground: true,
-    kind,
-    options: ids.map((id) => ({ id, label: labels[id], type: typeOf[id] })),
-    probs,
-    top,
-    tell: tells[(state.round * 7 + state.exchange * 3) % tells.length],
-    tags,
-    blind: state[oppSide].cut >= R.cut.blindAt,
-    signatureReady: false,
-  };
+  return { S: st.S + (plan.style?.S || 0), G: st.G + (plan.style?.G || 0), C: st.C + (plan.style?.C || 0) };
 }
 
+const readBoostOf = (state, s) => {
+  let b = 1;
+  for (const tag of Object.keys(state[opposite(s)].marks)) b *= state.rules.tags[tag]?.readBoost || 1;
+  return b;
+};
 
-
-
-
-
-/** Rough worth of a ground card, used to pick between cards of the kind that was chosen. */
+/** The value of a ground card for the AI's own choice among cards of the same kind. */
 function groundCardValue(state, s, cardId) {
   const card = state.cards[cardId];
-  const top = roleOf(state, s) === "top";
-  const gm = top ? state.rules.damage.groundPositionMult[state.ground.pos] : 1;
-  if (card.cat === "punch") return cardDamage(state, s, cardId) * gm + (card.cut ? 2 : 0);
-  if (card.cat === "pass") return card.cost + (card.quality || 0) * 4 + (card.advanceBonus || 0) * 3;
-  if (card.cat === "lock") return 4 + card.cost + (card.quality || 0) * 4;
+  const gm = state.rules.damage.groundPositionMult[state.ground.pos];
+  // A slow step is read before it lands, so the AI trusts it less (a stunned man reads nothing).
+  const readable = ["punch", "pass", "lock"].includes(card.cat) && cardSpeed(state, s, cardId) < reactionOf(state, opposite(s)) ? 0.3 : 1;
+  if (card.cat === "punch") return (cardDamage(state, s, cardId) * gm + (card.cut ? 2 : 0)) * readable;
+  if (card.cat === "pass") return (card.cost + (card.quality || 0) * 4 + (card.advanceBonus || 0) * 3) * readable;
+  if (card.cat === "lock") return (4 + card.cost + (card.quality || 0) * 4) * readable;
   if (card.cat === "counter") return cardDamage(state, s, cardId) + (card.lockBottom ? 8 : 0) + (card.crit || 0) * 10;
-  return card.cost + (card.crit || 0) * 10; // frame, escape
+  return card.cost + (card.crit || 0) * 10;
 }
 
-/** The best usable card of one ground kind within `limit` energy, or null. */
-export function bestGroundCard(state, s, cat, limit) {
+/** The best card in hand that fits `pred`, or null. */
+function bestGroundCard(state, s, pred, skip = null) {
   let best = null;
   let bestValue = -Infinity;
   for (const c of state[s].hand) {
     const card = state.cards[c];
-    if (card.cat !== cat || cardCost(state, s, c) > limit || !usableAt(state, card, state.dist, s)) continue;
+    if (!groundCardUsable(state, s, card) || !pred(card) || (skip && !card.basic && skip.has(c))) continue;
     const v = groundCardValue(state, s, c);
     if (v > bestValue) {
       bestValue = v;
@@ -552,31 +901,228 @@ export function bestGroundCard(state, s, cat, limit) {
   return best;
 }
 
-/** Samples one option from the shown ground tendencies. */
-export function sampleGround(state, intent) {
-  let r = nextUnit(state);
-  for (const o of intent.options) {
-    r -= intent.probs[o.id];
-    if (r < 0) return o.id;
-  }
-  return intent.options[intent.options.length - 1].id;
-}
+const lockCardsReady = (state, s) => state[s].hand.filter((c) => state.cards[c].cat === "lock" && state.ground.pts[state.cards[c].aim] >= 1);
 
-function chooseGroundAI(state, s) {
-  const ai = state.rules.ai;
+/** The leader's tendencies on the mat: which step he reaches for first. Honest: the AI samples these same numbers. */
+function groundLeadIntent(state, s) {
+  const R = state.rules;
+  const G = R.ground;
+  const ai = R.ai;
+  const A = G.ai;
+  const g = state.ground;
   const me = state[s];
-  const intent = getIntent(state, s);
-  const pick = sampleGround(state, intent);
-  if (state.ground.lock) return { cards: [me.hand.find((c) => state.cards[c].lockMove === pick)] };
-  if (state.rules.ground.cats[pick].free) return { cards: [] };
-  const b = budget(state, s);
-  let limit = nextUnit(state) < ai.commit.fullChance + (tactic(state, s).commit || 0) ? b : Math.max(1, b - 1);
-  if (me.stamina < ai.commit.conserveAt) limit = Math.min(limit, 2);
-  const legal = me.hand.filter((c) => state.cards[c].cat === pick && usableAt(state, state.cards[c], state.dist, s)).map((c) => cardCost(state, s, c));
-  limit = Math.min(b, Math.max(limit, Math.min(...legal)));
-  return { cards: [bestGroundCard(state, s, pick, limit)] };
+  const oppSide = opposite(s);
+  const tags = [];
+  const options = G_AIMS.map((id) => ({ id, label: G.aims[id].label, type: G.aims[id].type }));
+  if (g.lock) {
+    return { kind: "lead", ground: true, options: [{ id: "tighten", label: "收緊", type: "S" }], probs: { tighten: 1 }, top: "tighten", tell: "", tags: ["鎖住了，繼續收緊"], blind: state[oppSide].cut >= R.cut.blindAt, detail: true, signatureReady: false };
+  }
+  const st = groundStyle(state, s);
+  const hand = me.hand.map((c) => state.cards[c]);
+  const w = { punch: st.S, pass: st.G * A.passShare, hold: st.C };
+  for (const p of POINTS) w[p] = ((st.G * A.ctrlShare) / 3) * (g.pts[p] >= 2 ? 0.25 : 1);
+  // A lock in hand pulls him toward the point it needs.
+  for (const c of hand) if (c.cat === "lock" && g.pts[c.aim] < 1) w[c.aim] *= 1.5;
+  const ready = lockCardsReady(state, s);
+  const fits = hand.filter((c) => c.cat === "lock");
+  w.lock = fits.length ? st.G * A.lockShare * (0.5 + me.attrs.submission / 100) * (g.pos >= 3 ? 1.4 : 1) * (ready.length ? 1.6 : 1) : 0;
+  if (fits.length) tags.push("手上有鎖技，想找機會");
+  const boost = readBoostOf(state, s);
+  const recent = (state.gHist?.ans[oppSide] || []).slice(-ai.adapt.window);
+  for (const r of recent) for (const aim of G.answers[r]?.stops || []) w[aim] = Math.max(0, w[aim] - ai.adapt.perMatch * boost);
+  if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2] && G.answers[recent[recent.length - 1]]?.stops) tags.push("避開你老用的應對");
+  if (state[oppSide].rocked) { w.punch += ai.swarmStrike; tags.push("要衝上來追擊"); }
+  if (me.rocked) { w.hold += ai.rockedCounter; tags.push("被打暈，只能撐著"); }
+  if (me.stamina < ai.lowStaminaAt) { w.hold += ai.lowStaminaCounter; tags.push("快沒力了"); }
+  const open = (id) => {
+    if (id === "hold") return true;
+    if (id === "lock") return fits.length > 0;
+    if (id === "punch") return hand.some((c) => c.cat === "punch");
+    if (id === "pass") return hand.some((c) => c.cat === "pass");
+    return hand.some((c) => c.cat === "ctrl" && c.aim === id);
+  };
+  const probs = normalise(w, ai.minWeight, open);
+  const top = Object.keys(probs).reduce((best, id) => (probs[id] > probs[best] ? id : best));
+  const tells = ai.tells[G.aims[top].type];
+  return { kind: "lead", ground: true, options, probs, top, tell: tells[(state.round * 7 + state.exchange * 3) % tells.length], tags, blind: state[oppSide].cut >= R.cut.blindAt, detail: true, signatureReady: false };
 }
 
+/** The man answering: which answer he will bet on before the steps turn over. */
+function groundRespIntent(state, s) {
+  const R = state.rules;
+  const G = R.ground;
+  const ai = R.ai;
+  const A = G.ai;
+  const g = state.ground;
+  const me = state[s];
+  const oppSide = opposite(s);
+  const tags = [];
+  const st = groundStyle(state, s);
+  const w = {
+    cover: st.C * A.coverShare,
+    frame: st.G * A.frameShare + st.C * 0.15,
+    shrimp: st.G * A.shrimpShare,
+    hands: st.G * A.handsShare,
+    escape: st.G * A.escapeShare,
+    counter: st.S + st.C * 0.2,
+  };
+  for (const p of POINTS) if (g.pts[p] > 0) w[ANSWER_FOR[p]] += A.ptsLean * g.pts[p];
+  if (g.lock) {
+    w[ANSWER_FOR[g.lock.aim]] += A.lockLean;
+    w.escape += A.lockEscape;
+    w.counter = 0;
+    w.cover *= 0.3;
+    tags.push("被鎖住，要拆解");
+  }
+  const boost = readBoostOf(state, s);
+  const leads = (state.gHist?.lead[oppSide] || []).slice(-ai.adapt.window);
+  for (const aim of leads) {
+    if (aim === "punch") { w.counter += ai.adapt.perMatch * boost * 0.7; w.cover += ai.adapt.perMatch * boost * 0.3; }
+    else if (ANSWER_FOR[aim]) w[ANSWER_FOR[aim]] += ai.adapt.perMatch * boost;
+  }
+  if (leads.length >= 2 && leads[leads.length - 1] === leads[leads.length - 2]) tags.push("看穿你的習慣");
+  if (me.stamina < ai.lowStaminaAt) { w.cover += ai.lowStaminaCounter; tags.push("快沒力了"); }
+  if (me.rocked) {
+    w.escape = 0;
+    w.counter = 0;
+    w.cover += ai.rockedCounter;
+    tags.push("被打暈，想撐過去");
+  }
+  const counters = groundAnswerCards(state, s, "counter");
+  const escapes = groundAnswerCards(state, s, "escape");
+  const open = (id) => (id === "counter" ? counters.length > 0 && !me.rocked && !g.lock : id === "escape" ? escapes.length > 0 && !me.rocked : true);
+  const probs = normalise(w, ai.minWeight, open);
+  const top = Object.keys(probs).reduce((best, id) => (probs[id] > probs[best] ? id : best));
+  const options = G_ANSWERS.map((id) => ({ id, label: G.answers[id].label, type: G.answers[id].type }));
+  const tells = ai.tells[G.answers[top].type];
+  return { kind: "respond", ground: true, options, probs, top, tell: tells[(state.round * 7 + state.exchange * 3) % tells.length], tags, blind: state[oppSide].cut >= R.cut.blindAt, detail: true, signatureReady: false };
+}
+
+function groundIntent(state, s) {
+  return groundLeader(state) === s ? groundLeadIntent(state, s) : groundRespIntent(state, s);
+}
+
+/** The card for a wanted aim, or null. */
+function cardForAim(state, s, aim, skip = null, pts = state.ground.pts) {
+  if (aim === "punch") return bestGroundCard(state, s, (c) => c.cat === "punch", skip);
+  if (aim === "pass") return bestGroundCard(state, s, (c) => c.cat === "pass", skip);
+  if (aim === "lock") return bestGroundCard(state, s, (c) => c.cat === "lock" && pts[c.aim] >= 1, skip);
+  if (aim === "tighten") return "lk_tighten";
+  return bestGroundCard(state, s, (c) => c.cat === "ctrl" && c.aim === aim, skip);
+}
+
+/** The leader's chain: starts with the first step he reached for, then builds toward a lock or mixes things up. */
+export function chooseGroundCombo(state, s) {
+  const g = state.ground;
+  const ai = state.rules.ai;
+  const f = state.fighters[state[s].id];
+  const intent = groundLeadIntent(state, s);
+  const max = groundMax(state, s);
+  if (g.lock) {
+    const n = state[s].stamina < ai.commit.conserveAt ? 1 : Math.min(max, 1 + (nextUnit(state) < 0.4 ? 1 : 0));
+    return Array(n).fill("lk_tighten");
+  }
+  let first = sampleId(state, intent.probs);
+  if (first === "hold") return [];
+  // Going for a lock with nothing under control yet: take the point it needs first.
+  let lockGoal = null;
+  if (first === "lock") {
+    lockGoal = bestGroundCard(state, s, (c) => c.cat === "lock");
+    if (lockGoal && g.pts[state.cards[lockGoal].aim] < 1) first = state.cards[lockGoal].aim;
+  }
+  const style = ai.lead.styles[f.leadStyle || "balanced"];
+  let len = 1;
+  let r = nextUnit(state);
+  for (let i = 0; i < style.len.length; i++) {
+    r -= style.len[i];
+    if (r < 0) { len = i + 1; break; }
+  }
+  len = Math.min(len, max);
+  if (state[s].stamina < ai.commit.conserveAt) len = Math.min(len, 2);
+  const cards = [];
+  const pts = { ...g.pts };
+  let locked = false;
+  const readyLock = () => state[s].hand.filter((c) => state.cards[c].cat === "lock" && pts[state.cards[c].aim] >= 1);
+  const usedSpecial = new Set();
+  for (let k = 0; k < len; k++) {
+    let want;
+    if (k === 0) want = first;
+    else if (locked) want = "tighten";
+    else if (readyLock().length && (lockGoal || nextUnit(state) < 0.6)) want = "lock";
+    else {
+      const prev = state.cards[cards[cards.length - 1]];
+      if (!prev) break;
+      const opts = [];
+      if (prev.cat === "punch") opts.push("punch", "wrist", "neck", "hip");
+      else opts.push("pass", "punch", ...POINTS.filter((p) => pts[p] < 2));
+      want = opts[Math.floor(nextUnit(state) * opts.length)];
+    }
+    const card = cardForAim(state, s, want, usedSpecial, pts);
+    if (!card) {
+      if (k === 0) break;
+      continue;
+    }
+    cards.push(card);
+    if (!state.cards[card].basic) usedSpecial.add(card);
+    const cd = state.cards[card];
+    if (cd.cat === "ctrl") pts[cd.aim] = Math.min(2, pts[cd.aim] + 1);
+    if (cd.cat === "lock") locked = true;
+    if (cd.cat === "pass") pts.hip = Math.max(0, pts.hip - 1);
+  }
+  if (groundComboError(state, s, cards)) {
+    const one = cards.slice(0, 1);
+    return groundComboError(state, s, one) ? [] : one;
+  }
+  return cards;
+}
+
+function planFrom(state, s, kind) {
+  if (kind === "counter" || kind === "escape") {
+    const c = bestGroundCard(state, s, (card) => card.cat === kind, new Set(state.gh?.thrown[s] || []));
+    return c ? { kind, card: c } : { kind: "cover" };
+  }
+  return { kind };
+}
+
+/** The AI's bet before the steps turn over, drawn from the shown tendencies. */
+export function chooseGroundPlan(state, s) {
+  const intent = groundRespIntent(state, s);
+  return planFrom(state, s, sampleId(state, intent.probs));
+}
+
+/** A step he can see coming: the AI weighs each answer by what it would do against this very step, with some of its style mixed in. */
+export function chooseGroundReaction(state, s, w) {
+  const G = GR(state);
+  const g = state.ground;
+  const me = state[s];
+  const card = state.cards[w.card];
+  const aim = w.aim;
+  const ev = {};
+  if (me.rocked) return { kind: "cover" };
+  if (card.cat === "punch") {
+    const cc = bestGroundCard(state, s, (c) => c.cat === "counter", new Set(state.gh?.thrown[s] || []));
+    const dmg = cardDamage(state, opposite(s), w.card);
+    ev.cover = dmg * (1 - G.coverMult);
+    ev.frame = dmg * (1 - G.answers.frame.punch) * 0.8;
+    if (cc) ev.counter = cardSpeed(state, s, cc) > w.speed ? dmg * 0.9 + state.cards[cc].power + 6 : state.cards[cc].power * 0.5 - dmg * 0.2;
+  } else {
+    for (const [id, a] of Object.entries(G.answers)) {
+      if ((a.stops || []).includes(aim)) ev[id] = 10;
+      else if ((a.eases || []).includes(aim)) ev[id] = 4;
+    }
+    const total = POINTS.reduce((n, p) => n + g.pts[p], 0);
+    if (groundAnswerCards(state, s, "escape").length) ev.escape = (card.cat === "lock" || card.cat === "tighten" ? 7 : 5) - total;
+    ev.cover = 1;
+  }
+  const entries = Object.entries(ev);
+  if (nextUnit(state) < G.reactVisible) {
+    const [best] = entries.reduce((b, e) => (e[1] > b[1] ? e : b));
+    return planFrom(state, s, best);
+  }
+  const intent = groundRespIntent(state, s);
+  const kinds = entries.map(([k]) => k);
+  return planFrom(state, s, pickWeighted(state, kinds, (k) => intent.probs[k] || 0.05));
+}
 
 /** AI: follow the man down, or let him up. Grapplers follow nearly always, strikers often would rather stand. */
 export function chooseChase(state, s) {
@@ -1209,7 +1755,7 @@ function throwStrike(state, E, cid, resp, speed, fromPlan, events, visible) {
         if (cc.move) shiftDist(state, cc.move, events, S);
         if (cc.lockAnywhere && tier !== "graze") {
           state.ground = makeGround(L, 0);
-          startLock(state, S, cc.name, cc.lockDepth || 1, events, passive(state, S).lockDepthBottom || 0);
+          startLock(state, S, cc.name, cc.lockDepth || 1, events, passive(state, S).lockDepthBottom || 0, "neck");
         }
         E.stop = "counter";
         E.counterBy = S;
@@ -1339,7 +1885,7 @@ function landGrab(state, w, l, cid, tier, events, ctx = {}) {
     state.ground = makeGround(w, 0);
     events.push({ kind: "caught", side: l, name: state.cards[ctx.catcher].name });
     if (passive(state, l).lockDepthCatch) showAbility(state, l, events);
-    startLock(state, l, state.cards[ctx.catcher].name, 1, events, passive(state, l).lockDepthCatch || 0);
+    startLock(state, l, state.cards[ctx.catcher].name, 1, events, passive(state, l).lockDepthCatch || 0, "neck");
     return "caught";
   }
   const pos = (card.landing || 0) + G.positionFromTier[tier];
@@ -1768,7 +2314,7 @@ export function refillHand(state, s) {
   if (state.ground) return refillGround(state, s);
   if (me.stand) {
     // Back on his feet: the unplayed ground cards go back to the pile and the stand-up hand returns.
-    me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat));
+    me.gdraw.push(...me.hand.filter((c) => state.cards[c].cat && !state.cards[c].basic));
     me.hand = me.stand;
     me.stand = null;
   }
@@ -1797,71 +2343,68 @@ export function refillHand(state, s) {
   if (me.momentum >= state.rules.momentum.signatureCost) me.hand.push(sig);
 }
 
-/** Returns an error string, or null when the play is legal. Ground hands only: stand-up hands go through comboError and planError. An empty play is the free option. */
-export function playError(state, s, cards) {
-  if (!state.ground) return "stand-up hands use comboError and planError";
-  if (cards.length === 0) return state.ground.lock ? "choose a move" : null;
-  const counts = {};
-  for (const c of state[s].hand) counts[c] = (counts[c] || 0) + 1;
-  for (const c of cards) {
-    if (!counts[c]) return "not in hand";
-    counts[c]--;
+/** What a ground chain would do, for the screen: its cost, the damage if every punch lands clean, and how many steps there can be. */
+export function previewGroundCombo(state, s, cards) {
+  const R = GR(state);
+  const D = state.rules.damage;
+  const g = state.ground;
+  let cost = 0;
+  let damage = 0;
+  for (let i = 0; i < cards.length; i++) {
+    cost += standCost(state, cards[i]) * (1 + R.stepCost * i);
+    const card = state.cards[cards[i]];
+    if (card.power && card.cat === "punch") damage += cardDamage(state, s, cards[i]) * D.winStrikeBonus * D.groundPositionMult[g.pos] * R.posture.dmg[g.posture] * R.punchScale;
   }
-  // On the mat a hand is one card (one move in a lock fight), and a lock fight cannot be sat out.
-  if (cards.length > 1) return "one card on the ground";
-  if (costOf(state, cards, s) > budget(state, s)) return "over budget";
-  if (!usableAt(state, state.cards[cards[0]], state.dist, s)) return "out of range";
-  return null;
+  return { cost: Math.round(cost), damage: Math.round(damage), max: groundMax(state, s), stamina: Math.round(state[s].stamina) };
 }
 
-/** What the screen shows before a ground play is committed: its cost, the clean-hit damage and the tier chances. */
-export function previewPlay(state, s, cards) {
-  const type = typeOfPlay(state, cards);
-  const odds = tierOdds(state, s, cards);
-  const base = cards.reduce((sum, c) => sum + cardDamage(state, s, c), 0);
-  const d = state.rules.damage;
-  const winMult = state.ground.top === s ? d.winStrikeBonus * d.groundPositionMult[state.ground.pos] : d.bottomCounterMult;
+/** How a ground card reads right now. Same shape as describeStandingCard so the screen can draw both. */
+function describeGroundCard(state, s, cardId) {
+  const card = state.cards[cardId];
+  const g = state.ground;
+  const R = GR(state);
+  const names = state.rules.positions;
+  const foe = opposite(s);
+  const aim = aimOf(state, cardId);
+  const speed = Math.round(cardSpeed(state, s, cardId));
+  const point = R.points[aim] || "";
+  let effect = "";
+  let blocked = "";
+  if (card.cat === "punch") effect = `傷害 ${Math.round(cardDamage(state, s, cardId) * state.rules.damage.winStrikeBonus * state.rules.damage.groundPositionMult[g.pos] * R.punchScale)}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
+  else if (card.cat === "ctrl") effect = `控制${point}（${g.pts[aim]}/${R.ctrl.max}）`;
+  else if (card.cat === "pass") effect = g.pos >= names.length - 1 ? "已在最高位" : `→ ${names[Math.min(names.length - 1, g.pos + 1)]}`;
+  else if (card.cat === "lock") {
+    effect = `${card.lock}（要先控制${point}）`;
+    if (g.pts[aim] < 1) blocked = `先控制${point}`;
+  } else if (card.cat === "tighten") effect = g.lock ? `鎖更深（${g.lock.depth}/${state.rules.lock.tapDepth}）` : "要先鎖住";
+  else if (card.cat === "counter") effect = card.lockBottom ? `鎖技：${card.lock}` : `反擊 ${Math.round(cardDamage(state, s, cardId) * state.rules.damage.bottomCounterMult)}`;
+  else {
+    const to = R.escapeTo[g.pos];
+    effect = g.lock ? "拆鎖退一階" : to < 0 ? "站起來" : `退到${names[to]}`;
+  }
   return {
-    type,
-    order: cards,
-    cost: costOf(state, cards, s),
-    endDist: null,
-    damage: Math.round(base * winMult * (state[opposite(s)].rocked ? d.swarmMult : 1) * (tactic(state, opposite(s)).dmgIn || 1)),
-    critPct: Math.round(odds.crit * 100),
-    grazePct: Math.round(odds.graze * 100),
-    budget: budget(state, s),
+    action: R.aims[aim]?.label || (card.cat === "counter" ? "反制" : card.cat === "escape" ? "逃脫" : ""),
+    effect,
+    aim,
+    height: aim,
+    heightName: R.aims[aim]?.label || "",
+    speed,
+    cost: Math.round(standCost(state, cardId) * 10) / 10,
+    unusable: !groundCardUsable(state, s, card) || Boolean(blocked),
+    blocked,
+    rangeText: posText(state, card),
+    seenByFoe: !["counter", "escape"].includes(card.cat) && speed < reactionOf(state, foe),
+    recovery: 0,
+    setups: [],
+    follows: [],
+    counterOnly: ["counter", "escape"].includes(card.cat),
+    post: card.post ?? 1,
   };
 }
 
-/** How a card reads right now: the action name and a one-line effect. Ground cards and lock moves here; stand-up cards in describeStandingCard. */
+/** How a card reads right now: stand-up cards by height and speed, ground cards by what they go for. */
 export function describeCard(state, s, cardId) {
-  const card = state.cards[cardId];
-  const g = state.ground;
-  if (!g) return describeStandingCard(state, s, cardId);
-  const role = g.top === s ? "top" : "bottom";
-  let action = "";
-  let effect = "";
-  if (g.lock) {
-    const l = state.rules.lock;
-    action = card.lockSide === "attack" ? "進攻" : "防守";
-    effect = card.lockSide === "attack" ? `被${l.defend[l.beats[card.lockMove]]}擋住就退一階` : `猜中${l.attack[Object.keys(l.beats).find((k) => l.beats[k] === card.lockMove)]}就退一階`;
-  } else {
-    const cat = state.rules.ground.cats[card.cat];
-    action = cat.label;
-    const gm = state.rules.damage.groundPositionMult[g.pos];
-    const gdmg = Math.round(cardDamage(state, s, cardId) * (role === "top" ? state.rules.damage.winStrikeBonus * gm : state.rules.damage.bottomCounterMult));
-    const names = state.rules.positions;
-    if (card.cat === "punch") effect = `傷害 ${gdmg}${card.hits > 1 ? ` · ${card.hits} 連` : ""}`;
-    else if (card.cat === "pass") effect = g.pos >= names.length - 1 ? "已在最高位" : `→ ${names[Math.min(names.length - 1, g.pos + 1)]}`;
-    else if (card.cat === "lock") effect = `鎖技：${card.lock}`;
-    else if (card.cat === "frame") effect = g.pos > 0 ? `擋過位 · 退到${names[g.pos - 1]}` : "擋過位";
-    else if (card.cat === "counter") effect = card.lockBottom ? `鎖技：${card.lock}` : `反擊 ${gdmg}`;
-    else {
-      const to = state.rules.ground.escapeTo[g.pos];
-      effect = to < 0 ? "站起來" : `退到${names[to]}`;
-    }
-  }
-  return { action, effect, cost: cardCost(state, s, cardId), unusable: !usableAt(state, card, state.dist, s), blocked: "", rangeText: posText(state, card), setups: [], follows: [] };
+  return state.ground ? describeGroundCard(state, s, cardId) : describeStandingCard(state, s, cardId);
 }
 
 /** The opponent's honest tendencies. The UI shows these same numbers and the choose* functions sample from them. */
@@ -1870,23 +2413,11 @@ export function getIntent(state, s) {
   return state.engage ? engageIntent(state, s) : footworkIntent(state, s);
 }
 
-/** The AI's next decision, whatever the step is: a footwork, a combo (when leading) or a response (when answering), or a ground play. */
+/** The AI's next decision, whatever the step is: a footwork, a combo or a ground chain (when leading) or a response (when answering). */
 export function chooseAI(state, s) {
-  if (state.ground) return chooseGroundAI(state, s);
+  if (state.ground) return groundLeader(state) === s ? { cards: chooseGroundCombo(state, s) } : { plan: chooseGroundPlan(state, s) };
   if (!state.engage) return { footwork: chooseFootwork(state, s) };
   return state.engage.leader === s ? { cards: chooseCombo(state, s) } : { plan: choosePlan(state, s) };
-}
-
-/** Resolves one simultaneous exchange on the mat. `playA` / `playB` are arrays of card ids. Stand-up hands go through resolveFootwork and resolveEngage. */
-export function resolveExchange(state, playA, playB, opts = {}) {
-  if (state.phase !== "exchange") throw new Error(`cannot resolve in phase ${state.phase}`);
-  if (state.pending) throw new Error("a pending choice has to be resolved first");
-  if (!state.ground) throw new Error("stand-up hands go through resolveFootwork and resolveEngage");
-  for (const [s, cards] of [["a", playA], ["b", playB]]) {
-    const err = playError(state, s, cards);
-    if (err) throw new Error(`${s} illegal play: ${err} (${cards.join(",")})`);
-  }
-  return resolveGroundExchange(state, playA, playB, opts);
 }
 
 // ---------- Exchange ----------
@@ -2043,13 +2574,13 @@ function standUp(state, events, reason) {
 }
 
 /** A fresh mat situation: `top` is on top at position `pos`. */
-const makeGround = (top, pos) => ({ top, pos, lock: null, hist: [] });
+const makeGround = (top, pos) => ({ top, pos, lock: null, hist: [], pts: { wrist: 0, neck: 0, hip: 0 }, posture: 1 });
 
 /**
  * A lock goes on. How deep it starts depends on the card (base), on who is the better submission man, on how tired the victim is,
  * and on the fighter's own ability. The fight that follows is a guessing game: every wrong guess by the victim sinks it a stage deeper.
  */
-function startLock(state, attacker, cardName, base, events, extra = 0) {
+function startLock(state, attacker, cardName, base, events, extra = 0, aim = "wrist") {
   const l = state.rules.lock;
   const atk = state[attacker];
   const def = state[opposite(attacker)];
@@ -2058,7 +2589,7 @@ function startLock(state, attacker, cardName, base, events, extra = 0) {
   if (edge >= l.edgeDeep) depth += 1;
   if (def.stamina < l.lowStaminaAt) depth += 1;
   depth = clamp(depth, 1, l.maxStart);
-  state.ground.lock = { attacker, name: cardName, depth, hist: [] };
+  state.ground.lock = { attacker, name: cardName, aim, depth, hist: [] };
   score(state, attacker, "grappling", state.rules.score.lockAttempt);
   events.push({ kind: "lockStart", attacker, name: cardName, depth });
 }
@@ -2072,54 +2603,6 @@ function setDist(state, next, events, by) {
   state.dist = next;
 }
 const shiftDist = (state, delta, events, by) => delta && setDist(state, state.dist + delta, events, by);
-
-
-
-/**
- * One round of a lock fight. The attacker picked a move and the defender picked the answer; no energy, no dice, only the guess.
- * A right guess eases the lock a stage (past the first, he is out); a wrong one sinks it deeper, and the last stage is the tap.
- */
-function resolveLock(state, plays, events, opts = {}) {
-  const lock = state.ground.lock;
-  const l = state.rules.lock;
-  const atk = lock.attacker;
-  const def = opposite(atk);
-  const move = (s) => state.cards[plays[s][0]].lockMove;
-  const guessed = l.beats[move(atk)] === move(def);
-  (lock.hist ||= []).push({ [atk]: move(atk), [def]: move(def) });
-  if (guessed) {
-    addMomentum(state, def, state.rules.momentum.win);
-    addMomentum(state, atk, state.rules.momentum.lose);
-    lock.depth -= 1;
-    addStamina(state, atk, -l.escapePenalty);
-    if (lock.depth <= 0) {
-      state.ground.lock = null;
-      events.push({ kind: "lockEscape", side: def, name: lock.name });
-    } else {
-      events.push({ kind: "lockEase", side: def, name: lock.name, depth: lock.depth });
-    }
-    return;
-  }
-  addMomentum(state, atk, state.rules.momentum.win);
-  addMomentum(state, def, state.rules.momentum.lose);
-  addStamina(state, def, -l.holdDrain);
-  // A wrong guess still has to sink the lock: the man in it may hold on.
-  const chance = lockResistChance(state);
-  const held = typeof opts.resist === "boolean" ? opts.resist : nextUnit(state) < chance;
-  if (held) {
-    events.push({ kind: "lockResist", side: def, name: lock.name, depth: lock.depth, chance });
-    return;
-  }
-  lock.depth += 1;
-  score(state, atk, "grappling", state.rules.score.lockAttempt);
-  if (lock.depth >= l.tapDepth) {
-    events.push({ kind: "tap", attacker: atk, name: lock.name });
-    finish(state, atk, "SUB", events);
-    return;
-  }
-  events.push({ kind: "lockDeepen", attacker: atk, name: lock.name, depth: lock.depth });
-}
-
 
 
 
@@ -2160,175 +2643,6 @@ function applyAbilities(state, types, winner, startDist, startedOnGround, events
 
 
 
-/** Overcommitting on the mat: the loser pays for energy beyond the first, as on his feet. */
-function groundOvercommit(state, loser) {
-  const extra = Math.max(0, (state.exchangeCost?.[loser] ?? 0) - 1);
-  return 1 + extra * state.rules.damage.overcommitPerEnergy;
-}
-
-/** The man underneath turns the tables: he becomes the top man at the bottom of the pile. */
-function sweepOver(state, w, events) {
-  const g = state.ground;
-  g.top = w;
-  g.pos = state.rules.ground.sweepPos;
-  g.lock = null;
-  g.hist = []; // what was played before belongs to the old roles
-  score(state, w, "grappling", state.rules.score.takedown);
-  events.push({ kind: "sweep", side: w, name: state.rules.positions[g.pos] });
-}
-
-/** Wins by the man on top. `bCat` is what the man underneath played, `bCards` the cards he threw. */
-function groundTopWins(state, w, l, wCards, cat, bCat, tier, events) {
-  const g = state.ground;
-  const R = state.rules;
-  const mult = groundOvercommit(state, l);
-  if (cat === "punch") {
-    const cover = bCat === "cover" ? R.ground.coverMult : 1;
-    dealHit(state, w, wCards, tier, R.damage.winStrikeBonus * R.damage.groundPositionMult[g.pos] * cover * mult, events);
-    return;
-  }
-  if (cat === "pass") {
-    const bonus = wCards.reduce((sum, c) => sum + (state.cards[c].advanceBonus || 0), 0);
-    const step = (tier === "graze" ? 0 : tier === "crit" ? 2 : 1) + bonus;
-    if (step > 0) {
-      setPosition(state, g.pos + step, events, w);
-      addStamina(state, l, -R.grapple.drainOnLanding);
-    } else {
-      events.push({ kind: "ride", side: w });
-    }
-    return;
-  }
-  if (cat === "lock") {
-    // A lock that was only brushed does not take hold.
-    if (tier === "graze") {
-      events.push({ kind: "ride", side: w });
-      return;
-    }
-    const card = state.cards[wCards[0]];
-    startLock(state, w, card.lock, card.lockDepth || 1, events);
-    return;
-  }
-  // Hold: he stays heavy. It catches an escape, and drains him either way.
-  addStamina(state, l, -R.grapple.topControlDrain * mult * (bCat === "escape" ? 1.5 : 0.5));
-  events.push({ kind: "ride", side: w, caught: bCat === "escape" });
-}
-
-/** Wins by the man underneath: he stops what was coming, and with a good roll he works free. */
-function groundBottomWins(state, w, l, wCards, cat, tier, events) {
-  const g = state.ground;
-  const R = state.rules;
-  const mult = groundOvercommit(state, l);
-  const card = state.cards[wCards[0]];
-  if (cat === "counter") {
-    const ended = dealHit(state, w, wCards, tier, R.damage.bottomCounterMult * mult, events);
-    if (ended) return;
-    // Catching a punch is not enough for a lock from underneath: it needs a critical read.
-    if (card.lockBottom && tier === "crit") {
-      if (passive(state, w).lockDepthBottom) showAbility(state, w, events);
-      startLock(state, w, card.lock, card.lockDepth || 1, events, passive(state, w).lockDepthBottom || 0);
-      return;
-    }
-    if (tier === "crit") sweepOver(state, w, events);
-    else if (tier === "clean") setPosition(state, g.pos - 1, events, w);
-    return;
-  }
-  // A heavy top man (escapePenalty) makes every escape one grade worse.
-  const grades = ["graze", "clean", "crit"];
-  let eTier = tier;
-  if (cat === "escape") {
-    eTier = grades[Math.max(0, grades.indexOf(tier) - (passive(state, l).escapePenalty || 0))];
-    if (eTier !== tier) showAbility(state, l, events);
-  }
-  events.push({ kind: "stopped", side: w, by: cat });
-  if (eTier === "graze") {
-    addStamina(state, l, -R.grapple.drainOnLanding * 0.5);
-    return;
-  }
-  if (eTier === "crit") {
-    sweepOver(state, w, events);
-    return;
-  }
-  if (cat === "escape") {
-    const to = R.ground.escapeTo[g.pos];
-    if (to < 0) standUp(state, events, "getup");
-    else setPosition(state, to, events, w);
-  } else if (g.pos > 0) setPosition(state, g.pos - 1, events, w);
-  else addStamina(state, l, -R.grapple.topControlDrain * mult);
-}
-
-/**
- * One exchange on the mat. The man on top chooses an action (punch / pass / lock, or the free hold),
- * the man underneath guesses (frame beats pass, counter beats punch, escape beats lock, or the free cover).
- * In a lock fight both pick a move instead. rules.ground.matrix says who comes out ahead.
- */
-function resolveGroundExchange(state, playA, playB, opts = {}) {
-  const R = state.rules;
-  const g = state.ground;
-  const events = [];
-  const plays = { a: [...playA], b: [...playB] };
-  const lockFight = Boolean(g.lock);
-  const cat = { a: groundCatOf(state, "a", plays.a), b: groundCatOf(state, "b", plays.b) };
-  const types = { a: lockFight ? state.cards[plays.a[0]].type : R.ground.cats[cat.a].type, b: lockFight ? state.cards[plays.b[0]].type : R.ground.cats[cat.b].type };
-  const wasRocked = { a: state.a.rocked, b: state.b.rocked };
-  const groundBefore = { ...g };
-  const startDist = state.dist;
-  state.exchangeCost = { a: costOf(state, plays.a, "a"), b: costOf(state, plays.b, "b") };
-  for (const s of SIDES) addStamina(state, s, -state.exchangeCost[s] * R.stamina.perEnergy);
-
-  // Who comes out ahead.
-  let winner = null;
-  let text = R.ground.wins.stalemate;
-  let guessed = false;
-  if (lockFight) {
-    const atk = g.lock.attacker;
-    guessed = R.lock.beats[state.cards[plays[atk][0]].lockMove] === state.cards[plays[opposite(atk)][0]].lockMove;
-    winner = guessed ? opposite(atk) : atk;
-    text = guessed ? "猜中了！" : "沒猜中";
-  } else {
-    const top = g.top;
-    const out = groundOutcome(state, cat[top], cat[opposite(top)]);
-    winner = out === "top" ? top : out === "bottom" ? opposite(top) : null;
-    if (winner) text = R.ground.wins[cat[winner]];
-  }
-  const labelOf = (s) => (lockFight ? (state.cards[plays[s][0]].lockSide === "attack" ? "進攻" : "防守") : R.ground.cats[cat[s]].label);
-  events.push({ kind: "reveal", a: plays.a, b: plays.b, types, labels: { a: labelOf("a"), b: labelOf("b") }, winner, ground: groundBefore, dist: state.dist, cost: { ...state.exchangeCost } });
-  events.push({ kind: "verdict", winner, type: winner ? types[winner] : types.a, text });
-
-  if (winner && !lockFight) {
-    const l = opposite(winner);
-    addMomentum(state, winner, R.momentum.win);
-    addMomentum(state, l, R.momentum.lose);
-    score(state, winner, cat[winner] === "punch" || cat[winner] === "counter" ? "striking" : "grappling", R.score.exchangeWin);
-    const tier = rollTier(state, winner, plays[winner]);
-    const isTop = g.top === winner;
-    if (isTop) groundTopWins(state, winner, l, plays[winner], cat[winner], cat[l], tier, events);
-    else groundBottomWins(state, winner, l, plays[winner], cat[winner], tier, events);
-  } else if (!lockFight) {
-    // Nobody acted on anything: both catch their breath, and a referee will stand them up if it drags on.
-    state.stall += 1;
-    events.push({ kind: "standoff", stall: state.stall, ground: true });
-    if (state.stall >= R.stall.limit) {
-      addMomentum(state, "a", R.momentum.standoff);
-      addMomentum(state, "b", R.momentum.standoff);
-      state.stall = 0;
-      standUp(state, events, "referee");
-    }
-  } else {
-    resolveLock(state, plays, events, opts);
-  }
-  if (winner || lockFight) state.stall = 0;
-  if (!lockFight) (g.hist ||= []).push({ a: cat.a, b: cat.b });
-
-  state.history.push(types);
-  if (!state.over) applyAbilities(state, types, winner, startDist, true, events);
-  state.cage = null; // nobody is pinned on the mat
-  for (const s of SIDES) state[s].pressure = 0;
-  endExchange(state, plays, types, wasRocked, events);
-  state.exchangeCost = null;
-  return events;
-}
-
-
 function resolveScramble(state, events) {
   const g = state.rules.grapple;
   const diff = state.a.attrs.wrestling - state.b.attrs.wrestling;
@@ -2362,7 +2676,7 @@ function endExchange(state, plays, types, wasRocked, events) {
       const i = me.hand.indexOf(c);
       if (i < 0) continue; // a card already used earlier this hand
       me.hand.splice(i, 1);
-      if (state.cards[c].cat) me.gdiscard.push(c);
+      if (state.cards[c].cat) { if (!state.cards[c].basic) me.gdiscard.push(c); }
       else if (!state.cards[c].signature && !state.cards[c].basic && !state.cards[c].lockMove) me.discard.push(c);
     }
     refillHand(state, s);
@@ -2467,7 +2781,7 @@ export function checkInvariants(state) {
     const onMat = me.stand ? me.hand : [];
     const deckCards = standHand.filter((c) => c !== f.signature && !state.cards[c].basic).length + me.draw.length + me.discard.length;
     if (deckCards !== f.deck.length) errors.push(`${s} deck size ${deckCards} != ${f.deck.length}`);
-    const groundCards = onMat.filter((c) => state.cards[c].cat).length + me.gdraw.length + me.gdiscard.length;
+    const groundCards = onMat.filter((c) => state.cards[c].cat && !state.cards[c].basic).length + me.gdraw.length + me.gdiscard.length;
     if (groundCards !== f.groundDeck.length) errors.push(`${s} ground deck size ${groundCards} != ${f.groundDeck.length}`);
     if (Boolean(me.stand) !== Boolean(state.ground) && state.phase === "exchange" && !state.pending) errors.push(`${s} hand/mat mismatch`);
     if (!(Number.isInteger(me.cut) && me.cut >= 0 && me.cut <= state.rules.cut.max)) errors.push(`${s}.cut ${me.cut}`);

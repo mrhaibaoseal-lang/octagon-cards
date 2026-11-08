@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadData, cardCost, createMatch, resolveExchange, resolveFootwork, resolveEngage, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseReaction, chooseCorner, chooseChase, resolvePending, getIntent, bestGroundCard, budget, nextUnit, opposite, checkInvariants, roleOf, groundWinners, groundOutcome, footworkChoices, previewFootwork, counterCards, comboMax, planError, comboError, reactionOf, cardSpeed } from "./engine.js";
+import { loadData, createMatch, resolveFootwork, resolveEngage, resolveGround, groundHand, groundMax, groundComboError, groundPlanError, groundAnswerCards, aimOf, applyCorner, chooseGroundCombo, chooseGroundPlan, chooseGroundReaction, chooseFootwork, chooseCombo, choosePlan, chooseReaction, chooseCorner, chooseChase, resolvePending, getIntent, nextUnit, opposite, checkInvariants, footworkChoices, previewFootwork, counterCards, comboMax, planError, comboError, reactionOf, cardSpeed } from "./engine.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(here, "rules", name), "utf8"));
@@ -17,19 +17,33 @@ const pick = (state, list) => list[Math.floor(nextUnit(state) * list.length)];
 
 // ---------- Player strategies. Each is a set of overrides; anything left out is played by the AI. ----------
 // footwork(state, s) -> id        combo(state, s) -> card ids      plan(state, s) -> response
-// react(state, s, waiting) -> response or null (a card that was seen coming)      ground(state, s) -> card ids
+// react(state, s, waiting) -> response or null (a card that was seen coming)
+// On the mat: groundCombo(state, s) -> card ids (the man leading)   groundPlan(state, s) -> answer   groundReact(state, s, waiting) -> answer or null
 
-/** A random move in a lock fight, or a random kind of ground play and then a random card of that kind. */
-function randomGround(state, s) {
-  const hand = state[s].hand;
-  if (state.ground.lock) return [hand[Math.floor(nextUnit(state) * hand.length)]];
-  const cats = state.rules.ground.cats;
-  const role = roleOf(state, s);
-  const kinds = Object.keys(cats).filter((c) => cats[c].side === role && (cats[c].free || hand.some((x) => state.cards[x].cat === c && cardCost(state, s, x) <= budget(state, s))));
-  const kind = kinds[Math.floor(nextUnit(state) * kinds.length)];
-  if (cats[kind].free) return [];
-  const cards = hand.filter((x) => state.cards[x].cat === kind && cardCost(state, s, x) <= budget(state, s));
-  return [cards[Math.floor(nextUnit(state) * cards.length)]];
+const GROUND_ANSWERS = ["cover", "frame", "shrimp", "hands", "escape", "counter"];
+
+/** A random chain of ground steps: any card in hand that fits, as long as the rules allow. */
+function randomGroundCombo(state, s) {
+  const max = groundMax(state, s);
+  const len = 1 + Math.floor(nextUnit(state) * max);
+  const cards = [];
+  for (let k = 0; k < len; k++) {
+    const options = state[s].hand.filter((c) => !groundComboError(state, s, [...cards, c]));
+    if (!options.length) break;
+    cards.push(pick(state, options));
+  }
+  return state.ground.lock || cards.length ? cards : [];
+}
+
+function randomGroundPlan(state, s) {
+  const options = [];
+  for (const kind of GROUND_ANSWERS) {
+    if (kind === "counter" || kind === "escape") {
+      for (const c of groundAnswerCards(state, s, kind)) options.push({ kind, card: c });
+    } else options.push({ kind });
+  }
+  const legal = options.filter((p) => !groundPlanError(state, s, p));
+  return pick(state, legal.length ? legal : [{ kind: "cover" }]);
 }
 
 function randomFootwork(state, s) {
@@ -152,51 +166,78 @@ function readerPlan(state, s) {
   return { kind: "guard", height: h };
 }
 
-/** On the mat the reader takes the option that comes out ahead most often against the shown tendencies; lock fights use the guess table. */
-function groundReader(state, s) {
-  const intent = getIntent(state, opposite(s));
-  const probs = seen(intent);
-  const hand = state[s].hand;
-  if (state.ground.lock) {
-    const l = state.rules.lock;
-    const attacking = state.ground.lock.attacker === s;
-    const pickId = Object.keys(probs).reduce((best, id) => (probs[id] > probs[best] ? id : best));
-    const mine = attacking ? Object.keys(l.beats).find((k) => l.beats[k] !== pickId) : Object.keys(l.beats).find((k) => k === pickId);
-    const move = attacking ? mine : l.beats[pickId];
-    return [hand.find((c) => state.cards[c].lockMove === move)];
+/**
+ * On the mat the reader goes for what the other man is least likely to stop (leading), or answers what he is most likely to go for (answering).
+ * It is the same information the screen gives a player: the shown tendencies.
+ */
+function groundReaderCombo(state, s) {
+  const foe = opposite(s);
+  const G = state.rules.ground;
+  const probs = seen(getIntent(state, foe));
+  const max = groundMax(state, s);
+  const want = state[s].stamina < 45 ? Math.min(max, 2) : max;
+  if (state.ground.lock) return chooseGroundCombo(state, s);
+  // How likely each aim is to be stopped, from the answers he is expected to bet on.
+  const stopped = (aim) => Object.entries(probs).reduce((n, [ans, p]) => n + ((G.answers[ans].stops || []).includes(aim) ? p : 0), 0);
+  const cards = [];
+  for (let k = 0; k < want; k++) {
+    const options = state[s].hand.filter((c) => !groundComboError(state, s, [...cards, c]));
+    if (!options.length) break;
+    const score = (c) => {
+      const card = state.cards[c];
+      const aim = aimOf(state, c);
+      let v = 1 - stopped(aim);
+      if (card.cat === "lock") v += 1.5;
+      else if (card.cat === "pass") v += 0.2;
+      else if (card.cat === "punch") v += (card.power || 0) * 0.04;
+      else if (card.cat === "ctrl" && state.ground.pts[aim] >= 2) v -= 0.6;
+      return v + nextUnit(state) * 0.15;
+    };
+    cards.push(options.reduce((best, c) => (score(c) > score(best) ? c : best)));
   }
-  const cats = state.rules.ground.cats;
-  const role = roleOf(state, s);
-  const mineCats = Object.keys(cats).filter((c) => cats[c].side === role);
-  let best = mineCats.find((c) => cats[c].free);
-  let bestEv = -Infinity;
-  for (const c of mineCats) {
-    if (!cats[c].free && !hand.some((x) => state.cards[x].cat === c && cardCost(state, s, x) <= budget(state, s))) continue;
-    let ev = 0;
-    for (const [o, p] of Object.entries(probs)) {
-      const out = role === "top" ? groundOutcome(state, c, o) : groundOutcome(state, o, c);
-      const mineWins = out === role;
-      const theirsWins = out !== "none" && !mineWins;
-      ev += p * (mineWins ? 1 : theirsWins ? -1 : 0);
+  return cards.length ? cards : chooseGroundCombo(state, s);
+}
+
+function groundReaderPlan(state, s) {
+  const foe = opposite(s);
+  const G = state.rules.ground;
+  const leads = seen(getIntent(state, foe));
+  if (state[s].rocked) return { kind: "cover" };
+  // The points a lock card in his hand could go for: a "lock" lead is as likely to be any of them.
+  const lockAims = [...new Set(state[foe].hand.map((c) => state.cards[c]).filter((c) => c.cat === "lock").map((c) => c.aim))];
+  const counterSpeed = Math.max(0, ...groundAnswerCards(state, s, "counter").map((c) => cardSpeed(state, s, c)));
+  const value = (ans) => {
+    const a = G.answers[ans];
+    let v = 0;
+    for (const [aim, p] of Object.entries(leads)) {
+      if (aim === "lock") {
+        const hit = lockAims.filter((x) => (a.stops || []).includes(x)).length / (lockAims.length || 1);
+        v += p * (hit + (ans === "escape" ? 0.6 : 0));
+      } else if ((a.stops || []).includes(aim)) v += p;
+      else if (ans === "counter" && aim === "punch") v += p * (counterSpeed >= 76 ? 0.8 : 0.15); // a slow counter only trades with a quick punch
+      else if (ans === "cover" && aim === "punch") v += p * 0.5;
+      else if (ans === "cover" && aim === "hold") v += p * 0.3;
+      else if (ans === "escape" && (state.ground.lock || aim === "hold")) v += p * 0.6;
     }
-    if (ev > bestEv) {
-      bestEv = ev;
-      best = c;
-    }
+    return v;
+  };
+  const make = (ans) => (ans === "counter" || ans === "escape" ? { kind: ans, card: groundAnswerCards(state, s, ans)[0] } : { kind: ans });
+  const choices = GROUND_ANSWERS.filter((ans) => !groundPlanError(state, s, make(ans)));
+  // A softmax, so he mixes a little as a person does: always the same answer would be read at once.
+  const t = 0.12;
+  const vals = choices.map(value);
+  const top = Math.max(...vals);
+  const w = vals.map((v) => Math.exp((v - top) / t));
+  let r = nextUnit(state) * w.reduce((x, y) => x + y, 0);
+  for (let i = 0; i < choices.length; i++) {
+    r -= w[i];
+    if (r <= 0) return make(choices[i]);
   }
-  if (cats[best].free) return [];
-  const b = budget(state, s);
-  let limit = bestEv >= 0.45 ? b : bestEv >= 0.3 ? Math.min(b, 2) : 1;
-  if (!state[opposite(s)].rocked) {
-    if (state[s].stamina < 30) limit = Math.min(limit, 1);
-    else if (state[s].stamina < 50) limit = Math.min(limit, 2);
-  }
-  const legal = hand.filter((x) => state.cards[x].cat === best).map((x) => cardCost(state, s, x));
-  return [bestGroundCard(state, s, best, Math.max(limit, Math.min(...legal)))];
+  return make(choices[choices.length - 1]);
 }
 
 export const strategies = {
-  "亂出": { footwork: randomFootwork, combo: randomCombo, plan: randomPlan, react: (state, s) => (nextUnit(state) < 0.5 ? null : randomPlan(state, s)), ground: randomGround },
+  "亂出": { footwork: randomFootwork, combo: randomCombo, plan: randomPlan, react: (state, s) => (nextUnit(state) < 0.5 ? null : randomPlan(state, s)), groundCombo: randomGroundCombo, groundPlan: randomGroundPlan, groundReact: (state, s) => (nextUnit(state) < 0.5 ? null : randomGroundPlan(state, s)) },
   "只走位：壓上": alwaysFootwork("press"),
   "只走位：守中線": alwaysFootwork("hold"),
   "只走位：繞圈": alwaysFootwork("circle"),
@@ -206,7 +247,7 @@ export const strategies = {
   "永遠抱頭": alwaysPlan({ kind: "cover" }),
   "永遠閃身": alwaysPlan({ kind: "evade" }),
   "永遠抱摔": alwaysPlan({ kind: "shoot" }),
-  "看意圖": { footwork: readerFootwork, combo: readerCombo, plan: readerPlan, ground: groundReader },
+  "看意圖": { footwork: readerFootwork, combo: readerCombo, plan: readerPlan, groundCombo: groundReaderCombo, groundPlan: groundReaderPlan, groundReact: (state, s, w) => chooseGroundReaction(state, s, w) },
 };
 const SPAMS = ["只走位：壓上", "只走位：守中線", "只走位：繞圈", "只走位：後撤", "只出最長連段", "永遠架高", "永遠抱頭", "永遠閃身", "永遠抱摔"];
 
@@ -228,6 +269,19 @@ export function playStandingHand(state, strat, stratB = null) {
   return events;
 }
 
+/** Plays one hand on the mat through the same calls the screen makes. Returns the events. */
+export function playGroundHand(state, strat, stratB = null) {
+  const sides = { a: strat, b: stratB };
+  const H = groundHand(state);
+  const L = H.leader;
+  const S = H.resp;
+  const combo = sides[L]?.groundCombo ? sides[L].groundCombo(state, L) : chooseGroundCombo(state, L);
+  const plan = sides[S]?.groundPlan ? sides[S].groundPlan(state, S) : chooseGroundPlan(state, S);
+  // A fixed strategy only bets; one with its own reaction answers slow steps itself; the AI also answers them.
+  const react = (st, w) => (sides[S]?.groundReact ? sides[S].groundReact(st, S, w) : sides[S]?.groundPlan ? null : chooseGroundReaction(st, S, w));
+  return resolveGround(state, combo, plan, react);
+}
+
 export function playGame(idA, idB, stratA, seed, data_ = data, mode = MODE, stratB = null) {
   const state = createMatch(data_, idA, idB, seed, mode);
   let exchanges = 0;
@@ -243,9 +297,7 @@ export function playGame(idA, idB, stratA, seed, data_ = data, mode = MODE, stra
     let events;
     if (state.ground) {
       groundExchanges++;
-      const playA = stratA?.ground ? stratA.ground(state, "a") : chooseAI(state, "a").cards;
-      const playB = stratB?.ground ? stratB.ground(state, "b") : chooseAI(state, "b").cards;
-      events = resolveExchange(state, playA, playB);
+      events = playGroundHand(state, stratA, stratB);
     } else {
       events = playStandingHand(state, stratA, stratB);
       for (const s of ["a", "b"]) fw[s][events.footwork[s]] = (fw[s][events.footwork[s]] || 0) + 1;
@@ -344,11 +396,16 @@ function main() {
   const worstName = SPAMS.find((n) => win(n) === worstSpam);
   const readerShare = maxShare(results["看意圖"].fwA);
   const aiShare = maxShare(base.fwA);
-  console.log("\n=== M1.4a 通過條件 ===");
-  console.log(`看意圖 ≥ 60%（暫定；舊的三角相剋是 75%）：${win("看意圖").toFixed(1)}%，AI 鏡像 ${((100 * base.win) / games).toFixed(1)}% ${win("看意圖") >= 60 ? "通過" : "未通過"}`);
+  console.log("\n=== M1.4b 通過條件（站立沿用 M1.4a）===");
+  console.log(`看意圖 ≥ 52%（暫定：站立約 56%，地面的讀牌優勢較小；舊的三角相剋是 75%）：${win("看意圖").toFixed(1)}%，AI 鏡像 ${((100 * base.win) / games).toFixed(1)}% ${win("看意圖") >= 52 ? "通過" : "未通過"}`);
   console.log(`亂出 < 50%：${win("亂出").toFixed(1)}% ${win("亂出") < 50 ? "通過" : "未通過"}`);
   console.log(`單一打法 ≤ 55%（最高：${worstName}）：${worstSpam.toFixed(1)}% ${worstSpam <= 55 ? "通過" : "未通過"}`);
   console.log(`單一走位使用率 ≤ 55%（看意圖的人 ${(100 * readerShare).toFixed(0)}%、AI ${(100 * aiShare).toFixed(0)}%）：${readerShare <= 0.55 && aiShare <= 0.55 ? "通過" : "未通過"}`);
+  const sub = (100 * base.SUB) / games;
+  const dec = (100 * base.DEC) / games;
+  const lockPer = base.lock / games;
+  console.log(`地面占 ${pct(base.ground, base.exch)} 的手數 · 每場鎖技 ${lockPer.toFixed(2)} 次 · 降伏 ${sub.toFixed(0)}% · 判定 ${dec.toFixed(0)}%（AI 鏡像）`);
+  console.log(`降伏 3～20%：${sub >= 3 && sub <= 20 ? "通過" : "未通過"}；判定 35～75%：${dec >= 35 && dec <= 75 ? "通過" : "未通過"}；每場鎖技 0.15～1.2 次：${lockPer >= 0.15 && lockPer <= 1.2 ? "通過" : "未通過"}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();

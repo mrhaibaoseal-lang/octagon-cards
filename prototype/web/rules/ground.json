@@ -1,69 +1,729 @@
 {
-  "_doc": "M1.3 地面牌：共用牌池 + 每位選手 12 張地面牌組。cat 是地面的分類（見 rules.json 的 ground.cats），pos 是這張牌可以用的位置範圍（0 全防守、1 半防守、2 側控、3 騎乘、4 背後）。type 只是給能力和判定用的 S/G/C 標籤。鎖技牌的 lock 是鎖技名稱，lockDepth 是起始階段加成。",
+  "_doc": "M1.4b 地面牌：每個人都有的基本步驟（basic，寫在 rules.json 的 ground.basics）加上每位選手自己的特殊技（groundDeck）。cat 是步驟種類（punch 砸拳／ctrl 控制支點／pass 過位／lock 鎖技／tighten 收緊／counter 反制／escape 逃脫），side 是誰能用，pos 是可用的位置範圍（0 全防守 … 4 背後），aim 是它針對的支點（wrist 手腕／neck 頸部／hip 髖部／pass 過位），post 是出完這招後上位的重心（0 壓低／1 平穩／2 挺身），speed 是出招速度（低於對手反應力就被看到）。鎖技要先控制到對應支點。",
   "cards": {
-    "g_pound":      { "name": "砸拳",     "cat": "punch", "type": "S", "cost": 1, "power": 8,  "target": "head", "crit": 0,    "pos": [0, 4] },
-    "g_hammer":     { "name": "錘拳",     "cat": "punch", "type": "S", "cost": 2, "power": 14, "target": "head", "crit": 0.03, "pos": [0, 4] },
-    "g_elbow_gnp":  { "name": "地面肘",   "cat": "punch", "type": "S", "cost": 1, "power": 9,  "target": "head", "crit": 0.03, "pos": [0, 4], "cut": true },
-    "g_heavy":      { "name": "重砸",     "cat": "punch", "type": "S", "cost": 3, "power": 22, "target": "head", "crit": 0.08, "pos": [2, 4] },
-    "g_body_pound": { "name": "肋下重拳", "cat": "punch", "type": "S", "cost": 2, "power": 12, "target": "body", "crit": 0,    "pos": [0, 4] },
-    "g_rain":       { "name": "連續砸拳", "cat": "punch", "type": "S", "cost": 2, "power": 16, "target": "head", "crit": 0.02, "pos": [2, 4], "hits": 2 },
-
-    "g_pass":       { "name": "過位",     "cat": "pass", "type": "G", "cost": 1, "quality": 0,    "pos": [0, 3] },
-    "g_knee_slide": { "name": "膝壓過位", "cat": "pass", "type": "G", "cost": 2, "quality": 0.08, "pos": [0, 3] },
-    "g_smash_pass": { "name": "強壓過位", "cat": "pass", "type": "G", "cost": 3, "quality": 0.15, "pos": [0, 3], "advanceBonus": 1 },
-    "g_half_pass":  { "name": "破半防守", "cat": "pass", "type": "G", "cost": 2, "quality": 0.1,  "pos": [1, 1] },
-    "g_mount":      { "name": "上騎乘",   "cat": "pass", "type": "G", "cost": 2, "quality": 0.08, "pos": [2, 2] },
-    "g_take_back":  { "name": "拿背",     "cat": "pass", "type": "G", "cost": 2, "quality": 0.08, "pos": [3, 3] },
-
-    "g_kimura":       { "name": "木村鎖",   "cat": "lock", "type": "G", "cost": 2, "quality": 0,    "pos": [1, 2], "lock": "木村鎖" },
-    "g_americana":    { "name": "美式鎖",   "cat": "lock", "type": "G", "cost": 2, "quality": 0,    "pos": [2, 3], "lock": "美式鎖" },
-    "g_arm_triangle": { "name": "肩固",     "cat": "lock", "type": "G", "cost": 2, "quality": 0.03, "pos": [2, 3], "lock": "肩固" },
-    "g_armbar_top":   { "name": "騎乘十字固", "cat": "lock", "type": "G", "cost": 2, "quality": 0.05, "pos": [3, 3], "lock": "十字固" },
-    "g_rnc":          { "name": "裸絞",     "cat": "lock", "type": "G", "cost": 2, "quality": 0.05, "pos": [4, 4], "lock": "裸絞" },
-    "g_ankle":        { "name": "踝固",     "cat": "lock", "type": "G", "cost": 2, "quality": -0.05, "pos": [0, 1], "lock": "踝固" },
-
-    "g_frame":      { "name": "撐架",     "cat": "frame", "type": "C", "cost": 1, "crit": 0,    "pos": [0, 4] },
-    "g_hook":       { "name": "夾腿防守", "cat": "frame", "type": "C", "cost": 1, "crit": 0.06, "pos": [0, 1] },
-    "g_underhook":  { "name": "抓底勾",   "cat": "frame", "type": "C", "cost": 2, "crit": 0.1,  "pos": [1, 2] },
-    "g_shrimp":     { "name": "蝦行拉開", "cat": "frame", "type": "C", "cost": 1, "crit": 0.06, "pos": [2, 4] },
-
-    "g_counter":    { "name": "反制",     "cat": "counter", "type": "C", "cost": 1, "power": 4,  "target": "head", "crit": 0,    "pos": [0, 4] },
-    "g_upkick":     { "name": "蹬踢反擊", "cat": "counter", "type": "C", "cost": 1, "power": 6,  "target": "body", "crit": 0,    "pos": [0, 1], "kick": true },
-    "g_elbow_up":   { "name": "下位肘",   "cat": "counter", "type": "C", "cost": 2, "power": 10, "target": "head", "crit": 0.05, "pos": [0, 3], "cut": true },
-    "g_triangle":   { "name": "三角絞",   "cat": "counter", "type": "C", "cost": 2, "power": 4,  "target": "head", "crit": 0.08, "pos": [0, 1], "lockBottom": true, "lock": "三角絞" },
-    "g_armbar_up":  { "name": "下位十字固", "cat": "counter", "type": "C", "cost": 2, "power": 4, "target": "body", "crit": 0.1,  "pos": [0, 0], "lockBottom": true, "lock": "十字固" },
-    "g_guillotine_up": { "name": "下位斷頭台", "cat": "counter", "type": "C", "cost": 2, "power": 4, "target": "head", "crit": 0.06, "pos": [0, 2], "lockBottom": true, "lock": "斷頭台" },
-
-    "g_escape":     { "name": "逃脫",     "cat": "escape", "type": "G", "cost": 1, "crit": 0,    "pos": [0, 4] },
-    "g_standup":    { "name": "撐手起身", "cat": "escape", "type": "G", "cost": 1, "crit": 0.05, "pos": [0, 2] },
-    "g_bridge":     { "name": "橋翻",     "cat": "escape", "type": "G", "cost": 2, "crit": 0.08, "pos": [3, 4] },
-    "g_sweep":      { "name": "掃翻",     "cat": "escape", "type": "G", "cost": 2, "crit": 0.12, "pos": [0, 1] },
-    "g_granby":     { "name": "滾動逃脫", "cat": "escape", "type": "G", "cost": 1, "crit": 0.03, "pos": [1, 3] },
-
-    "lk_tighten":   { "name": "收緊",     "type": "S", "cost": 0, "lockMove": "tighten",   "lockSide": "attack" },
-    "lk_angle":     { "name": "換角度",   "type": "G", "cost": 0, "lockMove": "angle",     "lockSide": "attack" },
-    "lk_leg":       { "name": "腿鎖",     "type": "C", "cost": 0, "lockMove": "leg",       "lockSide": "attack" },
-    "lk_handfight": { "name": "拉手",     "type": "S", "cost": 0, "lockMove": "handfight", "lockSide": "defend" },
-    "lk_turn":      { "name": "轉身",     "type": "G", "cost": 0, "lockMove": "turn",      "lockSide": "defend" },
-    "lk_yank":      { "name": "硬拔",     "type": "C", "cost": 0, "lockMove": "yank",      "lockSide": "defend" }
+    "g_pound": {
+      "name": "砸拳",
+      "cat": "punch",
+      "side": "top",
+      "type": "S",
+      "cost": 1,
+      "speed": 80,
+      "post": 2,
+      "pos": [
+        0,
+        4
+      ],
+      "power": 8,
+      "target": "head",
+      "crit": 0,
+      "basic": true
+    },
+    "g_c_wrist": {
+      "name": "控手腕",
+      "cat": "ctrl",
+      "side": "top",
+      "type": "G",
+      "cost": 1,
+      "speed": 86,
+      "post": 0,
+      "pos": [
+        0,
+        4
+      ],
+      "aim": "wrist",
+      "basic": true
+    },
+    "g_c_neck": {
+      "name": "控頸",
+      "cat": "ctrl",
+      "side": "top",
+      "type": "G",
+      "cost": 1,
+      "speed": 82,
+      "post": 1,
+      "pos": [
+        0,
+        4
+      ],
+      "aim": "neck",
+      "basic": true
+    },
+    "g_c_hip": {
+      "name": "控髖",
+      "cat": "ctrl",
+      "side": "top",
+      "type": "G",
+      "cost": 1,
+      "speed": 78,
+      "post": 0,
+      "pos": [
+        0,
+        4
+      ],
+      "aim": "hip",
+      "basic": true
+    },
+    "g_pass": {
+      "name": "過位",
+      "cat": "pass",
+      "side": "top",
+      "type": "G",
+      "cost": 1,
+      "speed": 50,
+      "post": 1,
+      "pos": [
+        0,
+        3
+      ],
+      "aim": "pass",
+      "quality": 0,
+      "basic": true
+    },
+    "lk_tighten": {
+      "name": "收緊",
+      "cat": "tighten",
+      "side": "lock",
+      "type": "S",
+      "cost": 1,
+      "speed": 70,
+      "post": 0,
+      "pos": [
+        0,
+        4
+      ],
+      "basic": true
+    },
+    "g_counter": {
+      "name": "反制",
+      "cat": "counter",
+      "side": "bottom",
+      "type": "C",
+      "cost": 1,
+      "speed": 68,
+      "post": 1,
+      "pos": [
+        0,
+        4
+      ],
+      "power": 4,
+      "target": "head",
+      "crit": 0,
+      "basic": true
+    },
+    "g_escape": {
+      "name": "逃脫",
+      "cat": "escape",
+      "side": "bottom",
+      "type": "G",
+      "cost": 1,
+      "speed": 60,
+      "post": 1,
+      "pos": [
+        0,
+        4
+      ],
+      "crit": 0,
+      "basic": true
+    },
+    "g_hammer": {
+      "name": "錘拳",
+      "cat": "punch",
+      "side": "top",
+      "type": "S",
+      "cost": 2,
+      "speed": 44,
+      "post": 2,
+      "pos": [
+        0,
+        4
+      ],
+      "power": 14,
+      "target": "head",
+      "crit": 0.03
+    },
+    "g_elbow_gnp": {
+      "name": "地面肘",
+      "cat": "punch",
+      "side": "top",
+      "type": "S",
+      "cost": 1,
+      "speed": 78,
+      "post": 2,
+      "pos": [
+        0,
+        4
+      ],
+      "power": 9,
+      "target": "head",
+      "crit": 0.08
+    },
+    "g_heavy": {
+      "name": "重砸",
+      "cat": "punch",
+      "side": "top",
+      "type": "S",
+      "cost": 3,
+      "speed": 36,
+      "post": 2,
+      "pos": [
+        2,
+        4
+      ],
+      "power": 22,
+      "target": "head",
+      "crit": 0.08
+    },
+    "g_body_pound": {
+      "name": "肋下重拳",
+      "cat": "punch",
+      "side": "top",
+      "type": "S",
+      "cost": 2,
+      "speed": 62,
+      "post": 2,
+      "pos": [
+        0,
+        4
+      ],
+      "power": 12,
+      "target": "body",
+      "crit": 0
+    },
+    "g_rain": {
+      "name": "連續砸拳",
+      "cat": "punch",
+      "side": "top",
+      "type": "S",
+      "cost": 2,
+      "speed": 54,
+      "post": 2,
+      "pos": [
+        2,
+        4
+      ],
+      "power": 16,
+      "target": "head",
+      "crit": 0.02,
+      "hits": 2
+    },
+    "g_knee_slide": {
+      "name": "膝壓過位",
+      "cat": "pass",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 46,
+      "post": 0,
+      "pos": [
+        0,
+        3
+      ],
+      "aim": "pass",
+      "quality": 0.08
+    },
+    "g_smash_pass": {
+      "name": "強壓過位",
+      "cat": "pass",
+      "side": "top",
+      "type": "G",
+      "cost": 3,
+      "speed": 36,
+      "post": 0,
+      "pos": [
+        0,
+        3
+      ],
+      "aim": "pass",
+      "quality": 0.15,
+      "advanceBonus": 1
+    },
+    "g_half_pass": {
+      "name": "破半防守",
+      "cat": "pass",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 44,
+      "post": 1,
+      "pos": [
+        1,
+        1
+      ],
+      "aim": "pass",
+      "quality": 0.1
+    },
+    "g_mount": {
+      "name": "上騎乘",
+      "cat": "pass",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 46,
+      "post": 1,
+      "pos": [
+        2,
+        2
+      ],
+      "aim": "pass",
+      "quality": 0.08
+    },
+    "g_take_back": {
+      "name": "拿背",
+      "cat": "pass",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 46,
+      "post": 1,
+      "pos": [
+        3,
+        3
+      ],
+      "aim": "pass",
+      "quality": 0.08
+    },
+    "g_kimura": {
+      "name": "木村鎖",
+      "cat": "lock",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 74,
+      "post": 0,
+      "pos": [
+        1,
+        2
+      ],
+      "aim": "wrist",
+      "lock": "木村鎖",
+      "quality": 0
+    },
+    "g_americana": {
+      "name": "美式鎖",
+      "cat": "lock",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 72,
+      "post": 0,
+      "pos": [
+        2,
+        3
+      ],
+      "aim": "wrist",
+      "lock": "美式鎖",
+      "quality": 0
+    },
+    "g_arm_triangle": {
+      "name": "肩固",
+      "cat": "lock",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 70,
+      "post": 0,
+      "pos": [
+        2,
+        3
+      ],
+      "aim": "neck",
+      "lock": "肩固",
+      "quality": 0.03
+    },
+    "g_armbar_top": {
+      "name": "騎乘十字固",
+      "cat": "lock",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 68,
+      "post": 0,
+      "pos": [
+        3,
+        3
+      ],
+      "aim": "wrist",
+      "lock": "十字固",
+      "quality": 0.05
+    },
+    "g_rnc": {
+      "name": "裸絞",
+      "cat": "lock",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 74,
+      "post": 0,
+      "pos": [
+        4,
+        4
+      ],
+      "aim": "neck",
+      "lock": "裸絞",
+      "quality": 0.05
+    },
+    "g_ankle": {
+      "name": "踝固",
+      "cat": "lock",
+      "side": "top",
+      "type": "G",
+      "cost": 2,
+      "speed": 66,
+      "post": 0,
+      "pos": [
+        0,
+        1
+      ],
+      "aim": "hip",
+      "lock": "踝固",
+      "quality": -0.05
+    },
+    "g_upkick": {
+      "name": "蹬踢反擊",
+      "cat": "counter",
+      "side": "bottom",
+      "type": "C",
+      "cost": 1,
+      "speed": 66,
+      "post": 1,
+      "pos": [
+        0,
+        1
+      ],
+      "power": 6,
+      "target": "body",
+      "crit": 0,
+      "kick": true
+    },
+    "g_elbow_up": {
+      "name": "下位肘",
+      "cat": "counter",
+      "side": "bottom",
+      "type": "C",
+      "cost": 2,
+      "speed": 64,
+      "post": 1,
+      "pos": [
+        0,
+        3
+      ],
+      "power": 10,
+      "target": "head",
+      "crit": 0.08
+    },
+    "g_triangle": {
+      "name": "三角絞",
+      "cat": "counter",
+      "side": "bottom",
+      "type": "C",
+      "cost": 2,
+      "speed": 56,
+      "post": 1,
+      "pos": [
+        0,
+        1
+      ],
+      "power": 4,
+      "target": "head",
+      "crit": 0.08,
+      "lockBottom": true,
+      "lock": "三角絞",
+      "aim": "neck"
+    },
+    "g_armbar_up": {
+      "name": "下位十字固",
+      "cat": "counter",
+      "side": "bottom",
+      "type": "C",
+      "cost": 2,
+      "speed": 54,
+      "post": 1,
+      "pos": [
+        0,
+        0
+      ],
+      "power": 4,
+      "target": "body",
+      "crit": 0.1,
+      "lockBottom": true,
+      "lock": "十字固",
+      "aim": "wrist"
+    },
+    "g_guillotine_up": {
+      "name": "下位斷頭台",
+      "cat": "counter",
+      "side": "bottom",
+      "type": "C",
+      "cost": 2,
+      "speed": 58,
+      "post": 1,
+      "pos": [
+        0,
+        2
+      ],
+      "power": 4,
+      "target": "head",
+      "crit": 0.06,
+      "lockBottom": true,
+      "lock": "斷頭台",
+      "aim": "neck"
+    },
+    "g_standup": {
+      "name": "撐手起身",
+      "cat": "escape",
+      "side": "bottom",
+      "type": "G",
+      "cost": 1,
+      "speed": 58,
+      "post": 1,
+      "pos": [
+        0,
+        2
+      ],
+      "crit": 0.05
+    },
+    "g_bridge": {
+      "name": "橋翻",
+      "cat": "escape",
+      "side": "bottom",
+      "type": "G",
+      "cost": 2,
+      "speed": 44,
+      "post": 1,
+      "pos": [
+        3,
+        4
+      ],
+      "crit": 0.08
+    },
+    "g_sweep": {
+      "name": "掃翻",
+      "cat": "escape",
+      "side": "bottom",
+      "type": "G",
+      "cost": 2,
+      "speed": 50,
+      "post": 1,
+      "pos": [
+        0,
+        1
+      ],
+      "crit": 0.12
+    },
+    "g_granby": {
+      "name": "滾動逃脫",
+      "cat": "escape",
+      "side": "bottom",
+      "type": "G",
+      "cost": 1,
+      "speed": 56,
+      "post": 1,
+      "pos": [
+        1,
+        3
+      ],
+      "crit": 0.03
+    }
   },
-  "defaultDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_knee_slide", "g_kimura", "g_rnc", "g_triangle", "g_standup"],
+  "defaultDeck": [
+    "g_hammer",
+    "g_elbow_gnp",
+    "g_knee_slide",
+    "g_kimura",
+    "g_rnc",
+    "g_triangle",
+    "g_standup"
+  ],
   "fighters": {
-    "mcgregor":  { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_kimura", "g_upkick", "g_standup", "g_sweep", "g_hook"] },
-    "khabib":    { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_heavy", "g_hammer", "g_knee_slide", "g_take_back", "g_rnc", "g_arm_triangle", "g_bridge"], "lockMix": { "tighten": 1.2, "angle": 1, "leg": 0.7 } },
-    "oliveira":  { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_half_pass", "g_kimura", "g_rnc", "g_triangle", "g_armbar_up", "g_guillotine_up", "g_sweep"], "lockMix": { "tighten": 1, "angle": 1, "leg": 1.4 } },
-    "hooker":    { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_kimura", "g_upkick", "g_standup", "g_hook", "g_granby"] },
-    "sandhagen": { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_kimura", "g_upkick", "g_standup", "g_sweep", "g_granby"] },
-    "jones":     { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_elbow_gnp", "g_hammer", "g_heavy", "g_knee_slide", "g_kimura", "g_standup", "g_upkick"] },
-    "adesanya":  { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_kimura", "g_upkick", "g_standup", "g_sweep", "g_hook"] },
-    "makhachev": { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_heavy", "g_knee_slide", "g_take_back", "g_rnc", "g_arm_triangle", "g_americana", "g_bridge"], "lockMix": { "tighten": 1.2, "angle": 1.1, "leg": 0.6 } },
-    "holloway":  { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_kimura", "g_upkick", "g_standup", "g_hook", "g_granby"] },
-    "poirier":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_heavy", "g_elbow_gnp", "g_guillotine_up", "g_rnc", "g_standup", "g_upkick"] },
-    "pereira":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_heavy", "g_elbow_gnp", "g_upkick", "g_standup", "g_granby", "g_hook"] },
-    "topuria":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_heavy", "g_rnc", "g_knee_slide", "g_kimura", "g_standup", "g_sweep"] },
-    "omalley":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_kimura", "g_upkick", "g_standup", "g_hook", "g_sweep"] },
-    "chimaev":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_heavy", "g_hammer", "g_smash_pass", "g_take_back", "g_rnc", "g_arm_triangle", "g_bridge"], "lockMix": { "tighten": 1.3, "angle": 1, "leg": 0.6 } },
-    "gaethje":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_heavy", "g_standup", "g_upkick", "g_kimura", "g_granby"] },
-    "neutral":   { "groundDeck": ["g_pound", "g_pass", "g_frame", "g_counter", "g_escape", "g_hammer", "g_elbow_gnp", "g_knee_slide", "g_kimura", "g_rnc", "g_triangle", "g_standup"] }
+    "mcgregor": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_kimura",
+        "g_upkick",
+        "g_standup",
+        "g_sweep"
+      ]
+    },
+    "khabib": {
+      "groundDeck": [
+        "g_heavy",
+        "g_hammer",
+        "g_knee_slide",
+        "g_take_back",
+        "g_rnc",
+        "g_arm_triangle",
+        "g_bridge"
+      ],
+      "lockMix": {
+        "tighten": 1.2,
+        "angle": 1,
+        "leg": 0.7
+      }
+    },
+    "oliveira": {
+      "groundDeck": [
+        "g_half_pass",
+        "g_kimura",
+        "g_rnc",
+        "g_triangle",
+        "g_armbar_up",
+        "g_guillotine_up",
+        "g_sweep"
+      ],
+      "lockMix": {
+        "tighten": 1,
+        "angle": 1,
+        "leg": 1.4
+      }
+    },
+    "hooker": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_kimura",
+        "g_upkick",
+        "g_standup",
+        "g_granby"
+      ]
+    },
+    "sandhagen": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_kimura",
+        "g_upkick",
+        "g_standup",
+        "g_sweep",
+        "g_granby"
+      ]
+    },
+    "jones": {
+      "groundDeck": [
+        "g_elbow_gnp",
+        "g_hammer",
+        "g_heavy",
+        "g_knee_slide",
+        "g_kimura",
+        "g_standup",
+        "g_upkick"
+      ]
+    },
+    "adesanya": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_kimura",
+        "g_upkick",
+        "g_standup",
+        "g_sweep"
+      ]
+    },
+    "makhachev": {
+      "groundDeck": [
+        "g_heavy",
+        "g_knee_slide",
+        "g_take_back",
+        "g_rnc",
+        "g_arm_triangle",
+        "g_americana",
+        "g_bridge"
+      ],
+      "lockMix": {
+        "tighten": 1.2,
+        "angle": 1.1,
+        "leg": 0.6
+      }
+    },
+    "holloway": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_kimura",
+        "g_upkick",
+        "g_standup",
+        "g_granby"
+      ]
+    },
+    "poirier": {
+      "groundDeck": [
+        "g_hammer",
+        "g_heavy",
+        "g_elbow_gnp",
+        "g_guillotine_up",
+        "g_rnc",
+        "g_standup",
+        "g_upkick"
+      ]
+    },
+    "pereira": {
+      "groundDeck": [
+        "g_hammer",
+        "g_heavy",
+        "g_elbow_gnp",
+        "g_upkick",
+        "g_standup",
+        "g_granby"
+      ]
+    },
+    "topuria": {
+      "groundDeck": [
+        "g_hammer",
+        "g_heavy",
+        "g_rnc",
+        "g_knee_slide",
+        "g_kimura",
+        "g_standup",
+        "g_sweep"
+      ]
+    },
+    "omalley": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_kimura",
+        "g_upkick",
+        "g_standup",
+        "g_sweep"
+      ]
+    },
+    "chimaev": {
+      "groundDeck": [
+        "g_heavy",
+        "g_hammer",
+        "g_smash_pass",
+        "g_take_back",
+        "g_rnc",
+        "g_arm_triangle",
+        "g_bridge"
+      ],
+      "lockMix": {
+        "tighten": 1.3,
+        "angle": 1,
+        "leg": 0.6
+      }
+    },
+    "gaethje": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_heavy",
+        "g_standup",
+        "g_upkick",
+        "g_kimura",
+        "g_granby"
+      ]
+    },
+    "neutral": {
+      "groundDeck": [
+        "g_hammer",
+        "g_elbow_gnp",
+        "g_knee_slide",
+        "g_kimura",
+        "g_rnc",
+        "g_triangle",
+        "g_standup"
+      ]
+    }
   }
 }

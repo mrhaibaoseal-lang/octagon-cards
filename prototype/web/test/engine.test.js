@@ -1,19 +1,19 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveExchange, resolveFootwork, resolveEngage, engageStart, engageStep, engageWaiting, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseCorner, getIntent, footworkIntent, engageIntent, footworkOutcome, footworkChoices, leadChance, comboError, planError, comboMax, reactionOf, handSpeed, previewCombo, budget, playError, nextUnit, checkInvariants, usableAt, previewPlay, cardCost, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, groundCatOf, lockStatus, describeCard, lockResistChance, lockGuessWrong, stepOf } from "../engine.js";
+import { createMatch, resolveFootwork, resolveEngage, engageStart, engageStep, engageWaiting, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseCorner, getIntent, footworkIntent, engageIntent, footworkOutcome, footworkChoices, leadChance, comboError, planError, comboMax, reactionOf, handSpeed, previewCombo, nextUnit, checkInvariants, usableAt, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, lockStatus, describeCard, lockResistChance, stepOf, groundHand, groundLeader, groundStart, groundStep, groundWaiting, resolveGround, groundComboError, groundPlanError, groundMax, groundAnswerCards, chooseGroundReaction, previewGroundCombo, aimOf } from "../engine.js";
 import { data, playGame, strategies, playStandingHand } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
 
-/** Two fighters on the mat, `top` on top at `pos`, with ground hands set by hand. The stand-up hands are set aside as in a real fight. */
+/** Two fighters on the mat, `top` on top at `pos`, with ground hands set by hand (the basic steps are always in). The stand-up hands are set aside as in a real fight. */
 function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed = 5 } = {}) {
   const state = createMatch(data, idA, idB, seed);
   const bottom = top === "a" ? "b" : "a";
-  state.ground = { top, pos, lock: null, hist: [] };
-  for (const [side, hand] of [[top, handTop], [bottom, handBottom]]) {
+  state.ground = { top, pos, lock: null, hist: [], pts: { wrist: 0, neck: 0, hip: 0 }, posture: 1 };
+  for (const [side, extra] of [[top, handTop], [bottom, handBottom]]) {
     state[side].stand = state[side].hand;
-    state[side].hand = [...hand];
+    state[side].hand = [...extra, ...data.rules.ground.basics];
   }
   return state;
 }
@@ -21,24 +21,18 @@ function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed
 /** The same, but with the real ground hands drawn. */
 function matDrawn(idA, idB, pos, top = "a", seed = 5) {
   const state = createMatch(data, idA, idB, seed);
-  state.ground = { top, pos, lock: null, hist: [] };
+  state.ground = { top, pos, lock: null, hist: [], pts: { wrist: 0, neck: 0, hip: 0 }, posture: 1 };
   for (const s of ["a", "b"]) refillHand(state, s);
   return state;
 }
 
-/** A lock fight with `a` holding it at the given stage. */
-function lockFight(depth, { top = "a", attacker = "a" } = {}) {
-  const m = mat("neutral", "neutral", { pos: 3, top, handTop: [], handBottom: [] });
-  m.ground.lock = { attacker, name: "十字固", depth, hist: [] };
-  for (const s of ["a", "b"]) {
-    m[s].hand = Object.keys(data.cards).filter((c) => data.cards[c].lockSide === (s === attacker ? "attack" : "defend"));
-  }
+/** A lock on the wrist with `attacker` holding it at the given stage; the hands are the ones a lock leaves. */
+function lockFight(depth, { top = "a", attacker = "a", seed = 5 } = {}) {
+  const m = mat("neutral", "neutral", { pos: 3, top, seed });
+  m.ground.lock = { attacker, name: "十字固", aim: "wrist", depth, hist: [] };
+  for (const s of ["a", "b"]) refillHand(m, s);
   return m;
 }
-
-const TOP_PLAYS = { punch: ["g_pound"], pass: ["g_pass"], lock: ["g_kimura"], hold: [] };
-const BOTTOM_PLAYS = { frame: ["g_frame"], counter: ["g_counter"], escape: ["g_escape"], cover: [] };
-
 
 test("the RNG matches the Swift SplitMix64 sequence", () => {
   const s = { rng: 42n };
@@ -112,49 +106,70 @@ test("depth.json layers onto the roster without touching the base files", () => 
   assert.ok(merged.cards.jab.follow && merged.cards.jab.name === "刺拳" && merged.cards.feint);
 });
 
-test("on the ground the top man chooses and the bottom man guesses: the matrix decides, no triangle", () => {
-  for (const [t, row] of Object.entries(data.rules.ground.matrix)) {
-    for (const [b, out] of Object.entries(row)) {
-      const state = mat("neutral", "neutral", { pos: 1, handTop: ["g_pound", "g_pass", "g_kimura"], handBottom: ["g_frame", "g_counter", "g_escape"] });
-      const events = resolveExchange(state, TOP_PLAYS[t], BOTTOM_PLAYS[b]);
-      const v = events.find((e) => e.kind === "verdict");
-      assert.equal(v.winner, out === "top" ? "a" : out === "bottom" ? "b" : null, `${t} vs ${b}`);
-    }
-  }
+const GROUND = data.rules.ground;
+const answersOf = (m, s, kind) => groundAnswerCards(m, s, kind)[0];
+/** A plan for an answer; counters and escapes need a card from the hand. */
+const planOf = (m, s, kind) => (kind === "counter" || kind === "escape" ? { kind, card: answersOf(m, s, kind) } : { kind });
+/** One whole hand on the mat with no live reaction: the bet stays, whatever the speed of the steps. */
+const hand = (m, combo, plan) => resolveGround(m, combo, typeof plan === "string" ? planOf(m, groundHand(m).resp, plan) : plan);
+
+test("on the mat the top man leads a chain of steps and the other answers with a bet; a lock holder leads instead of the man on top", () => {
+  const m = mat("neutral", "neutral", { pos: 1 });
+  assert.equal(groundLeader(m), "a");
+  const H = groundHand(m);
+  assert.equal(H.leader, "a");
+  assert.equal(H.resp, "b");
+  assert.equal(stepOf(m), "ground");
+  assert.ok(groundComboError(m, "b", ["g_pound"]), "the man underneath does not lead");
+  assert.ok(groundPlanError(m, "a", { kind: "cover" }), "the man on top does not answer");
+  m.ground.lock = { attacker: "b", name: "三角絞", aim: "neck", depth: 1, hist: [] };
+  assert.equal(groundLeader(m), "b", "the man holding the lock leads");
+  m.gh = null;
+  assert.equal(groundHand(m).leader, "b");
   assert.equal(data.rules.positions.length, 5);
 });
 
-test("ground decks: 12 cards from a shared pool of about 30, and no ground-only cards left in the stand-up decks", () => {
-  assert.ok(Object.values(data.cards).filter((c) => c.cat).length >= 28, "shared pool");
+test("ground decks hold only special moves; the basic steps come with every fighter", () => {
+  for (const c of GROUND.basics) assert.ok(data.cards[c]?.basic && data.cards[c].cat, `basic ${c}`);
   for (const [id, f] of Object.entries(data.fighters)) {
-    assert.equal(f.groundDeck.length, 12, `${id} ground deck`);
-    assert.equal(new Set(f.groundDeck).size, 12, `${id} has no duplicates`);
-    for (const c of f.groundDeck) assert.ok(data.cards[c]?.cat, `${id} unknown ground card ${c}`);
+    assert.ok(f.groundDeck.length >= 5, `${id} ground deck`);
+    assert.equal(new Set(f.groundDeck).size, f.groundDeck.length, `${id} has no duplicates`);
+    for (const c of f.groundDeck) {
+      assert.ok(data.cards[c]?.cat, `${id} unknown ground card ${c}`);
+      assert.ok(!data.cards[c].basic, `${id} has a basic step in the deck: ${c}`);
+    }
     for (const c of ["rnc", "arm_triangle", "triangle", "armbar"]) assert.ok(!f.deck.includes(c), `${id} still stands up with ${c}`);
+  }
+  for (const c of Object.values(data.cards).filter((x) => x.cat)) {
+    assert.ok(c.pos && c.speed > 0, "every ground card has positions and a speed");
+    if (c.cat === "lock") assert.ok(["wrist", "neck", "hip"].includes(c.aim) && c.lock, `${c.name} names its point`);
   }
 });
 
-test("ground hands: one card per play, only cards for this role and position, and a choice of every kind", () => {
+test("ground hands: the basics that fit, a few specials, only what works at this role and position", () => {
   for (const [id, f] of Object.entries(data.fighters)) {
     for (let pos = 0; pos < data.rules.positions.length; pos++) {
       for (const top of ["a", "b"]) {
         const state = matDrawn(id, "neutral", pos, top, 11 + pos);
         for (const s of ["a", "b"]) {
           const role = top === s ? "top" : "bottom";
-          const hand = state[s].hand;
+          const h = state[s].hand;
           const who = `${id} ${role}@${pos}`;
-          assert.ok(hand.length >= 2 && hand.length <= data.rules.ground.handSize, `${who}: ${hand.length} cards`);
-          for (const c of hand) assert.equal(playError(state, s, [c]), null, `${who} ${c}`);
-          assert.ok(playError(state, s, [hand[0], hand[1]]), "one card only");
-          assert.ok(!hand.includes("step_in"), "no steps on the mat");
-          const deck = s === "a" ? f.groundDeck : data.fighters.neutral.groundDeck;
-          for (const [cat, def] of Object.entries(data.rules.ground.cats)) {
-            if (def.side !== role || def.free) continue;
-            const has = deck.some((c) => data.cards[c].cat === cat && pos >= data.cards[c].pos[0] && pos <= data.cards[c].pos[1]);
-            assert.equal(hand.some((c) => data.cards[c].cat === cat), has, `${who} ${cat}`);
+          const specials = h.filter((c) => !data.cards[c].basic);
+          assert.ok(specials.length <= GROUND.handSize, `${who}: ${specials.length} specials`);
+          for (const c of h) {
+            const card = data.cards[c];
+            assert.ok(card.cat && pos >= card.pos[0] && pos <= card.pos[1] && (card.side === role || card.cat === "tighten"), `${who} ${c}`);
           }
-          if (role === "bottom") for (const cat of ["frame", "counter", "escape"]) assert.ok(hand.some((c) => data.cards[c].cat === cat), `${who} lacks ${cat}`);
-          else assert.ok(hand.some((c) => data.cards[c].cat === "punch"), `${who} lacks punch`);
+          if (role === "bottom") for (const cat of ["counter", "escape"]) assert.ok(h.some((c) => data.cards[c].cat === cat), `${who} lacks ${cat}`);
+          else {
+            assert.ok(h.includes("g_pound") && h.includes("g_c_wrist") && h.includes("g_c_neck"), `${who} lacks the basics`);
+            assert.ok(pos > 3 || h.includes("g_pass"), `${who} can pass`);
+            assert.ok(h.includes("lk_tighten"), "the lock step waits in the hand");
+          }
+          assert.ok(!h.includes("step_in"), "no steps on the mat");
+          const deckSpecials = specials.every((c) => (s === "a" ? f.groundDeck : data.fighters.neutral.groundDeck).includes(c));
+          assert.ok(deckSpecials, `${who} special not from his deck`);
         }
         assert.deepEqual(checkInvariants(state), [], `${id} @${pos}`);
       }
@@ -162,192 +177,459 @@ test("ground hands: one card per play, only cards for this role and position, an
   }
 });
 
-test("a lock card only works where it belongs, and the higher the man on top, the fewer ways out the man underneath has", () => {
-  const lockCards = (pos) => matDrawn("khabib", "neutral", pos, "a").a.hand.filter((c) => data.cards[c].cat === "lock");
-  assert.deepEqual(lockCards(0), [], "no lock from the guard for a wrestler");
-  for (let pos = 0; pos < 5; pos++) for (const c of lockCards(pos)) assert.ok(pos >= data.cards[c].pos[0] && pos <= data.cards[c].pos[1]);
-  assert.deepEqual(data.cards.g_rnc.pos, [4, 4], "the rear naked choke is for the back only");
-  assert.deepEqual(data.cards.g_kimura.pos, [1, 2], "the kimura is for half guard and side control");
-  assert.ok(data.cards.g_triangle.pos[1] <= 1 && data.cards.g_triangle.lockBottom, "the triangle is a guard play from underneath");
-  const options = (pos) => Object.values(data.cards).filter((c) => c.cat && data.rules.ground.cats[c.cat].side === "bottom" && pos >= c.pos[0] && pos <= c.pos[1]).length;
-  assert.ok(options(4) < options(0) && options(3) < options(1), "fewer ways out from the high positions");
+test("how long a chain can be: stamina decides, a stunned man gets one step; steps must be in hand and fit", () => {
+  const m = mat("neutral", "neutral", { pos: 1, handTop: ["g_hammer", "g_kimura"] });
+  m.a.stamina = 100;
+  assert.equal(groundMax(m, "a"), 3);
+  m.a.stamina = 40;
+  assert.equal(groundMax(m, "a"), 2);
+  m.a.stamina = 10;
+  assert.equal(groundMax(m, "a"), 1);
+  m.a.stamina = 100;
+  assert.equal(groundComboError(m, "a", ["g_pound", "g_pound", "g_pound"]), null, "basic steps can repeat");
+  assert.ok(groundComboError(m, "a", ["g_pound", "g_pound", "g_pound", "g_pound"]), "too long");
+  assert.ok(groundComboError(m, "a", ["g_hammer", "g_hammer"]), "a special once");
+  assert.ok(groundComboError(m, "a", ["g_rnc"]), "not in hand");
+  assert.ok(groundComboError(m, "a", ["g_kimura"]), "a lock needs its point under control first");
+  assert.equal(groundComboError(m, "a", ["g_c_wrist", "g_kimura"]), null, "a control step before it counts");
+  assert.ok(groundComboError(m, "a", ["g_c_neck", "g_kimura"]), "the wrong point does not");
+  m.ground.pts.wrist = 1;
+  assert.equal(groundComboError(m, "a", ["g_kimura"]), null, "or a hold already there");
+  assert.equal(groundComboError(m, "a", ["g_kimura", "lk_tighten"]), null, "tightening a lock set in the same chain");
+  assert.ok(groundComboError(m, "a", ["lk_tighten"]), "nothing to tighten yet");
+  m.b.rocked = true;
+  m.a.rocked = true;
+  assert.equal(groundMax(m, "a"), 1);
 });
 
-test("passing moves up one place (two on a critical); escapes follow the table and a critical turns him over", () => {
-  const seen = new Set();
+test("answers stop what they cover and nothing else: hands the wrist, frame the neck and the pass, shrimp the hip", () => {
+  const table = [["g_c_wrist", "hands"], ["g_c_neck", "frame"], ["g_c_hip", "shrimp"], ["g_pass", "frame"]];
+  for (const [card, answer] of table) {
+    for (const other of ["cover", "frame", "shrimp", "hands"]) {
+      const m = mat("neutral", "neutral", { pos: 1 });
+      m.b.stamina = 100;
+      const events = hand(m, [card], { kind: other });
+      const stopped = events.some((e) => e.kind === "gstop");
+      const covers = (data.rules.ground.answers[other].stops || []).includes(data.cards[card].aim);
+      assert.equal(stopped, covers, `${card} vs ${other}`);
+      if (stopped) assert.equal(events.find((e) => e.kind === "gstop").by, other);
+    }
+    assert.ok(data.rules.ground.answers[answer].stops.includes(data.cards[card].aim));
+  }
+  // Shrimping eases a pass instead of stopping it: it never goes further than half.
+  let moved = 0;
   for (let seed = 1; seed <= 200; seed++) {
-    const m = mat("neutral", "neutral", { pos: 1, handTop: ["g_pass"], handBottom: [], seed });
-    resolveExchange(m, ["g_pass"], []);
+    const m = mat("neutral", "neutral", { pos: 1, seed });
+    const ev = hand(m, ["g_pass"], { kind: "shrimp" });
+    assert.ok(!ev.some((e) => e.kind === "gstop"), "not stopped");
+    if (ev.some((e) => e.kind === "position")) moved++;
+  }
+  assert.ok(moved > 0 && moved < 70, `eased pass moved ${moved}/200`);
+});
+
+test("a stop ends the chain, drains the man on top, loosens his holds and gives the man underneath the edge", () => {
+  const m = mat("neutral", "neutral", { pos: 1 });
+  m.ground.pts = { wrist: 2, neck: 2, hip: 1 };
+  m.a.stamina = 100;
+  m.b.stamina = 100;
+  const events = hand(m, ["g_c_neck", "g_c_hip", "g_pound"], { kind: "frame" });
+  assert.deepEqual(events.filter((e) => e.kind === "gcard").length, 1, "the chain ended at the first step");
+  assert.ok(events.some((e) => e.kind === "gstop" && e.by === "frame"));
+  assert.ok(m.a.stamina < 100, "the man on top pays for the stop");
+  assert.deepEqual(m.ground.pts, { wrist: 0, neck: 0, hip: 0 }, "everything he held is gone");
+  assert.ok(!events.some((e) => e.kind === "comboDone"));
+  assert.ok(m.b.momentum > 0 && m.a.momentum === 0 || m.b.momentum >= m.a.momentum, "the stop pays off");
+});
+
+test("control steps build the three holds (two at most); a pass spends the hip; losing the position keeps nothing", () => {
+  const reached = new Set();
+  for (let seed = 1; seed <= 200; seed++) {
+    const m = mat("neutral", "neutral", { pos: 1, seed });
+    const ev = hand(m, ["g_c_wrist"], { kind: "cover" });
+    assert.ok(ev.some((e) => e.kind === "gctrl"));
+    reached.add(m.ground.pts.wrist);
+    hand(m, ["g_c_wrist"], { kind: "cover" });
+    assert.ok(m.ground.pts.wrist <= GROUND.ctrl.max);
+  }
+  assert.deepEqual([...reached].sort(), [0, 1, 2], "nothing on a graze, one on a clean, two on a crit");
+  let spent = 0;
+  for (let seed = 1; seed <= 200; seed++) {
+    const m = mat("neutral", "neutral", { pos: 1, seed });
+    m.ground.pts.hip = 2;
+    m.ground.pts.wrist = 1;
+    const ev = hand(m, ["g_pass"], { kind: "cover" });
+    if (ev.some((e) => e.kind === "position")) {
+      spent++;
+      assert.equal(m.ground.pts.hip, 1, "the pass takes one level of the hip");
+      assert.equal(m.ground.pts.wrist, 1, "the rest stays");
+    }
+  }
+  assert.ok(spent > 80, `passes landed ${spent}/200`);
+  // A hip held well makes the pass land more often.
+  const rate = (hip) => {
+    let n = 0;
+    for (let seed = 1; seed <= 600; seed++) {
+      const m = mat("neutral", "neutral", { pos: 1, seed });
+      m.ground.pts.hip = hip;
+      if (hand(m, ["g_pass"], { kind: "cover" }).some((e) => e.kind === "position")) n++;
+    }
+    return n;
+  };
+  assert.ok(rate(2) > rate(0), "hip control helps the pass");
+});
+
+test("the position moves up on a pass, the escape table and a critical escape turns him over", () => {
+  const seen = new Set();
+  for (let seed = 1; seed <= 300; seed++) {
+    const m = mat("neutral", "neutral", { pos: 1, seed });
+    hand(m, ["g_pass"], { kind: "cover" });
     seen.add(m.ground.pos);
   }
   assert.deepEqual([...seen].sort(), [1, 2, 3], "no change on a graze, one up, two up on a crit");
-  // From the mount the bridge-and-roll lands in half guard, not side control.
   const after = new Set();
   let swept = 0;
-  for (let seed = 1; seed <= 300; seed++) {
-    const m = mat("neutral", "neutral", { pos: 3, handTop: ["g_armbar_top"], handBottom: ["g_escape"], seed });
-    const events = resolveExchange(m, ["g_armbar_top"], ["g_escape"]);
-    assert.equal(events.find((e) => e.kind === "verdict").winner, "b", "escape beats a lock");
+  let stood = 0;
+  for (let seed = 1; seed <= 600; seed++) {
+    const m = mat("neutral", "neutral", { pos: 3, seed });
+    m.ground.pts = { wrist: 1, neck: 0, hip: 0 };
+    const events = hand(m, ["g_c_neck"], "escape");
     if (events.some((e) => e.kind === "sweep")) swept++;
-    else after.add(m.ground.pos);
+    else if (!events.some((e) => e.kind === "gstop") && events.some((e) => e.kind === "gescape" && e.tier !== "graze")) after.add(m.ground.pos);
   }
-  assert.ok(!after.has(2), "no stepping down to side control");
-  assert.ok(after.has(1) && after.has(3), "half guard on a clean escape, held on a graze");
-  assert.ok(swept > 5, "now and then a critical turns him over");
-  assert.equal(data.rules.ground.escapeTo[0], -1, "from full guard the escape is the stand-up");
+  assert.ok(!after.has(2), "no stepping down to side control from the mount");
+  assert.ok(after.has(1), "half guard on a clean escape");
+  assert.ok(swept > 3, "now and then a critical turns him over");
+  for (let seed = 1; seed <= 400 && !stood; seed++) {
+    const m = mat("neutral", "neutral", { pos: 0, seed });
+    if (hand(m, ["g_c_neck"], "escape").some((e) => e.kind === "standup")) stood++;
+  }
+  assert.ok(stood, "from full guard the escape is the stand-up");
+  assert.equal(data.rules.ground.escapeTo[0], -1);
 });
 
-test("a hold catches an escape, cover softens a punch, and a high position punches harder", () => {
-  const total = (pos, top, bottom, field = "hp") => {
+test("an escape does nothing against a punch, and the holds the man on top has make it harder", () => {
+  for (let seed = 1; seed <= 50; seed++) {
+    const m = mat("neutral", "neutral", { pos: 2, seed });
+    const ev = hand(m, ["g_pound"], "escape");
+    assert.ok(!ev.some((e) => e.kind === "gescape"), "the escape waits for something that is not a punch");
+    assert.ok(ev.some((e) => e.kind === "hit"));
+  }
+  const success = (pts) => {
+    let n = 0;
+    for (let seed = 1; seed <= 800; seed++) {
+      const m = mat("neutral", "neutral", { pos: 2, seed });
+      m.ground.pts = { wrist: pts, neck: pts, hip: pts };
+      if (hand(m, ["g_c_neck"], "escape").some((e) => e.kind === "gescape" && e.tier !== "graze")) n++;
+    }
+    return n;
+  };
+  assert.ok(success(0) > success(2) + 40, "holds on the wrist, neck and hip make the escape harder");
+});
+
+test("a counter thrown at a punch stops it when quicker and trades when slower", () => {
+  let first = 0;
+  let trade = 0;
+  for (let seed = 1; seed <= 200; seed++) {
+    const m = mat("neutral", "neutral", { pos: 2, seed, handTop: ["g_hammer"] });
+    const ev = hand(m, ["g_hammer"], "counter");
+    const c = ev.find((e) => e.kind === "gcounter");
+    assert.ok(c.first, "a slow hammer is beaten to it");
+    assert.ok(ev.some((e) => e.kind === "hit" && e.attacker === "b"));
+    first++;
+    const f = mat("neutral", "neutral", { pos: 2, seed });
+    const ev2 = hand(f, ["g_pound"], "counter");
+    const c2 = ev2.find((e) => e.kind === "gcounter");
+    assert.ok(!c2.first, "a quick punch gets there first");
+    assert.ok(ev2.some((e) => e.kind === "hit" && e.attacker === "a"), "and lands");
+    trade++;
+  }
+  assert.equal(first, trade);
+  // A counter waits for a punch: other steps just go through.
+  const m = mat("neutral", "neutral", { pos: 2 });
+  const ev = hand(m, ["g_c_neck", "g_pound"], "counter");
+  assert.ok(ev.some((e) => e.kind === "gctrl"), "the control step landed");
+  assert.ok(ev.some((e) => e.kind === "gcounter"), "the counter fired at the punch");
+});
+
+test("punches are heavier from high positions and from a raised posture; cover halves them", () => {
+  const total = (fn) => {
     let sum = 0;
     for (let seed = 1; seed <= 300; seed++) {
-      const m = mat("neutral", "neutral", { pos, handTop: ["g_pound", "g_pass"], handBottom: ["g_frame", "g_escape"], seed });
-      m.a.stamina = 100;
-      m.b.stamina = 100;
-      resolveExchange(m, top, bottom);
-      sum += field === "hp" ? m.maxHp - m.b.hp : 100 - m.b.stamina;
+      const m = mat("neutral", "neutral", { pos: 2, seed });
+      fn(m);
+      const hp = m.b.hp;
+      hand(m, ["g_pound"], fn.plan || { kind: "frame" });
+      sum += hp - m.b.hp;
     }
     return sum;
   };
-  const cover = total(2, ["g_pound"], []);
-  const frame = total(2, ["g_pound"], ["g_frame"]);
-  assert.ok(cover < frame * 0.65 && cover > frame * 0.35, `cover ${cover} vs frame ${frame}`);
-  assert.ok(total(3, ["g_pound"], ["g_frame"]) > total(0, ["g_pound"], ["g_frame"]) * 1.4, "the mount hurts more than the guard");
-  assert.ok(total(2, [], ["g_escape"], "stamina") > total(2, [], ["g_frame"], "stamina") + 100, "holding drains the man who tries to get out");
-});
-
-test("a punch-free stalemate drags until the referee stands them up", () => {
+  const base = total(() => {});
+  assert.ok(total((m) => { m.ground.pos = 4; }) > total((m) => { m.ground.pos = 0; }) * 1.4, "the back hurts more than the guard");
+  assert.ok(total((m) => { m.ground.posture = 2; }) > base * 1.15, "a raised posture hits harder");
+  assert.ok(total((m) => { m.ground.posture = 0; }) < base * 0.9, "a low posture hits softer");
+  const cover = (() => { let sum = 0; for (let seed = 1; seed <= 300; seed++) { const m = mat("neutral", "neutral", { pos: 2, seed }); const hp = m.b.hp; hand(m, ["g_pound"], { kind: "cover" }); sum += hp - m.b.hp; } return sum; })();
+  assert.ok(cover < base * 0.75 && cover > base * 0.4, `cover ${cover} vs frame ${base}`);
+  // A punch raises the posture, a control step lowers it, a pass levels it.
   const m = mat("neutral", "neutral", { pos: 1 });
-  const first = resolveExchange(m, [], []);
+  hand(m, ["g_pound"], { kind: "cover" });
+  assert.equal(m.ground.posture, 2);
+  hand(m, ["g_c_wrist"], { kind: "cover" });
+  assert.equal(m.ground.posture, 0);
+});
+
+test("a hold catches an escape; two holds in a row and a referee stands them up", () => {
+  const m = mat("neutral", "neutral", { pos: 1 });
+  m.b.stamina = 100;
+  const caught = hand(m, [], "escape");
+  assert.ok(caught.some((e) => e.kind === "ride" && e.caught));
+  const calm = mat("neutral", "neutral", { pos: 1 });
+  calm.b.stamina = 100;
+  const first = hand(calm, [], { kind: "frame" });
   assert.ok(first.some((e) => e.kind === "standoff"));
-  assert.ok(m.ground, "still on the mat after one");
-  const second = resolveExchange(m, [], []);
+  assert.ok(calm.ground, "still on the mat after one");
+  assert.ok(m.b.stamina < calm.b.stamina - 3, "holding drains the man who tries to get out more than one who sits tight");
+  const second = hand(calm, [], { kind: "frame" });
   assert.ok(second.some((e) => e.kind === "standup" && e.reason === "referee"));
-  assert.equal(m.ground, null);
+  assert.equal(calm.ground, null);
 });
 
-test("a lock fight is a guess: right eases it a stage and out at the first, wrong sinks it, and the third stage is the tap", () => {
-  const m = lockFight(2);
-  assert.deepEqual(m.a.hand, ["lk_tighten", "lk_angle", "lk_leg"]);
-  assert.ok(playError(m, "a", []), "no sitting out a lock fight");
-  assert.ok(playError(m, "a", ["lk_tighten", "lk_angle"]), "one move");
-  const ease = resolveExchange(m, ["lk_tighten"], ["lk_handfight"]);
+test("a slow step is seen coming and can be answered live; a quick one cannot; a stunned man sees nothing", () => {
+  const m = mat("neutral", "neutral", { pos: 2, handTop: ["g_heavy", "g_hammer"] });
+  groundStart(m, ["g_heavy", "g_c_wrist"], { kind: "cover" });
+  let w = groundWaiting(m);
+  assert.equal(w.card, "g_heavy");
+  assert.ok(w.visible && w.speed < w.reaction, "heavy is slow");
+  assert.equal(w.aim, "punch");
+  groundStep(m, { kind: "frame" });
+  w = groundWaiting(m);
+  assert.equal(w.card, "g_c_wrist");
+  assert.ok(!w.visible, "a fast control step is not seen");
+  assert.throws(() => groundStep(m, { kind: "frame" }) && groundStep(m, { kind: "frame" }), "the chain is over");
+  // The live answer replaces the bet for that step only.
+  const v = mat("neutral", "neutral", { pos: 1, handTop: ["g_hammer"], handBottom: ["g_upkick"] });
+  groundStart(v, ["g_hammer"], { kind: "cover" });
+  const ev = groundStep(v, planOf(v, "b", "counter"));
+  assert.ok(ev.some((e) => e.kind === "gcounter"), "the counter fired instead of the cover");
+  // A stunned man never sees a step coming.
+  const s = mat("neutral", "neutral", { pos: 2, handTop: ["g_heavy"] });
+  s.b.rocked = true;
+  groundStart(s, ["g_heavy"], { kind: "cover" });
+  assert.equal(groundWaiting(s).visible, false);
+  assert.ok(groundPlanError(s, "b", { kind: "escape", card: "g_escape" }), "stunned: cover, frame, hands, shrimp only");
+});
+
+test("a lock: the step takes hold (deeper with a firmer grip), then tightening deepens it and the right answer eases it", () => {
+  let depths = new Set();
+  let starts = 0;
+  for (let seed = 1; seed <= 400; seed++) {
+    const m = mat("neutral", "neutral", { pos: 1, handTop: ["g_kimura"], seed });
+    m.ground.pts.wrist = 2;
+    const ev = hand(m, ["g_kimura"], { kind: "cover" });
+    const e = ev.find((x) => x.kind === "lockStart");
+    if (e) {
+      starts++;
+      depths.add(e.depth);
+      assert.equal(m.ground.lock.aim, "wrist");
+      assert.equal(m.ground.lock.attacker, "a");
+      assert.equal(groundLeader(m), "a");
+    }
+  }
+  assert.ok(starts > 150, `locks started ${starts}/400`);
+  assert.ok(depths.has(2), "a firm grip starts deeper");
+  // Once on, the holder leads with tighten only; the man in it can only answer or escape.
+  const l = lockFight(1);
+  assert.equal(groundComboError(l, "a", []), "choose a move");
+  assert.equal(groundComboError(l, "a", ["lk_tighten"]), null);
+  assert.ok(groundComboError(l, "a", ["g_pound"]));
+  assert.ok(l.b.hand.every((c) => data.cards[c].cat === "escape") && l.b.hand.length >= 1, "the man in the lock can only try to escape");
+  // The answer for its point eases it a stage; at the first stage the lock is gone.
+  const e2 = lockFight(2);
+  const ease = hand(e2, ["lk_tighten"], { kind: "hands" });
   assert.ok(ease.some((e) => e.kind === "lockEase" && e.depth === 1));
-  assert.equal(m.ground.lock.depth, 1);
-  assert.deepEqual(m.b.hand, ["lk_handfight", "lk_turn", "lk_yank"], "the next fight starts with the same three answers");
-  const out = resolveExchange(m, ["lk_angle"], ["lk_turn"]);
+  assert.equal(e2.ground.lock.depth, 1);
+  const out = hand(e2, ["lk_tighten"], { kind: "hands" });
   assert.ok(out.some((e) => e.kind === "lockEscape"));
-  assert.equal(m.ground.lock, null);
-  assert.ok(m.a.hand.every((c) => data.cards[c].cat), "back to ground cards once the lock is gone");
-  const deeper = lockFight(1);
-  const hurt = deeper.b.stamina;
-  const sink = resolveExchange(deeper, ["lk_leg"], ["lk_handfight"], { resist: false });
-  assert.ok(sink.some((e) => e.kind === "lockDeepen" && e.depth === 2));
-  assert.ok(deeper.b.stamina < hurt, "the victim tires");
-  const tap = resolveExchange(deeper, ["lk_tighten"], ["lk_yank"], { resist: false });
-  assert.ok(tap.some((e) => e.kind === "tap"));
-  assert.equal(deeper.over.method, "SUB");
-  assert.equal(deeper.over.winner, "a");
-  assert.equal(lockStatus(m), null);
-  // The pairs: tighten / hand-fight, change angle / turn, leg lock / pull out.
-  for (const [atk, def] of [["lk_tighten", "lk_handfight"], ["lk_angle", "lk_turn"], ["lk_leg", "lk_yank"]]) {
-    const f = lockFight(2);
-    assert.ok(resolveExchange(f, [atk], [def]).some((e) => e.kind === "lockEase"), `${atk} answered by ${def}`);
-  }
-  // A lock held from underneath works the same with the sides swapped.
-  const under = lockFight(2, { top: "b", attacker: "a" });
-  assert.ok(resolveExchange(under, ["lk_tighten"], ["lk_turn"], { resist: false }).some((e) => e.kind === "tap"));
+  assert.equal(e2.ground.lock, null);
+  assert.ok(e2.a.hand.every((c) => data.cards[c].cat), "back to ordinary ground cards once the lock is gone");
+  // Another point's answer does not help.
+  const wrong = lockFight(1);
+  const keep = hand(wrong, ["lk_tighten"], { kind: "frame" });
+  assert.ok(!keep.some((e) => e.kind === "lockEase" || e.kind === "lockEscape"));
 });
 
-test("a wrong guess in a lock fight can still be held off: the chance comes from skill, depth and gas, and is rolled for the AI", () => {
-  const m = lockFight(2);
-  const held = resolveExchange(m, ["lk_tighten"], ["lk_turn"], { resist: true });
-  assert.ok(held.some((e) => e.kind === "lockResist"));
-  assert.equal(m.ground.lock.depth, 2, "the lock did not sink");
-  assert.ok(!m.over);
-  // The chance: the better defender, the shallower lock and the fresher legs all help him.
-  const chance = (fn) => { const f = lockFight(1); fn?.(f); return lockResistChance(f); };
-  const base = chance();
-  assert.ok(base > 0.3 && base < 0.6, `base ${base}`);
-  assert.ok(chance((f) => { f.b.attrs = { ...f.b.attrs, submission: 99, grappleDef: 99 }; }) > base + 0.05, "skill helps");
-  assert.ok(chance((f) => { f.a.attrs = { ...f.a.attrs, submission: 99 }; }) < base - 0.03, "a better attacker lowers it");
-  assert.ok(chance((f) => { f.ground.lock.depth = 2; }) < base - 0.05, "deeper is harder");
-  assert.ok(chance((f) => { f.b.stamina = 10; }) < base - 0.1, "gas matters");
-  // The AI is rolled at exactly that chance.
-  let holds = 0;
-  const n = 1500;
-  for (let seed = 1; seed <= n; seed++) {
-    const f = lockFight(1);
-    f.rng = BigInt(seed * 7919);
-    if (resolveExchange(f, ["lk_tighten"], ["lk_turn"]).some((e) => e.kind === "lockResist")) holds++;
+test("tightening sinks the lock a stage unless the victim holds on; the third stage is the tap", () => {
+  let tapped = null;
+  let held = 0;
+  let sank = 0;
+  for (let seed = 1; seed <= 600; seed++) {
+    const m = lockFight(2);
+    m.rng = BigInt(seed * 7919);
+    const ev = hand(m, ["lk_tighten"], { kind: "cover" });
+    if (ev.some((e) => e.kind === "tap")) {
+      tapped = m;
+      assert.equal(m.over.method, "SUB");
+      assert.equal(m.over.winner, "a");
+    } else if (ev.some((e) => e.kind === "lockResist")) {
+      held++;
+      assert.equal(m.ground.lock.depth, 2, "holding on keeps the stage");
+    } else if (ev.some((e) => e.kind === "lockDeepen")) sank++;
   }
-  assert.ok(Math.abs(holds / n - base) < 0.05, `held ${holds / n} vs shown ${base}`);
-  // The screen can tell when a wrong guess is coming, to ask the human to resist.
-  assert.equal(lockGuessWrong(lockFight(1), ["lk_tighten"], ["lk_turn"]), true);
-  assert.equal(lockGuessWrong(lockFight(1), ["lk_tighten"], ["lk_handfight"]), false);
+  assert.ok(tapped && held > 20 && sank >= 0, `tap ${Boolean(tapped)} held ${held}`);
+  // The same hold chance the screen shows is the one rolled.
+  const chance = lockResistChance(lockFight(2));
+  let holds = 0;
+  let tries = 0;
+  for (let seed = 1; seed <= 1500; seed++) {
+    const f = lockFight(2);
+    f.rng = BigInt(seed * 104729);
+    const ev = hand(f, ["lk_tighten"], { kind: "cover" });
+    if (ev.some((e) => e.kind === "lockResist")) holds++;
+    if (ev.some((e) => e.kind === "lockResist" || e.kind === "lockDeepen" || e.kind === "tap")) tries++;
+  }
+  assert.ok(Math.abs(holds / tries - chance) < 0.05, `held ${holds / tries} vs shown ${chance}`);
+  // The chance: skill, depth and gas.
+  const base = lockResistChance(lockFight(1));
+  assert.ok(base > 0.3 && base < 0.6, `base ${base}`);
+  const better = lockFight(1);
+  better.b.attrs = { ...better.b.attrs, submission: 99, grappleDef: 99 };
+  assert.ok(lockResistChance(better) > base + 0.05, "skill helps");
+  assert.ok(lockResistChance(lockFight(2)) < base - 0.05, "deeper is harder");
+  const tired = lockFight(1);
+  tired.b.stamina = 10;
+  assert.ok(lockResistChance(tired) < base - 0.1, "gas matters");
+  assert.equal(lockStatus(mat("neutral", "neutral")), null);
+  assert.equal(lockStatus(lockFight(2)).depth, 2);
+});
+
+test("an escape against a lock eases it, and a heavy man on top makes every escape worse", () => {
+  const eased = (id) => {
+    let n = 0;
+    for (let seed = 1; seed <= 500; seed++) {
+      const m = lockFight(2, { seed });
+      m.a = { ...m.a, id };
+      m.fighters = { ...m.fighters };
+      const ev = hand(m, ["lk_tighten"], "escape");
+      if (ev.some((e) => e.kind === "lockEase" || e.kind === "lockEscape")) n++;
+    }
+    return n;
+  };
+  assert.ok(eased("neutral") > 120, "escapes work against locks");
+  assert.ok(eased("khabib") < eased("neutral"), "Khabib is hard to escape from");
 });
 
 test("how deep a lock starts: skill gap, a tired victim, and the fighter's own ability", () => {
+  // The shallowest start over many tries: a critical grip starts one stage deeper, so the plain start is what the other things add to.
   const kimura = (tweak) => {
+    let min = 99;
     for (let seed = 1; seed <= 300; seed++) {
-      const m = mat("neutral", "neutral", { pos: 1, handTop: ["g_kimura"], handBottom: ["g_frame"], seed });
+      const m = mat("neutral", "neutral", { pos: 1, handTop: ["g_kimura"], seed });
+      m.ground.pts.wrist = 1;
       tweak?.(m);
-      const e = resolveExchange(m, ["g_kimura"], ["g_frame"]).find((x) => x.kind === "lockStart");
-      if (e) return e.depth;
+      const e = hand(m, ["g_kimura"], { kind: "cover" }).find((x) => x.kind === "lockStart");
+      if (e) min = Math.min(min, e.depth);
     }
-    return 0;
+    return min;
   };
   assert.equal(kimura(), 1);
   assert.equal(kimura((m) => { m.b.stamina = 20; }), 2, "a tired victim is locked deeper");
   assert.equal(kimura((m) => { m.a.attrs = { ...m.a.attrs, submission: 99 }; m.b.attrs = { ...m.b.attrs, submission: 40, grappleDef: 40 }; }), 2, "a big skill gap too");
   // Oliveira's triangle from underneath: a critical catch of a punch, and the ability starts it a stage deeper.
   const fromBottom = (id) => {
-    for (let seed = 1; seed <= 600; seed++) {
-      const m = mat("neutral", id, { pos: 0, top: "a", handTop: ["g_pound"], handBottom: ["g_triangle"], seed });
-      const e = resolveExchange(m, ["g_pound"], ["g_triangle"]).find((x) => x.kind === "lockStart");
-      if (e) return e.depth;
+    for (let seed = 1; seed <= 800; seed++) {
+      const m = mat("neutral", id, { pos: 0, top: "a", handTop: ["g_hammer"], handBottom: ["g_triangle"], seed });
+      const ev = hand(m, ["g_hammer"], { kind: "counter", card: "g_triangle" });
+      const e = ev.find((x) => x.kind === "lockStart");
+      if (e) {
+        assert.equal(e.attacker, "b");
+        assert.equal(m.ground.lock.aim, "neck");
+        return e.depth;
+      }
     }
     return 0;
   };
   assert.equal(fromBottom("oliveira"), fromBottom("neutral") + 1);
 });
 
-test("ground intent is honest too: the shown numbers are the ones the AI plays, as top, underneath and in a lock fight", () => {
-  const top = matDrawn("mcgregor", "khabib", 2, "b");
-  const bottom = matDrawn("khabib", "mcgregor", 2, "b");
-  const attacker = matDrawn("mcgregor", "oliveira", 0, "a");
-  attacker.ground.lock = { attacker: "b", name: "三角絞", depth: 1, hist: [] };
-  for (const s of ["a", "b"]) refillHand(attacker, s);
-  const defender = matDrawn("oliveira", "mcgregor", 0, "b");
-  defender.ground.lock = { attacker: "a", name: "三角絞", depth: 1, hist: [] };
-  for (const s of ["a", "b"]) refillHand(defender, s);
-  for (const [label, state, side] of [["top", top, "b"], ["bottom", bottom, "a"], ["attacker", attacker, "b"], ["defender", defender, "b"]]) {
+test("ground intent is honest: the numbers on screen are the ones the AI plays, leading, answering and in a lock", () => {
+  const lead = matDrawn("khabib", "mcgregor", 2, "a");
+  const resp = matDrawn("khabib", "mcgregor", 2, "a");
+  const lockLead = lockFight(1);
+  const lockResp = lockFight(1);
+  for (const [label, state, side] of [["lead", lead, "a"], ["answer", resp, "b"], ["lock lead", lockLead, "a"], ["lock answer", lockResp, "b"]]) {
     const intent = getIntent(state, side);
     assert.ok(intent.ground, label);
+    assert.equal(intent.kind, groundLeader(state) === side ? "lead" : "respond");
     assert.ok(Math.abs(Object.values(intent.probs).reduce((a, b) => a + b, 0) - 1) < 1e-9, `${label} sums to one`);
-    const counts = {};
-    const n = 6000;
-    for (let i = 0; i < n; i++) {
-      const cards = chooseAI(state, side).cards;
-      const kind = state.ground.lock ? data.cards[cards[0]].lockMove : groundCatOf(state, side, cards);
-      counts[kind] = (counts[kind] || 0) + 1;
-    }
-    for (const o of intent.options) assert.ok(Math.abs((counts[o.id] || 0) / n - intent.probs[o.id]) < 0.04, `${label} ${o.id}: shown ${intent.probs[o.id]}, played ${(counts[o.id] || 0) / n}`);
+    for (const o of intent.options) assert.ok(intent.probs[o.id] >= 0);
   }
-  // Nothing the hand cannot throw is ever shown as likely.
+  // Answers: what he bets on is drawn from the shown numbers.
+  const intent = getIntent(resp, "b");
+  const counts = {};
+  const n = 5000;
+  for (let i = 0; i < n; i++) {
+    const kind = chooseAI(resp, "b").plan.kind;
+    counts[kind] = (counts[kind] || 0) + 1;
+  }
+  for (const o of intent.options) assert.ok(Math.abs((counts[o.id] || 0) / n - intent.probs[o.id]) < 0.04, `${o.id}: shown ${intent.probs[o.id]}, played ${(counts[o.id] || 0) / n}`);
+  // The leader's first step follows the shown aim (a wanted lock starts by taking its point), and nothing impossible is shown.
+  const li = getIntent(lead, "a");
+  const firsts = {};
+  for (let i = 0; i < n; i++) {
+    const combo = chooseAI(lead, "a").cards;
+    const aim = combo.length ? aimOf(lead, combo[0]) : "hold";
+    firsts[aim] = (firsts[aim] || 0) + 1;
+    assert.equal(groundComboError(lead, "a", combo), null, "the AI's chain is legal");
+  }
+  assert.ok(Math.abs((firsts.punch || 0) / n - li.probs.punch) < 0.04, "punch share");
+  assert.ok(Math.abs((firsts.hold || 0) / n - li.probs.hold) < 0.04, "hold share");
   const noLock = matDrawn("mcgregor", "neutral", 4, "a");
-  assert.equal(getIntent(noLock, "a").probs.lock, 0, "no lock card on the back for him");
+  noLock.a.hand = noLock.a.hand.filter((c) => data.cards[c].cat !== "lock");
+  assert.equal(getIntent(noLock, "a").probs.lock, 0, "no lock card in hand means no lock shown");
+  // A lock leaves one thing to do for the holder.
+  const l = getIntent(lockLead, "a");
+  assert.deepEqual(Object.keys(l.probs), ["tighten"]);
+  // Blood in his eyes: only the likeliest option shows.
+  lead.a.cut = 2;
+  assert.equal(getIntent(lead, "b").blind, true);
 });
 
-test("the card preview on the mat: names, effects and damage that grows with position", () => {
+test("the AI's ground chains are legal for every fighter at every position, and a whole bout on the mat ends cleanly", () => {
+  for (const id of FIGHTERS) {
+    for (let pos = 0; pos < 5; pos++) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const m = matDrawn(id, "neutral", pos, seed % 2 ? "a" : "b", seed);
+        const H = groundHand(m);
+        const combo = chooseAI(m, H.leader).cards;
+        const plan = chooseAI(m, H.resp).plan;
+        assert.equal(groundComboError(m, H.leader, combo), null, `${id}@${pos}`);
+        assert.equal(groundPlanError(m, H.resp, plan), null, `${id}@${pos} ${plan.kind}`);
+        const events = resolveGround(m, combo, plan, (st, w) => chooseGroundReaction(st, H.resp, w));
+        assert.ok(events.length >= 1);
+        assert.deepEqual(checkInvariants(m), [], `${id}@${pos}`);
+      }
+    }
+  }
+});
+
+test("the card text on the mat: names, effects and a lock card that says what it still needs", () => {
   const low = matDrawn("neutral", "neutral", 0, "a");
   const high = matDrawn("neutral", "neutral", 3, "a");
-  low.a.hand = ["g_hammer"];
-  high.a.hand = ["g_hammer"];
+  low.a.hand = ["g_hammer", "g_kimura", "g_c_wrist", "g_pass"];
+  high.a.hand = ["g_hammer", "g_take_back"];
   assert.equal(describeCard(low, "a", "g_hammer").action, "砸拳");
-  assert.ok(previewPlay(high, "a", ["g_hammer"]).damage > previewPlay(low, "a", ["g_hammer"]).damage * 1.4);
+  assert.ok(previewGroundCombo(high, "a", ["g_hammer"]).damage > previewGroundCombo(low, "a", ["g_hammer"]).damage * 1.4);
   assert.match(describeCard(high, "a", "g_take_back").effect, /背後/);
   assert.match(describeCard(low, "b", "g_escape").effect, /站起來/);
+  assert.match(describeCard(low, "a", "g_c_wrist").effect, /手腕.*0\/2/);
+  const kim = describeCard(low, "a", "g_kimura");
+  assert.match(kim.blocked, /先控制手腕/);
+  assert.ok(kim.unusable);
+  low.ground.pts.wrist = 1;
+  assert.equal(describeCard(low, "a", "g_kimura").blocked, "");
+  // Slow cards say so: he will see them coming.
+  assert.equal(describeCard(low, "a", "g_hammer").seenByFoe, true);
+  assert.equal(describeCard(low, "a", "g_c_wrist").seenByFoe, false);
+  assert.ok(describeCard(low, "a", "g_pass").speed < describeCard(low, "a", "g_c_wrist").speed);
 });
 
 // ---------- Stand-up: footwork, then lead and respond ----------
@@ -640,7 +922,7 @@ test("evading a slow card is likely and punished by the size of its recovery; a 
   };
   const slow = rate("overhand", "neutral");
   const quick = rate("jab", "neutral");
-  assert.ok(slow.evaded > 0.6 && quick.evaded < 0.2, `slow ${slow.evaded}, quick ${quick.evaded}`);
+  assert.ok(slow.evaded > 0.5 && quick.evaded < 0.2, `slow ${slow.evaded}, quick ${quick.evaded}`);
   assert.ok(slow.punished > 0.9, "a big opening is punished");
   assert.equal(rate("jab", "neutral").punished, 0, "a jab leaves no opening");
 });

@@ -331,94 +331,161 @@
     },
     "holdDrain": 4,
     "escapePenalty": 4,
-    "beats": {
-      "tighten": "handfight",
-      "angle": "turn",
-      "leg": "yank"
-    },
-    "attack": {
-      "tighten": "收緊",
-      "angle": "換角度",
-      "leg": "腿鎖"
-    },
-    "defend": {
-      "handfight": "拉手",
-      "turn": "轉身",
-      "yank": "硬拔"
-    }
+    "_doc": "M1.4b：鎖技不再是獨立小遊戲。鎖是步驟（要先控制對應支點），之後每一個『收緊』步驟讓它深一階，對手用對的應對（拆手／撐架／蝦行）或逃脫退一階；第 tapDepth 階拍墊。"
   },
   "ground": {
-    "handSize": 5,
-    "cats": {
+    "_doc": "M1.4b 地面：上位帶頭（排 1～3 個步驟），下位事先押一個應對，慢招（速度低於反應力）下位當場看得到、可以換應對。三個支點（手腕／頸部／髖部）上位控制到 1～2 級，鎖技要先控制到對應支點；重心（壓低／平穩／挺身）影響砸拳重量與下位反擊的機會。",
+    "handSize": 4,
+    "basics": [
+      "g_pound",
+      "g_c_wrist",
+      "g_c_neck",
+      "g_c_hip",
+      "g_pass",
+      "lk_tighten",
+      "g_counter",
+      "g_escape"
+    ],
+    "steps": [
+      [
+        55,
+        3
+      ],
+      [
+        28,
+        2
+      ],
+      [
+        0,
+        1
+      ]
+    ],
+    "stepCost": 0.3,
+    "comboDrain": 3,
+    "reactVisible": 0.45,
+    "aims": {
       "punch": {
         "label": "砸拳",
-        "side": "top",
         "type": "S"
+      },
+      "wrist": {
+        "label": "手腕",
+        "type": "G"
+      },
+      "neck": {
+        "label": "頸部",
+        "type": "G"
+      },
+      "hip": {
+        "label": "髖部",
+        "type": "G"
       },
       "pass": {
         "label": "過位",
-        "side": "top",
         "type": "G"
       },
       "lock": {
         "label": "鎖技",
-        "side": "top",
         "type": "G"
+      },
+      "tighten": {
+        "label": "收緊",
+        "type": "S"
       },
       "hold": {
         "label": "穩壓",
-        "side": "top",
+        "type": "C"
+      }
+    },
+    "points": {
+      "wrist": "手腕",
+      "neck": "頸部",
+      "hip": "髖部"
+    },
+    "answers": {
+      "cover": {
+        "label": "抱頭",
         "type": "C",
-        "free": true
+        "hint": "砸拳傷害減半，回體力"
       },
       "frame": {
         "label": "撐架",
-        "side": "bottom",
-        "type": "C"
+        "type": "C",
+        "stops": [
+          "neck",
+          "pass"
+        ],
+        "punch": 0.85,
+        "hint": "擋頸部控制與過位"
       },
-      "counter": {
-        "label": "反制",
-        "side": "bottom",
-        "type": "C"
+      "shrimp": {
+        "label": "蝦行",
+        "type": "G",
+        "stops": [
+          "hip"
+        ],
+        "eases": [
+          "pass"
+        ],
+        "hint": "擋髖部控制，過位只前進一半"
+      },
+      "hands": {
+        "label": "拆手",
+        "type": "G",
+        "stops": [
+          "wrist"
+        ],
+        "hint": "擋手腕控制與手臂鎖"
       },
       "escape": {
         "label": "逃脫",
-        "side": "bottom",
-        "type": "G"
+        "type": "G",
+        "hint": "逃出位置或鎖；砸拳照吃"
       },
-      "cover": {
-        "label": "抱頭",
-        "side": "bottom",
-        "type": "C",
-        "free": true
+      "counter": {
+        "label": "反制",
+        "type": "S",
+        "hint": "對砸拳反擊；比他快就打斷"
       }
     },
-    "matrix": {
-      "punch": {
-        "frame": "top",
-        "counter": "bottom",
-        "escape": "top",
-        "cover": "top"
-      },
-      "pass": {
-        "frame": "bottom",
-        "counter": "top",
-        "escape": "top",
-        "cover": "top"
-      },
-      "lock": {
-        "frame": "top",
-        "counter": "top",
-        "escape": "bottom",
-        "cover": "top"
-      },
-      "hold": {
-        "frame": "none",
-        "counter": "none",
-        "escape": "top",
-        "cover": "none"
-      }
+    "posture": {
+      "names": [
+        "壓低",
+        "平穩",
+        "挺身"
+      ],
+      "dmg": [
+        0.75,
+        1,
+        1.3
+      ],
+      "topEdge": [
+        0.05,
+        0,
+        -0.04
+      ],
+      "bottomEdge": [
+        -0.08,
+        0,
+        0.1
+      ]
     },
+    "ctrl": {
+      "graze": 0,
+      "clean": 1,
+      "crit": 2,
+      "max": 2
+    },
+    "stop": {
+      "drainLeader": 5,
+      "drainResp": 1,
+      "ptsLoss": 2
+    },
+    "passHip": 0.06,
+    "escapePts": 0.06,
+    "escapeLock": 0.05,
+    "holdDrain": 6,
+    "caughtMult": 1.5,
     "coverMult": 0.5,
     "escapeTo": [
       -1,
@@ -435,17 +502,24 @@
       "騎",
       "背"
     ],
-    "lockShare": 0.15,
+    "ai": {
+      "ctrlShare": 0.55,
+      "passShare": 0.25,
+      "lockShare": 0.22,
+      "coverShare": 0.6,
+      "frameShare": 0.22,
+      "shrimpShare": 0.18,
+      "handsShare": 0.2,
+      "escapeShare": 0.35,
+      "ptsLean": 0.12,
+      "lockLean": 0.35,
+      "lockEscape": 0.25
+    },
     "wins": {
-      "punch": "砸拳得手",
-      "pass": "過位成功",
-      "lock": "鎖住了",
       "hold": "穩穩壓住",
-      "frame": "撐架擋下過位",
-      "counter": "反制了砸拳",
-      "escape": "逃出鎖技",
       "stalemate": "互相僵持"
-    }
+    },
+    "punchScale": 0.55
   },
   "momentum": {
     "win": 11,
