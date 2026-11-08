@@ -26,3 +26,6 @@ dist/
 
 # Fighter sprites and portraits never go in the public repo (see RULES.md)
 prototype/web/assets/private/
+
+# Personal GCP project / gcloud account for Vertex AI (see pipeline/model3d/paint_skin.py)
+pipeline/model3d/local.json
