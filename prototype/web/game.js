@@ -1,5 +1,5 @@
 // Screens, HUD and exchange playback. All rules come from engine.js; this file only shows them.
-import { loadData, createMatch, resolveFootwork, engageStart, engageStep, engageWaiting, stepOf, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseReaction, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, previewCombo, previewFootwork, footworkChoices, comboError, comboMax, counterCards, reactionOf, describeCard, lockStatus, lockResistChance, groundHand, groundLeader, groundStart, groundStep, groundWaiting, groundComboError, groundMax, groundAnswerCards, chooseGroundCombo, chooseGroundPlan, chooseGroundReaction, previewGroundCombo } from "./engine.js";
+import { loadData, createMatch, resolveFootwork, engageStart, engageStep, engageWaiting, stepOf, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseReaction, chooseCorner, chooseChase, resolvePending, setTactic, isFinal, getIntent, previewCombo, previewFootwork, footworkChoices, comboError, comboMax, counterCards, reactionOf, describeCard, lockStatus, lockResistChance, groundHand, groundLeader, groundStart, groundStep, groundWaiting, groundComboError, groundMax, groundAnswerCards, chooseGroundCombo, chooseGroundPlan, chooseGroundReaction, previewGroundCombo, throughChance } from "./engine.js";
 import { Stage, loadAssets, REACH } from "./stage.js";
 
 const $ = (id) => document.getElementById(id);
@@ -597,14 +597,14 @@ function cardDetail(c) {
   const d = describeCard(state, "a", c);
   const reaction = Math.round(reactionOf(state, "b"));
   if (state.ground) {
-    const gb = [`<b>${card.name}</b>`, `${d.heightName} · 速度 ${d.speed}${d.seenByFoe ? `（低於他的反應力 ${reaction}，<span class="bad">他看得到</span>）` : `（他的反應力 ${reaction}，看不到）`}`, d.effect];
+    const gb = [`<b>${card.name}</b>`, `${d.heightName} · 速度 ${d.speed}${d.seenByFoe ? `（低於他的反應力 ${reaction}，<span class="bad">他看得到</span>${d.through ? `，但有 <b>${d.through}%</b> 硬頂過去` : ""}）` : `（他的反應力 ${reaction}，看不到）`}`, d.effect];
     if (d.blocked) gb.push(`<span class="bad">${d.blocked}</span>`);
     if (d.rangeText) gb.push(d.rangeText);
     gb.push(`體力 ${Math.round(d.cost)}`);
     gb.push(card.post === 2 ? "出完挺身（砸得重，也易被反）" : card.post === 0 ? "出完壓低（穩，砸拳弱）" : "出完重心平穩");
     return gb.join(" · ");
   }
-  const bits = [`<b>${card.name}</b>`, `${heightWord(card.height)} · 速度 ${d.speed}${d.seenByFoe ? `（低於他的反應力 ${reaction}，<span class="bad">他看得到</span>）` : `（他的反應力 ${reaction}，看不到）`}`];
+  const bits = [`<b>${card.name}</b>`, `${heightWord(card.height)} · 速度 ${d.speed}${d.seenByFoe ? `（低於他的反應力 ${reaction}，<span class="bad">他看得到</span>${d.through ? `，但有 <b>${d.through}%</b> 硬頂過去` : ""}）` : `（他的反應力 ${reaction}，看不到）`}`];
   bits.push(d.effect.startsWith("摔") || d.effect.startsWith("貼") || d.effect.startsWith("騙") ? d.effect : `傷害 ${d.effect}`);
   if (d.rangeText) bits.push(d.rangeText);
   bits.push(`體力 ${Math.round(d.cost)}`);
@@ -756,7 +756,7 @@ function renderRespond() {
   const speedNote = `你的反應力 <b>${Math.round(reactionOf(state, "a"))}</b>：他出的步驟速度比這低你才看得到`;
   const sel = bet ? `<b>${betLabel(bet.kind) || "照原計畫"}</b>${bet.card ? `：${data.cards[bet.card].name}` : ""} — ${betHint(bet.kind) || "不改，照事先押的"}` : "選你的應對：事先押一個，快招你看不到，只能靠這個";
   const who = state.ground ? (state.ground.lock ? `${foe.short}鎖著你` : `${foe.short}在上位`) : `${foe.short}帶頭`;
-  $("choice").innerHTML = live ? `他出【${data.cards[live.card].name}】<b>慢招，你看到了！</b>速度 ${live.speed} &lt; 你的反應力 ${live.reaction}：現在選怎麼應對` : `${who} · ${sel} · ${speedNote}`;
+  $("choice").innerHTML = live ? `他出【${data.cards[live.card].name}】<b>慢招，你看到了！</b>速度 ${live.speed} &lt; 你的反應力 ${live.reaction}${throughChance(state, live.speed) > 0 ? `（這招有 ${Math.round(throughChance(state, live.speed) * 100)}% 你擋不住）` : ""}：現在選怎麼應對` : `${who} · ${sel} · ${speedNote}`;
   $("energy").innerHTML = `體力 <b>${Math.round(state.a.stamina)}</b>`;
   $("fight").textContent = live ? "應對" : "準備";
   $("fight").disabled = !(bet && (!betNeedsCard || bet.card));
@@ -1222,6 +1222,14 @@ async function playEvents(events) {
           await wait(420);
           $("verdict").classList.add("hidden");
         }
+        break;
+      case "through":
+        logLine(`<b>${e.name}</b>慢而重：被看到了還是硬頂過去（${Math.round(e.chance * 100)}%）`, "sub");
+        stage.shake(8);
+        stage.floater(e.side, "硬頂過去!", "#ffd166", 26);
+        showVerdict("硬頂過去！", `${e.name}太重，看到了也擋不住`, "#ffd166");
+        await wait(640);
+        $("verdict").classList.add("hidden");
         break;
       case "gengage":
         viewPts = { ...e.pts };

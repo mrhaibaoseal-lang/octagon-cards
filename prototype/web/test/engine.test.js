@@ -1,14 +1,21 @@
 // Engine checks. Run: node prototype/web/test/engine.test.js
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createMatch, resolveFootwork, resolveEngage, engageStart, engageStep, engageWaiting, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseCorner, getIntent, footworkIntent, engageIntent, footworkOutcome, footworkChoices, leadChance, comboError, planError, comboMax, reactionOf, handSpeed, previewCombo, nextUnit, checkInvariants, usableAt, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, lockStatus, describeCard, lockResistChance, stepOf, groundHand, groundLeader, groundStart, groundStep, groundWaiting, resolveGround, groundComboError, groundPlanError, groundMax, groundAnswerCards, chooseGroundReaction, previewGroundCombo, aimOf } from "../engine.js";
+import { createMatch, resolveFootwork, resolveEngage, engageStart, engageStep, engageWaiting, applyCorner, chooseAI, chooseFootwork, chooseCombo, choosePlan, chooseCorner, getIntent, footworkIntent, engageIntent, footworkOutcome, footworkChoices, leadChance, comboError, planError, comboMax, reactionOf, handSpeed, previewCombo, nextUnit, checkInvariants, usableAt, loadData, chooseChase, resolvePending, chooseTactic, setTactic, refillHand, lockStatus, describeCard, lockResistChance, stepOf, groundHand, groundLeader, groundStart, groundStep, groundWaiting, resolveGround, groundComboError, groundPlanError, groundMax, groundAnswerCards, chooseGroundReaction, previewGroundCombo, aimOf, throughChance, cardSpeed } from "../engine.js";
 import { data, playGame, strategies, playStandingHand } from "../sim.js";
 
 const FIGHTERS = Object.keys(data.fighters);
 
+/** A copy of the state's rules with the slow-move push-through switched off (older checks want an answer to work as written). */
+const noThrough = (state) => {
+  state.rules = { ...state.rules, slow: { ...state.rules.slow, through: 0 } };
+  return state;
+};
+
 /** Two fighters on the mat, `top` on top at `pos`, with ground hands set by hand (the basic steps are always in). The stand-up hands are set aside as in a real fight. */
-function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed = 5 } = {}) {
+function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed = 5, through = false } = {}) {
   const state = createMatch(data, idA, idB, seed);
+  if (!through) noThrough(state);
   const bottom = top === "a" ? "b" : "a";
   state.ground = { top, pos, lock: null, hist: [], pts: { wrist: 0, neck: 0, hip: 0 }, posture: 1 };
   for (const [side, extra] of [[top, handTop], [bottom, handBottom]]) {
@@ -20,7 +27,7 @@ function mat(idA, idB, { pos = 1, top = "a", handTop = [], handBottom = [], seed
 
 /** The same, but with the real ground hands drawn. */
 function matDrawn(idA, idB, pos, top = "a", seed = 5) {
-  const state = createMatch(data, idA, idB, seed);
+  const state = noThrough(createMatch(data, idA, idB, seed));
   state.ground = { top, pos, lock: null, hist: [], pts: { wrist: 0, neck: 0, hip: 0 }, posture: 1 };
   for (const s of ["a", "b"]) refillHand(state, s);
   return state;
@@ -632,14 +639,103 @@ test("the card text on the mat: names, effects and a lock card that says what it
   assert.ok(describeCard(low, "a", "g_pass").speed < describeCard(low, "a", "g_c_wrist").speed);
 });
 
+// ---------- Slow moves: seen is not stopped ----------
+
+test("a slow move pushes through what meets it: the chance grows with how slow it is and tops out", () => {
+  const m = createMatch(data, "neutral", "neutral", 1);
+  assert.equal(throughChance(m, data.rules.slow.at), 0, "nothing at the line");
+  assert.equal(throughChance(m, 90), 0, "a fast move never");
+  const slam = throughChance(m, 36);
+  assert.ok(slam > 0.35 && slam <= data.rules.slow.maxThrough, `slam ${slam}`);
+  assert.equal(throughChance(m, 0), data.rules.slow.maxThrough, "capped");
+  assert.ok(throughChance(m, 50) < slam, "less slow, less push");
+});
+
+test("a seen slow card is stopped less often than the answer alone would: the push-through rate is the one the card shows", () => {
+  const rate = (through) => {
+    let pushed = 0;
+    let blocked = 0;
+    const n = 600;
+    for (let seed = 1; seed <= n; seed++) {
+      const s = leadHand(["overhand"], [], { seed, through });
+      const ev = resolveEngage(s, ["overhand"], { kind: "guard", height: "high" });
+      if (ev.some((e) => e.kind === "through")) {
+        pushed++;
+        assert.ok(!ev.some((e) => e.kind === "block"), "pushed through means no block");
+        assert.ok(ev.some((e) => e.kind === "hit" && !e.chip), "and it lands");
+      }
+      if (ev.some((e) => e.kind === "block")) blocked++;
+    }
+    return { pushed: pushed / n, blocked: blocked / n };
+  };
+  const off = rate(false);
+  const on = rate(true);
+  assert.equal(off.pushed, 0);
+  assert.ok(off.blocked > 0.95, "a guard at the right height always stops a seen overhand");
+  const shown = describeCard(leadHand(["overhand"], [], { through: true }), "a", "overhand");
+  assert.ok(shown.seenByFoe && shown.through > 30, `the card says ${shown.through}%`);
+  assert.ok(Math.abs(on.pushed - shown.through / 100) < 0.06, `pushed ${on.pushed} vs shown ${shown.through}%`);
+  assert.ok(on.blocked < off.blocked - 0.25, "so fewer are stopped");
+  // A quick card never pushes: nothing to see, nothing to push.
+  const quick = leadHand(["jab"], [], { through: true });
+  assert.equal(describeCard(quick, "a", "jab").through, 0);
+});
+
+test("a slow card hits harder and lands better than the same card would at the line", () => {
+  const slowState = createMatch(data, "neutral", "neutral", 1);
+  const base = previewCombo(slowState, "a", ["overhand"]).damage;
+  const flat = createMatch(data, "neutral", "neutral", 1);
+  flat.rules = { ...flat.rules, slow: { ...flat.rules.slow, dmg: 0 } };
+  const ratio = base / previewCombo(flat, "a", ["overhand"]).damage;
+  assert.ok(ratio > 1.25 && ratio <= 1 + data.rules.slow.maxDmg + 0.03, `ratio ${ratio}`);
+  const quickRatio = previewCombo(slowState, "a", ["jab"]).damage / previewCombo(flat, "a", ["jab"]).damage;
+  assert.ok(Math.abs(quickRatio - 1) < 0.02, "a quick card is unchanged");
+});
+
+test("wrestlers take down and pass quickly; a striker's takedown is slow", () => {
+  const khabib = createMatch(data, "khabib", "mcgregor", 1);
+  assert.ok(cardSpeed(khabib, "a", "double_leg") > cardSpeed(khabib, "b", "double_leg") + 25, "Khabib's shot against McGregor's");
+  assert.ok(cardSpeed(khabib, "a", "double_leg") >= data.rules.slow.at, "a wrestler's shot is not slow");
+  assert.ok(cardSpeed(khabib, "b", "double_leg") < data.rules.slow.at - 8, "a striker's shot is");
+  assert.equal(cardSpeed(khabib, "a", "jab") - data.cards.jab.speed, cardSpeed(khabib, "a", "jab") - data.cards.jab.speed, "strikes are untouched by wrestling");
+  const striker = cardSpeed(createMatch(data, "mcgregor", "khabib", 1), "a", "jab");
+  const wrestler = cardSpeed(createMatch(data, "khabib", "mcgregor", 1), "a", "jab");
+  assert.ok(wrestler < striker, "and a wrestler's jab is the slower one only through his hands, not his wrestling");
+  // On the mat the wrestler's control steps and passes are quick too.
+  const mt = mat("khabib", "mcgregor", { pos: 1 });
+  assert.ok(cardSpeed(mt, "a", "g_pass") >= data.rules.slow.at, "his pass is not slow");
+  assert.ok(cardSpeed(mt, "b", "g_pass") < cardSpeed(mt, "a", "g_pass") - 20);
+});
+
+test("on the mat a seen slow step can push through the answer too", () => {
+  let pushed = 0;
+  let stopped = 0;
+  const n = 400;
+  for (let seed = 1; seed <= n; seed++) {
+    const m = mat("neutral", "neutral", { pos: 1, seed, through: true, handTop: ["g_hammer"] });
+    const ev = hand(m, ["g_hammer"], { kind: "cover" });
+    if (ev.some((e) => e.kind === "through")) {
+      pushed++;
+      assert.ok(ev.some((e) => e.kind === "hit"), "it lands");
+    }
+    const p = mat("neutral", "neutral", { pos: 1, seed, through: true });
+    p.ground.pts.neck = 0;
+    const ev2 = hand(p, ["g_pass"], { kind: "frame" });
+    if (ev2.some((e) => e.kind === "gstop")) stopped++;
+  }
+  assert.ok(pushed / n > 0.25, `hammer pushed ${pushed}/${n}`);
+  assert.ok(stopped > 0 && stopped < n, "a pass is mostly stopped by a frame, but not always");
+});
+
 // ---------- Stand-up: footwork, then lead and respond ----------
 
 const BASICS = data.rules.match.basics;
 const ENGAGE = data.rules.engage;
 
 /** A stand-up hand set up by hand: `a` leads (press against hold). With `plain` the footwork edges are wiped so only the cards decide. */
-function leadHand(handA, handB, { dist = 1, seed = 5, a = "neutral", b = "neutral", plain = true } = {}) {
+function leadHand(handA, handB, { dist = 1, seed = 5, a = "neutral", b = "neutral", plain = true, through = false } = {}) {
   const state = createMatch(data, a, b, seed);
+  if (!through) noThrough(state);
   state.dist = dist;
   state.a.hand = [...handA, ...BASICS];
   state.b.hand = [...handB, ...BASICS];
@@ -1214,7 +1310,9 @@ test("a signature that gets blocked still lands for a share of its power", () =>
   assert.ok(ev.some((e) => e.kind === "signature"));
   assert.ok(ev.some((e) => e.kind === "block"));
   const chip = ev.find((e) => e.kind === "hit");
-  const clean = data.cards.sig_pereira.power * (data.rules.damage.powerBase + data.fighters.pereira.attrs.power * data.rules.damage.powerPerStat) * ENGAGE.dmgScale;
+  const slow = data.rules.slow;
+  const heavy = 1 + Math.min(slow.maxDmg, Math.max(0, (slow.at - data.cards.sig_pereira.speed) * slow.dmg)); // being slow makes it heavier
+  const clean = data.cards.sig_pereira.power * heavy * (data.rules.damage.powerBase + data.fighters.pereira.attrs.power * data.rules.damage.powerPerStat) * ENGAGE.dmgScale;
   assert.ok(chip.damage > clean * 0.4 && chip.damage < clean * 0.7, `${chip.damage} of ${clean}`);
   assert.equal(state.a.momentum, 0);
 });

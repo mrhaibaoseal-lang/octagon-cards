@@ -289,6 +289,7 @@ function tierOdds(state, s, cards, extra = 0) {
     const card = state.cards[c];
     bonus += card.crit || 0;
     bonus += card.quality || 0;
+    bonus += slowBoost(state, card, "crit");
     if (card.signature) bonus += state.rules.signature.winCrit;
     // A card that follows a setup gets its bonus when the tag from last exchange is still on.
     for (const [tag, eff] of Object.entries(card.follow || {})) if (me.marks[tag]) bonus += (eff.crit || 0) + (eff.quality || 0);
@@ -325,7 +326,7 @@ function powerMult(state, side) {
 /** Damage of one card before tier and situation multipliers. */
 function cardDamage(state, side, cardId) {
   const card = state.cards[cardId];
-  let dmg = (card.power || 0) * powerMult(state, side) * (tactic(state, side).dmgOut || 1);
+  let dmg = (card.power || 0) * powerMult(state, side) * (tactic(state, side).dmgOut || 1) * (card.power ? 1 + slowBoost(state, card, "dmg") : 1);
   if (card.kick && state[side].pips.legs >= state.rules.debuff.threshold) dmg *= state.rules.debuff.legKickMult;
   return dmg;
 }
@@ -564,6 +565,13 @@ export function groundStep(state, reaction = null) {
   addStamina(state, L, -standCost(state, cid) * (1 + R.stepCost * H.i));
   H.thrown[L].push(cid);
   events.push({ kind: "gcard", side: L, card: cid, name: card.name, index: H.i, of: H.combo.length, aim, speed: Math.round(speed), visible, reply: { ...resp }, posture: g.posture });
+  if (visible) {
+    const through = throughChance(state, speed);
+    if (through > 0 && nextUnit(state) < through) {
+      events.push({ kind: "through", side: L, card: cid, name: card.name, chance: through });
+      resp = { kind: "none" };
+    }
+  }
   H.i += 1;
   runGroundStep(state, H, cid, aim, resp, fromPlan, speed, events);
   if (state.ground) state.ground.posture = state.ground.lock ? 0 : card.post ?? 1;
@@ -575,7 +583,7 @@ export function groundStep(state, reaction = null) {
 function runGroundStep(state, H, cid, aim, resp, fromPlan, speed, events) {
   const R = GR(state);
   const card = state.cards[cid];
-  const A = R.answers[resp.kind];
+  const A = R.answers[resp.kind] || {};
   const spent = () => {
     if (fromPlan && (resp.kind === "counter" || resp.kind === "escape")) H.plan = { kind: "cover" };
   };
@@ -877,7 +885,8 @@ function groundCardValue(state, s, cardId) {
   const card = state.cards[cardId];
   const gm = state.rules.damage.groundPositionMult[state.ground.pos];
   // A slow step is read before it lands, so the AI trusts it less (a stunned man reads nothing).
-  const readable = ["punch", "pass", "lock"].includes(card.cat) && cardSpeed(state, s, cardId) < reactionOf(state, opposite(s)) ? 0.3 : 1;
+  const spd = cardSpeed(state, s, cardId);
+  const readable = ["punch", "pass", "lock"].includes(card.cat) && spd < reactionOf(state, opposite(s)) ? 0.4 + throughChance(state, spd) : 1;
   if (card.cat === "punch") return (cardDamage(state, s, cardId) * gm + (card.cut ? 2 : 0)) * readable;
   if (card.cat === "pass") return (card.cost + (card.quality || 0) * 4 + (card.advanceBonus || 0) * 3) * readable;
   if (card.cat === "lock") return (4 + card.cost + (card.quality || 0) * 4) * readable;
@@ -1264,8 +1273,24 @@ export function reactionOf(state, s) {
 /** Speed of a card when this fighter throws it. */
 export function cardSpeed(state, s, cardId) {
   const sp = ENG(state).speedAttr;
-  return state.cards[cardId].speed + (handSpeed(state, s) - sp.pivot) * sp.perPoint;
+  const card = state.cards[cardId];
+  const slow = state.rules.slow;
+  // Takedowns, passes and holds are quick in the hands of a wrestler and slow in the hands of a striker.
+  const grapple = card.type === "G" && !card.counterOnly ? clamp((state[s].attrs.wrestling - 70) * slow.wrestlingSpeed, -slow.wrestlingCap, slow.wrestlingCap) : 0;
+  return card.speed + (handSpeed(state, s) - sp.pivot) * sp.perPoint + grapple;
 }
+
+/** Seen coming is not the same as stopped: a slow, heavy move has this chance to push through whatever answer meets it. */
+export function throughChance(state, speed) {
+  const slow = state.rules.slow;
+  return clamp((slow.at - speed) * slow.through, 0, slow.maxThrough);
+}
+
+/** What being slow buys a card: more damage and a better landing. `key` is "dmg" or "crit"; the card's own speed counts, not the fighter's. */
+const slowBoost = (state, card, key) => {
+  const slow = state.rules.slow;
+  return card.speed === undefined ? 0 : clamp((slow.at - card.speed) * slow[key], 0, slow[key === "dmg" ? "maxDmg" : "maxCrit"]);
+};
 
 /** Stamina a card takes out of the fighter standing. */
 export const standCost = (state, cardId) => state.cards[cardId].cost * ENG(state).perCost;
@@ -1628,6 +1653,13 @@ export function engageStep(state, reaction = null) {
   }
   E.thrown[L].push(cid);
   events.push({ kind: "card", side: L, card: cid, name: card.name, index: E.i, of: E.combo.length, height: card.height, speed: Math.round(speed), visible, reply: { ...resp } });
+  if (visible && !card.feint) {
+    const through = throughChance(state, speed);
+    if (through > 0 && nextUnit(state) < through) {
+      events.push({ kind: "through", side: L, card: cid, name: card.name, chance: through });
+      resp = { kind: "none" };
+    }
+  }
   E.i += 1;
   if (!usableAt(state, card, state.dist, L)) {
     events.push({ kind: "whiff", side: L, card: cid, name: card.name });
@@ -1997,6 +2029,7 @@ export function describeStandingCard(state, s, cardId) {
     unusable: !usableAt(state, card, state.dist, s),
     rangeText: rangeText(state, card),
     seenByFoe: !card.counterOnly && speed < reactionOf(state, foe),
+    through: Math.round(throughChance(state, speed) * 100),
     recovery: card.recovery || 0,
     setups,
     follows,
@@ -2394,6 +2427,7 @@ function describeGroundCard(state, s, cardId) {
     blocked,
     rangeText: posText(state, card),
     seenByFoe: !["counter", "escape"].includes(card.cat) && speed < reactionOf(state, foe),
+    through: Math.round(throughChance(state, speed) * 100),
     recovery: 0,
     setups: [],
     follows: [],

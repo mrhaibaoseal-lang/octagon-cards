@@ -69,7 +69,7 @@
       "side": "top",
       "type": "G",
       "cost": 1,
-      "speed": 50,
+      "speed": 56,
       "post": 1,
       "pos": [
         0,
@@ -212,7 +212,7 @@
       "side": "top",
       "type": "G",
       "cost": 2,
-      "speed": 46,
+      "speed": 52,
       "post": 0,
       "pos": [
         0,
@@ -227,7 +227,7 @@
       "side": "top",
       "type": "G",
       "cost": 3,
-      "speed": 36,
+      "speed": 44,
       "post": 0,
       "pos": [
         0,
@@ -243,7 +243,7 @@
       "side": "top",
       "type": "G",
       "cost": 2,
-      "speed": 44,
+      "speed": 52,
       "post": 1,
       "pos": [
         1,
@@ -258,7 +258,7 @@
       "side": "top",
       "type": "G",
       "cost": 2,
-      "speed": 46,
+      "speed": 54,
       "post": 1,
       "pos": [
         2,
@@ -273,7 +273,7 @@
       "side": "top",
       "type": "G",
       "cost": 2,
-      "speed": 46,
+      "speed": 54,
       "post": 1,
       "pos": [
         3,

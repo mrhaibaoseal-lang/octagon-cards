@@ -1206,5 +1206,17 @@
     "edgeScore": 3,
     "sprawl": 0.15,
     "stepCost": 0.3
+  },
+  "slow": {
+    "_doc": "M1.4b 後的慢招補償：速度低於 at 的招叫慢招。被看到不等於擋得掉：每一點差距有 through 的機率硬頂過去（無視應對，最高 maxThrough）；慢招傷害 +dmg／點（最高 maxDmg）、爆擊率 +crit／點（最高 maxCrit）。摔類（G 型）招的速度另加 (摔角 - 70) × wrestlingSpeed（上下限 wrestlingCap），所以地面系選手的摔和過位很快、摔角弱的選手很慢。",
+    "at": 66,
+    "through": 0.014,
+    "maxThrough": 0.5,
+    "dmg": 0.012,
+    "maxDmg": 0.35,
+    "crit": 0.004,
+    "maxCrit": 0.12,
+    "wrestlingSpeed": 0.8,
+    "wrestlingCap": 24
   }
 }
