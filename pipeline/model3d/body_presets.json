@@ -1,0 +1,15 @@
+{
+  "_doc": "Mannequin per weight class for base_body.py --preset. height cm / weight lb are class typicals (a fighter's own --height/--weight override them). bulk scales base_body's BULK_TARGETS. Optional: weight_macro and muscle override MakeHuman's macros; targets adds extra MPFB targets (path under data/targets, weight).",
+  "flyweight":            {"height": 165, "weight": 125, "bulk": 0.5},
+  "bantamweight":         {"height": 170, "weight": 135, "bulk": 0.55},
+  "featherweight":        {"height": 173, "weight": 145, "bulk": 0.6},
+  "lightweight":          {"height": 178, "weight": 155, "bulk": 0.6},
+  "welterweight":         {"height": 180, "weight": 170, "bulk": 0.65},
+  "middleweight":         {"height": 185, "weight": 185, "bulk": 0.7},
+  "light_heavyweight":    {"height": 191, "weight": 205, "bulk": 0.75},
+  "heavyweight_muscular": {"height": 193, "weight": 250, "bulk": 0.9, "weight_macro": 0.72},
+  "heavyweight_belly":    {"height": 191, "weight": 260, "bulk": 0.15, "weight_macro": 0.95, "muscle": 0.6,
+                           "targets": {"stomach/stomach-pregnant-incr": 0.55, "torso/measure-waist-circ-incr": 0.5,
+                                       "torso/torso-scale-depth-incr": 0.3, "torso/measure-bust-circ-incr": 0.3,
+                                       "neck/measure-neck-circ-incr": 0.5}}
+}

@@ -1,7 +1,7 @@
 # 3D 共用骨架 → 像素精靈圖（2026-11-08 使用者選定方向）
 
 > 全員共用一副身體與骨架（MPFB 人體＋Mixamo 骨架）。每位選手只請 Gemini 畫兩張圖（身體皮膚、頭部多角度表），之後所有動作都由同一副骨架擺出，再渲染成像素圖。加新招式＝擺一次姿勢，對所有人批次渲染，不用再生圖。
-> 畫風定案：**B＋卡通光影**（每公尺 56 像素、20 色、對比 1.2、一盞燈三個硬色階）。招式只取關鍵姿勢（起手、蓄力、命中、收招），中間用殘影、閃光、頓幀。
+> 畫風定案：**A＋卡通光影**（每公尺 64 像素、32 色、不加對比、一盞燈三個硬色階；2026-11-08 使用者從 B 改回 A，B 太像素）。招式只取關鍵姿勢（起手、蓄力、命中、收招），中間用殘影、閃光、頓幀。
 > 試做選手：Topuria。產出全部放在 gitignore 的 `prototype/web/assets/private/`（`_model3d/<選手>/`、`_anims/`）。
 
 ## 需要
@@ -12,9 +12,9 @@
 以下 `B` 代表 `"C:/Program Files/Blender Foundation/Blender 5.2/blender.exe"`，`D` 代表 `prototype/web/assets/private/_model3d/<選手>`。
 
 ## 每位選手的步驟
-1. **身體與白模**（身高 cm、體重 lb 取自 `rules/fighters.json`）：
-   `B -b -P pipeline/model3d/base_body.py -- --out D --height 170 --weight 145`
-   `--bulk 0~1` 另外加胸、背闊、腹肌、肩、手腳肌肉（預設 0＝原本的身體）。
+1. **身體與白模**（量級白模＋身高 cm、體重 lb 取自 `rules/fighters.json`）：
+   `B -b -P pipeline/model3d/base_body.py -- --out D --preset lightweight --height 175 --weight 155`
+   量級白模在 `body_presets.json`：蠅量～輕重量級，重量級分 `heavyweight_muscular`（壯碩）與 `heavyweight_belly`（有肚子）。預設各帶一個 `bulk`（額外加胸、背闊、腹肌、肩、手腳肌肉，輕量級 0.6），可用 `--bulk` 覆寫。
    → `base_body.blend`（引導姿勢：手臂抬開、雙腿分開、眼球）、`guide_sheet.png`（正面、3/4 右、背面）、`guide_views.json`
 2. **Gemini 畫身體皮膚**（1 張）：`uv run --no-project --with google-genai --with google-auth --with pillow python -I pipeline/model3d/paint_skin.py --fighter topuria`
    → `painted_sheet.png`。新選手要先加進 `paint_skin.py` 的 `FIGHTERS`（外觀、短褲）。
@@ -35,7 +35,9 @@
 - **不從斜角投影**：表面轉離鏡頭超過約 70° 就改用補色，否則邊緣的綠幕混色會被拉成淺色條紋。補色存成頂點色前要把 sRGB 轉成線性，不然會發白。
 - **重定向要先對齊待機姿勢**：Mixamo 是 T 字、我們是 A 字。只轉換「相對待機的旋轉」會讓手臂整個往後甩；每根骨頭要先把方向對齊來源的待機方向。
 - **像素化只平均人物本身的像素**：直接縮小會把透明背景混進邊緣，減色後變成紅黑雜點。
-- 每公尺低於約 48 像素，刺青和臉就認不出來；B（56）是像素味和辨識度的平衡點。
+- 每公尺低於約 48 像素，刺青和臉就認不出來；A（64）保留較多細節，B（56）像素味較重但使用者覺得太像素。
+- MakeHuman 的 muscle 已開到最大仍不夠壯、肚子會凹，所以另加 MPFB 肌肉目標（`--bulk`）。
+- Gemini 有時把背景畫成灰色、或讓相鄰人物的手指相碰：`paint_skin.py` 會把邊緣背景轉回綠幕，`bake_skin.py` 會從最窄處切開相連的人物。
 
 ## 還沒做
 - 地面技：手擺兩人疊在一起的關鍵姿勢（同一個場景一起渲染，遮擋自然正確），擺一次全員通用。
