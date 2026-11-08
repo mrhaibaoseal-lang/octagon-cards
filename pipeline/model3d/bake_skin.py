@@ -66,6 +66,21 @@ def figure_boxes(mask, n):
         elif not on and start is not None:
             runs.append((start, x))
             start = None
+    # Outstretched hands of neighbouring figures can touch and merge two figures into one run: split the
+    # widest run where it is thinnest, close to where its figures should meet.
+    colsum = mask.sum(axis=0)
+    while 0 < len(runs) < n:
+        i = max(range(len(runs)), key=lambda k: runs[k][1] - runs[k][0])
+        x0, x1 = runs[i]
+        k = round((x1 - x0) / (sum(r[1] - r[0] for r in runs) / (len(runs) + 1)))  # how many figures this run holds
+        k = max(2, min(k, n - len(runs) + 1))
+        cuts = []
+        for j in range(1, k):
+            c = x0 + (x1 - x0) * j // k
+            lo, hi = c - (x1 - x0) // (k * 5), c + (x1 - x0) // (k * 5)
+            cuts.append(lo + int(np.argmin(colsum[lo:hi])))
+        edges = [x0] + cuts + [x1]
+        runs[i:i + 1] = [(edges[j], edges[j + 1]) for j in range(k)]
     runs = sorted(sorted(runs, key=lambda r: mask[:, r[0]:r[1]].sum(), reverse=True)[:n])
     if len(runs) != n:
         sys.exit(f"Found {len(runs)} figures, expected {n}. Are the figures touching, or the background not pure green?")

@@ -39,6 +39,19 @@ def get_gcloud_token(account=None):
         return None
 
 
+def key_to_green(img, thresh=38):
+    """Gemini sometimes ignores the green background and paints a flat grey one: flood-fill it back to #00FF00 from the borders."""
+    from PIL import ImageDraw
+    if img.getpixel((2, 2))[1] > 200 and img.getpixel((2, 2))[0] < 80:
+        return img
+    img = img.copy()
+    w, h = img.size
+    for pt in [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2), (w // 2, 1), (w // 2, h - 2), (w // 3, 1), (2 * w // 3, 1)]:
+        if img.getpixel(pt) != (0, 255, 0):
+            ImageDraw.floodfill(img, pt, (0, 255, 0), thresh=thresh)
+    return img
+
+
 def prepare_reference_photo(path, max_height=1024):
     """Transparent UFC cut-out onto a neutral dark card, resized for upload."""
     img = Image.open(path).convert("RGBA")
@@ -55,14 +68,26 @@ FIGHTERS = {
                 "Georgian-Spanish featherweight, olive skin, short dark hair with a skin fade, full dark well-groomed beard, "
                 "many black tattoos covering the chest, both arms and the back",
                 "black with red trim"),
+    "mcgregor": ("Conor McGregor",
+                 "Irish featherweight and lightweight, fair skin with a light tan, short brown-ginger swept-back hair, "
+                 "full ginger-brown beard, a large tattoo of a gorilla on the chest, tattoos across both shoulders and "
+                 "collarbones and up the neck, a few smaller tattoos on the arms and belly",
+                 "dark green"),
+    "makhachev": ("Islam Makhachev",
+                  "Dagestani lightweight, medium olive skin, very short dark buzzed hair, dark full beard shaped into a "
+                  "short pointed chin beard, no tattoos at all, lean muscular build. Ignore the championship belt, the "
+                  "gloves and every logo in the photo: they must NOT appear",
+                  "white and grey patterned with black and gold trim"),
 }
 
 PROMPT = """The first image is a 3D mannequin shown in three views on a pure green background, left to right: front view, three-quarter view facing right (seen slightly from above), and back view. The arms are held out to the sides and the legs are apart on purpose.
 Repaint this exact mannequin as the MMA fighter {name}, using the second image only as a likeness reference. {look}.
 VERY IMPORTANT: keep every figure exactly where it is, at exactly the same size, in exactly the same pose, with exactly the same outline.
-Do not move, resize, rotate or re-pose anything: do NOT lower the arms, do NOT close the legs. Do not add or remove limbs. Only paint on top of the mannequin's body, staying inside its outline.
+Do not move, resize, rotate or re-pose anything: do NOT lower the arms, do NOT close the legs. Do not add or remove limbs.
+The whole body from the top of the head down to the bare feet must be fully visible in every view, with green margin above the head and below the feet: do not zoom in and do not crop the legs or feet.
+Keep the legs spread wide apart exactly like the mannequin, and the arms held out away from the body exactly like the mannequin. Only paint on top of the mannequin's body, staying inside its outline.
 Paint: his face and hairstyle, beard, skin tone, all of his tattoos in the right places on chest, arms, back and legs,
-and {shorts} fight shorts painted tight on the body. Bare hands, no gloves. Barefoot.
+and plain {shorts} fight shorts painted tight on the body, ending above the knee, with no lettering. Bare hands, no gloves. Barefoot.
 The three views must show the same man with the same tattoos, consistent from every angle.
 Style: detailed fighting game illustration, clean shapes, soft even lighting, very light shading,
 no black outline around the body, no cast shadows. Keep the background pure flat green #00FF00.
@@ -89,6 +114,7 @@ def main() -> None:
     ap.add_argument("--project", default=DEFAULT_PROJECT)
     ap.add_argument("--account", default=DEFAULT_ACCOUNT)
     ap.add_argument("--part", choices=["body", "head"], default="body")
+    ap.add_argument("--photo", help="reference photo to use instead of the full-body / headshot in _source/")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     if not args.project and not args.dry_run:
@@ -103,14 +129,17 @@ def main() -> None:
     tw, th = guide.width, round(guide.width * ah / aw)
     padded = Image.new("RGB", (tw, max(th, guide.height)), (0, 255, 0))
     padded.paste(guide, (0, (padded.height - guide.height) // 2))
-    photo_path = next(iter(sorted((PRIVATE / "_source").glob(f"*{args.fighter}*fullbody*.png"))), None)
+    src = PRIVATE / "_source"
+    photo_path = Path(args.photo) if args.photo else next(iter(sorted(src.glob(f"*{args.fighter}*fullbody*.png"))), None)
+    if photo_path is None:  # no full-body photo (e.g. McGregor): fall back to the UFC headshot
+        photo_path = next(iter(sorted(src.glob(f"*{args.fighter}*_ufc.png"))), None)
     if photo_path is None:
-        sys.exit(f"No full-body photo for {args.fighter} in _source/")
+        sys.exit(f"No photo for {args.fighter} in _source/ (use --photo)")
     prompt = (HEAD_PROMPT if head else PROMPT).format(name=name, look=look, shorts=shorts)
     contents = [padded, prepare_reference_photo(photo_path)]
     if head:
         headshot = PRIVATE / "_source" / f"{args.fighter}_ufc.png"
-        if headshot.exists():
+        if headshot.exists() and headshot.resolve() != photo_path.resolve():
             contents.append(prepare_reference_photo(headshot))
         contents.append(Image.open(d / "painted_sheet.png").convert("RGB"))
     contents.append(prompt)
@@ -145,7 +174,7 @@ def main() -> None:
                     while (d / f"{stem}_{n}.png").exists():
                         n += 1
                     out.rename(d / f"{stem}_{n}.png")
-                img = Image.open(BytesIO(part.inline_data.data)).convert("RGB")
+                img = key_to_green(Image.open(BytesIO(part.inline_data.data)).convert("RGB"))
                 img.save(out)
                 print(f"saved {out} {img.size}")
                 return
