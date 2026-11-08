@@ -1,0 +1,134 @@
+{
+  "_doc": "最小原型的三位選手：打擊型、摔角型、柔術型。deck 是 { 牌id: 張數 }。ai 是出牌 AI 的口味（地面上位／下位的喜好、偏好的距離），不是規則。",
+  "mcgregor": {
+    "name": "Conor McGregor",
+    "short": "McGregor",
+    "style": "打擊型",
+    "summary": "遠中距離的左手與踢腿。站立牌組深，地面牌組很淺，最怕被摔。",
+    "deck": {
+      "stand": {
+        "jab": 3,
+        "cross": 2,
+        "hook": 1,
+        "body_hook": 1,
+        "low_kick": 2,
+        "guard": 2,
+        "slip": 1,
+        "sprawl": 1,
+        "focus": 1,
+        "left_straight": 2,
+        "high_kick": 1,
+        "step_jab": 1,
+        "front_kick": 1,
+        "counter_left": 1
+      },
+      "ground": {
+        "gnp": 2,
+        "pass_guard": 1,
+        "choke": 1,
+        "hold": 2,
+        "frame": 2,
+        "shrimp": 1,
+        "scramble": 1,
+        "break": 1,
+        "guard_strike": 1,
+        "posture": 1
+      }
+    },
+    "ai": {
+      "top": 1,
+      "bottom": -7,
+      "dist": 1,
+      "distW": 2.2
+    }
+  },
+  "khabib": {
+    "name": "Khabib Nurmagomedov",
+    "short": "Khabib",
+    "style": "摔角型",
+    "summary": "逼近、抱腿、把你按在地上。站立牌組沒有遠距離的招，地面上位牌組很深。",
+    "deck": {
+      "stand": {
+        "jab": 2,
+        "cross": 1,
+        "hook": 1,
+        "low_kick": 1,
+        "guard": 2,
+        "slip": 1,
+        "sprawl": 2,
+        "focus": 1,
+        "shoot": 2,
+        "double_leg": 2,
+        "body_lock": 1,
+        "pummel": 2,
+        "dirty_box": 1,
+        "overhand": 1
+      },
+      "ground": {
+        "gnp": 3,
+        "elbow_g": 1,
+        "pass_guard": 2,
+        "ride": 2,
+        "choke": 2,
+        "armlock": 1,
+        "hold": 1,
+        "frame": 1,
+        "shrimp": 1,
+        "scramble": 1,
+        "posture": 1
+      }
+    },
+    "ai": {
+      "top": 8,
+      "bottom": -1,
+      "dist": 2,
+      "distW": 1.6
+    }
+  },
+  "oliveira": {
+    "name": "Charles Oliveira",
+    "short": "Oliveira",
+    "style": "柔術型",
+    "summary": "近距離的膝肘，能主動拉進防守。下位牌組最深：反轉、三角絞、腕十字。",
+    "deck": {
+      "stand": {
+        "jab": 2,
+        "cross": 1,
+        "body_hook": 1,
+        "low_kick": 2,
+        "guard": 2,
+        "slip": 1,
+        "sprawl": 1,
+        "focus": 1,
+        "knee": 2,
+        "elbow": 1,
+        "shoot": 1,
+        "pull_guard": 2,
+        "step_jab": 1,
+        "pummel": 1,
+        "uppercut": 1
+      },
+      "ground": {
+        "gnp": 2,
+        "pass_guard": 1,
+        "ride": 1,
+        "choke": 1,
+        "hold": 1,
+        "frame": 2,
+        "shrimp": 1,
+        "scramble": 1,
+        "sweep": 2,
+        "triangle": 2,
+        "armbar": 1,
+        "break": 1,
+        "posture": 1
+      }
+    },
+    "ai": {
+      "top": 3,
+      "bottom": 6,
+      "dist": 2,
+      "distW": 1.4
+    }
+  }
+}

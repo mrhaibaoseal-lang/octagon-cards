@@ -1,0 +1,670 @@
+{
+  "_doc": "zone: stand=站立牌組, ground=地面牌組（地面牌用 role 標上位 top／下位 bottom）。cost 能量；range [最近,最遠] 距離格（0遠 1中 2近 3纏抱），沒寫＝任何距離。effects 依序結算，引擎只認 t（類型），不比對牌名。fallback＝沒牌可出時才有的基本招（不在牌組裡）。",
+  "jab": {
+    "name": "刺拳",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      1,
+      2
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 4
+      }
+    ]
+  },
+  "cross": {
+    "name": "直拳",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      1,
+      2
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 9
+      }
+    ]
+  },
+  "hook": {
+    "name": "鉤拳",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      1,
+      2
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 10
+      }
+    ]
+  },
+  "body_hook": {
+    "name": "肝臟鉤拳",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      1,
+      3
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "body",
+        "dmg": 8
+      }
+    ]
+  },
+  "low_kick": {
+    "name": "低踢",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      0,
+      1
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "legs",
+        "dmg": 4
+      }
+    ]
+  },
+  "guard": {
+    "name": "格擋",
+    "zone": "stand",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "block",
+        "n": 7
+      }
+    ]
+  },
+  "slip": {
+    "name": "閃身",
+    "zone": "stand",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "stance",
+        "k": "slip"
+      }
+    ]
+  },
+  "sprawl": {
+    "name": "防摔",
+    "zone": "stand",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "block",
+        "n": 4
+      },
+      {
+        "t": "stance",
+        "k": "sprawl"
+      }
+    ]
+  },
+  "shoot": {
+    "name": "抱腿",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "takedown",
+        "control": 3
+      }
+    ]
+  },
+  "focus": {
+    "name": "專注",
+    "zone": "stand",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "draw",
+        "n": 2
+      }
+    ]
+  },
+  "left_straight": {
+    "name": "左直拳",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      0,
+      1
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 13
+      }
+    ]
+  },
+  "high_kick": {
+    "name": "高踢",
+    "zone": "stand",
+    "cost": 3,
+    "range": [
+      0,
+      1
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 19
+      }
+    ]
+  },
+  "step_jab": {
+    "name": "壓步刺拳",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      0,
+      1
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 4
+      },
+      {
+        "t": "dist",
+        "n": 1
+      }
+    ]
+  },
+  "front_kick": {
+    "name": "前踢",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      0,
+      1
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "body",
+        "dmg": 4
+      },
+      {
+        "t": "dist",
+        "n": -1
+      }
+    ]
+  },
+  "counter_left": {
+    "name": "反擊左拳",
+    "zone": "stand",
+    "cost": 2,
+    "effects": [
+      {
+        "t": "stance",
+        "k": "counter",
+        "dmg": 13,
+        "at": "head"
+      }
+    ]
+  },
+  "uppercut": {
+    "name": "上鉤拳",
+    "zone": "stand",
+    "cost": 3,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 17
+      }
+    ]
+  },
+  "elbow": {
+    "name": "貼身肘",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 6
+      }
+    ]
+  },
+  "knee": {
+    "name": "箍頸膝撞",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "body",
+        "dmg": 10
+      }
+    ]
+  },
+  "overhand": {
+    "name": "過肩重拳",
+    "zone": "stand",
+    "cost": 3,
+    "range": [
+      1,
+      2
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 18
+      },
+      {
+        "t": "dist",
+        "n": 1
+      }
+    ]
+  },
+  "double_leg": {
+    "name": "雙腿摔",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      1,
+      2
+    ],
+    "effects": [
+      {
+        "t": "dist",
+        "n": 1
+      },
+      {
+        "t": "takedown",
+        "control": 3
+      }
+    ]
+  },
+  "body_lock": {
+    "name": "抱腰摔",
+    "zone": "stand",
+    "cost": 2,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "takedown",
+        "control": 4
+      }
+    ]
+  },
+  "pummel": {
+    "name": "貼身糾纏",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      1,
+      2
+    ],
+    "effects": [
+      {
+        "t": "dist",
+        "n": 1
+      },
+      {
+        "t": "block",
+        "n": 3
+      }
+    ]
+  },
+  "dirty_box": {
+    "name": "內圍短拳",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 5
+      }
+    ]
+  },
+  "pull_guard": {
+    "name": "拉進防守",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      2,
+      3
+    ],
+    "effects": [
+      {
+        "t": "pull",
+        "control": 1
+      }
+    ]
+  },
+  "gnp": {
+    "name": "砸拳",
+    "zone": "ground",
+    "role": "top",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 4,
+        "perControl": 1
+      }
+    ]
+  },
+  "elbow_g": {
+    "name": "地面肘",
+    "zone": "ground",
+    "role": "top",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 3,
+        "perControl": 1.5
+      }
+    ]
+  },
+  "pass_guard": {
+    "name": "過位",
+    "zone": "ground",
+    "role": "top",
+    "cost": 2,
+    "effects": [
+      {
+        "t": "control",
+        "n": 2
+      }
+    ]
+  },
+  "ride": {
+    "name": "壓制",
+    "zone": "ground",
+    "role": "top",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "control",
+        "n": 1
+      },
+      {
+        "t": "block",
+        "n": 5
+      }
+    ]
+  },
+  "choke": {
+    "name": "勒頸",
+    "zone": "ground",
+    "role": "top",
+    "cost": 2,
+    "effects": [
+      {
+        "t": "lock",
+        "n": 4
+      }
+    ]
+  },
+  "armlock": {
+    "name": "手臂鎖",
+    "zone": "ground",
+    "role": "top",
+    "cost": 3,
+    "effects": [
+      {
+        "t": "lock",
+        "n": 6
+      }
+    ]
+  },
+  "hold": {
+    "name": "抱頭",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "block",
+        "n": 8
+      }
+    ]
+  },
+  "frame": {
+    "name": "撐架",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "block",
+        "n": 2
+      },
+      {
+        "t": "escape",
+        "n": 1
+      }
+    ]
+  },
+  "shrimp": {
+    "name": "蝦行",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 2,
+    "effects": [
+      {
+        "t": "escape",
+        "n": 2
+      }
+    ]
+  },
+  "scramble": {
+    "name": "站起",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 3,
+    "effects": [
+      {
+        "t": "escape",
+        "n": 3
+      }
+    ]
+  },
+  "sweep": {
+    "name": "反轉",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 2,
+    "effects": [
+      {
+        "t": "sweep",
+        "maxControl": 2
+      }
+    ]
+  },
+  "triangle": {
+    "name": "三角絞",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 2,
+    "effects": [
+      {
+        "t": "lock",
+        "n": 4
+      }
+    ]
+  },
+  "armbar": {
+    "name": "腕十字",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 3,
+    "effects": [
+      {
+        "t": "lock",
+        "n": 6
+      }
+    ]
+  },
+  "break": {
+    "name": "拆手",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "breakLock",
+        "n": 5
+      }
+    ]
+  },
+  "guard_strike": {
+    "name": "下位肘",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 5
+      }
+    ]
+  },
+  "weak_jab": {
+    "name": "弱刺拳",
+    "zone": "stand",
+    "cost": 1,
+    "range": [
+      1,
+      2
+    ],
+    "fallback": true,
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 3
+      }
+    ]
+  },
+  "weak_guard": {
+    "name": "護頭",
+    "zone": "stand",
+    "cost": 1,
+    "fallback": true,
+    "effects": [
+      {
+        "t": "block",
+        "n": 3
+      }
+    ]
+  },
+  "weak_pound": {
+    "name": "輕砸",
+    "zone": "ground",
+    "role": "top",
+    "cost": 1,
+    "fallback": true,
+    "effects": [
+      {
+        "t": "hit",
+        "at": "head",
+        "dmg": 2
+      }
+    ]
+  },
+  "weak_ride": {
+    "name": "硬壓",
+    "zone": "ground",
+    "role": "top",
+    "cost": 1,
+    "fallback": true,
+    "effects": [
+      {
+        "t": "block",
+        "n": 3
+      }
+    ]
+  },
+  "weak_hold": {
+    "name": "護住頭",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 1,
+    "fallback": true,
+    "effects": [
+      {
+        "t": "block",
+        "n": 4
+      }
+    ]
+  },
+  "weak_frame": {
+    "name": "輕撐",
+    "zone": "ground",
+    "role": "bottom",
+    "cost": 1,
+    "fallback": true,
+    "effects": [
+      {
+        "t": "escape",
+        "n": 1
+      }
+    ]
+  },
+  "posture": {
+    "name": "立直拆手",
+    "zone": "ground",
+    "role": "top",
+    "cost": 1,
+    "effects": [
+      {
+        "t": "breakLock",
+        "n": 5
+      }
+    ]
+  }
+}

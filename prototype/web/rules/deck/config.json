@@ -1,0 +1,73 @@
+{
+  "_doc": "卡牌構築版（2026-11-09）的全部數值。規格見 docs/GAME_DESIGN.md。引擎不寫死任何數字。",
+  "match": {
+    "rounds": 3,
+    "handsPerRound": 8,
+    "hp": 100,
+    "energy": 3,
+    "openingDraw": 5,
+    "drawPerHand": 2,
+    "handLimit": 6,
+    "groundEntryDraw": 4,
+    "healBetweenRounds": 12,
+    "startDistance": 1,
+    "whiffSpends": false
+  },
+  "distance": {
+    "names": [
+      "遠距",
+      "中距",
+      "近距",
+      "纏抱"
+    ],
+    "max": 3
+  },
+  "step": {
+    "cost": 1,
+    "perHand": 1
+  },
+  "status": {
+    "dizzy": {
+      "limit": 3,
+      "bigHit": 10,
+      "stunnedTakesMore": 0.25,
+      "energyLoss": 1,
+      "smallHit": 5
+    },
+    "winded": {
+      "limit": 3,
+      "drawLoss": 2
+    },
+    "legs": {
+      "limit": 2,
+      "stepExtra": 1
+    }
+  },
+  "ground": {
+    "controlMax": 4,
+    "lockThreshold": 12,
+    "lockControlDiv": 3,
+    "stallLimit": 2,
+    "standUpDistance": 2
+  },
+  "fallback": {
+    "stand": [
+      "weak_jab",
+      "weak_guard"
+    ],
+    "top": [
+      "weak_pound",
+      "weak_ride"
+    ],
+    "bottom": [
+      "weak_hold",
+      "weak_frame"
+    ]
+  },
+  "ai": {
+    "safe": 1.1,
+    "card": 1.3,
+    "expect": 9,
+    "maxLeaves": 700
+  }
+}

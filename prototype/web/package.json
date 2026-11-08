@@ -5,6 +5,8 @@
   "scripts": {
     "start": "node serve.js",
     "test": "node test/engine.test.js",
-    "sim": "node sim.js"
+    "sim": "node sim.js",
+    "test:deck": "node --test deck/test.js",
+    "sim:deck": "node deck/sim.js"
   }
 }
