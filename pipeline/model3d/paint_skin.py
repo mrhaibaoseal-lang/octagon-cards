@@ -78,6 +78,79 @@ FIGHTERS = {
                   "short pointed chin beard, no tattoos at all, lean muscular build. Ignore the championship belt, the "
                   "gloves and every logo in the photo: they must NOT appear",
                   "white and grey patterned with black and gold trim"),
+    "khabib": ("Khabib Nurmagomedov",
+               "Dagestani lightweight wrestler, medium olive skin, very short dark buzzed hair, thick full dark beard "
+               "(short on the cheeks, longer on the chin), heavy brow, stocky thick-necked powerfully muscular wrestler build, "
+               "no tattoos at all, some dark chest hair. Ignore the championship belt, gloves and every logo: they must NOT appear",
+               "plain black"),
+    "oliveira": ("Charles Oliveira",
+                 "Brazilian lightweight, light brown skin, short bleached platinum-blond hair, light dark stubble on the jaw, "
+                 "lean wiry muscular build with long arms, black script-lettering tattoos on both sides of the neck, "
+                 "a large black tattoo over the left shoulder and chest and more tattoos on the upper arms. "
+                 "The arms must be held straight out away from the body exactly like the mannequin, NOT hanging down at the sides. "
+                 "Ignore the championship belt, gloves and every logo in the photo: they must NOT appear",
+                 "plain blue"),
+    "hooker": ("Dan Hooker",
+               "New Zealand lightweight, fair skin, short bleached platinum-blond hair, ginger-brown full beard, "
+               "lean muscular build, heavily tattooed in black ink: a large skull with crossed swords and axes on the chest, "
+               "a sword tattoo up the base of the throat, full dense sleeves on both arms (a skull and robed figure on the "
+               "left arm, tribal Norse and Polynesian patterns), black script lettering across the stomach, "
+               "and dense tribal pattern tattoos on both lower legs and knees",
+               "black with a dark grey leaf pattern"),
+    "sandhagen": ("Cory Sandhagen",
+                  "American bantamweight, fair freckled skin, short neat ginger-brown hair, short ginger beard, "
+                  "lean wiry muscular build with long limbs. His skin is completely clean and bare: absolutely NO tattoos, no ink and no markings anywhere on his body, arms, chest, back or legs. Each figure must fill the same large size as the mannequin. Ignore the gloves and every logo: they must NOT appear",
+                  "plain dark grey"),
+    "jones": ("Jon Jones",
+              "American light heavyweight and heavyweight, dark brown skin, short black hair with a neat line-up, short "
+              "full black beard, very big tall powerful build with broad shoulders, thick arms and a solid slightly soft belly, "
+              "very long arms, one tattoo only: cursive script lettering across the upper left chest below the collarbone, "
+              "otherwise no tattoos. Ignore the gloves and every logo: they must NOT appear",
+              "dark grey with black panels"),
+    "adesanya": ("Israel Adesanya",
+                 "Nigerian-New Zealand middleweight, dark brown skin, very short black hair, tiny patch of chin hair, "
+                 "very tall, lean and long-limbed with defined abs, large black tattoos: block letters across the collarbones "
+                 "and upper chest, a large map-of-Africa shaped tattoo on the right chest and stomach, tattoos covering the "
+                 "whole left upper arm and shoulder, smaller tattoos on the neck. In the middle view he must be turned three-quarters to the right exactly like the mannequin, NOT facing the camera. Ignore the gloves and every logo: they must NOT appear",
+                 "navy blue with gold accents"),
+    "holloway": ("Max Holloway",
+                 "Hawaiian featherweight, light brown tan skin, short black hair with a neat fade, light stubble, lean "
+                 "athletic build with defined abs, heavily tattooed in black ink: a large Polynesian tribal pattern covering "
+                 "the whole chest and both shoulders, a full sleeve down the right arm, a small cherub with a halo on the "
+                 "left ribs, script lettering across the stomach above the waist, hairy legs. Ignore the gloves and every logo: "
+                 "they must NOT appear",
+                 "white with red and blue flower pattern"),
+    "poirier": ("Dustin Poirier",
+                "American lightweight from Louisiana, light tanned skin, very short buzzed light-brown hair, short light stubble, "
+                "compact muscular build with defined abs, lots of tattoos: full sleeve on the right arm with a red rose on the "
+                "shoulder, a samurai mask and clouds, cursive script lettering across the upper chest, a tiger-stripe pattern "
+                "on the left chest and shoulder, a full tattooed left forearm and upper arm. Ignore the gloves and every logo: "
+                "they must NOT appear",
+                "black with colourful tropical leaf pattern"),
+    "pereira": ("Alex Pereira",
+                "Brazilian light heavyweight, tan light-brown skin, very short buzzed dark hair, short dark stubble beard, "
+                "powerfully muscular build with hairy chest, many tattoos: a red dragon on the right upper arm, a dragon face "
+                "on the left chest and shoulder, an orange dragon across the stomach, a long curved dragon over the right "
+                "collarbone, script lettering across the lower stomach, a feather on the right forearm, a wolf on the left "
+                "forearm, an indigenous chief portrait on the right thigh. Ignore the gloves and every logo: they must NOT appear",
+                "bright yellow"),
+    "omalley": ("Sean O'Malley",
+                "American bantamweight, fair skin, curly pink and magenta hair with blue on one side (compact curls staying close to the head, not a big afro; in a head grid put exactly one head in each grid cell, never two heads in one cell), thin dark goatee "
+                "and light stubble, lean wiry build with slim arms, small face tattoos, many colourful tattoos: a large "
+                "colourful owl with spread red and green wings across the whole chest, script lettering on the left stomach, "
+                "colourful full sleeve on the left arm with roses, an eagle on the left ribs, more tattoos on the right arm "
+                "and neck. Keep the limbs exactly as thick as the mannequin's limbs and the whole body at the same large size as the mannequin. Ignore the gloves and every logo: they must NOT appear",
+                "white with light blue stripes"),
+    "chimaev": ("Khamzat Chimaev",
+                "Chechen-Swedish middleweight, light olive tan skin, short dark hair, very thick long full black beard, "
+                "powerfully muscular build with broad shoulders and thick arms, no tattoos at all, some chest hair. "
+                "Ignore the gloves and every logo: they must NOT appear",
+                "white with grey pattern"),
+    "gaethje": ("Justin Gaethje",
+                "American lightweight, fair pale skin with a slight tan, short light-brown hair, short ginger-brown beard, "
+                "rugged muscular build with thick legs and hairy forearms, a few tattoos: a vertical black tattoo down the "
+                "right ribs, otherwise mostly clean skin. Ignore the championship belt, gloves and every logo: they must NOT appear",
+                "white with blue and red stripes"),
 }
 
 PROMPT = """The first image is a 3D mannequin shown in three views on a pure green background, left to right: front view, three-quarter view facing right (seen slightly from above), and back view. The arms are held out to the sides and the legs are apart on purpose.

@@ -2,6 +2,12 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-08 · Claude Sonnet 5.5（其餘 12 位選手走完 3D 像素流程）
+- **做了什麼**：khabib、oliveira、hooker、sandhagen、jones、adesanya、holloway、poirier、pereira、omalley、chimaev、gaethje 各自白模（量級預設＋`--bulk`）、Gemini 身體與頭、貼回、4 動作像素 GIF 與 storyboard；`paint_skin.py` 加 12 人外觀。
+- **驗證**：生圖共 30 張約 NT$150（重畫：oliveira 身體、sandhagen 身體、adesanya 身體與頭、omalley 身體與頭）；可用 10 位，對位 0.83～0.95；Oliveira 身體兩次都手臂垂下（0.54）不可用；O'Malley 身體 0.68～0.73 有小腿補色殘影；Chimaev 3/4 手部有暗色殘影。
+- **要使用者確認**：Oliveira 是否再畫身體一次；O'Malley 能否接受或削瘦白模重畫；Khabib 斜方肌像領子要不要降 bulk。
+- **下一步**：精靈圖接上 `stage.js`；Topuria 換新白模重做；地面雙人姿勢。
+
 ## 2026-11-08 · Claude Sonnet 5.5 → Opus 5.5（McGregor、Makhachev、畫風 A、量級白模）
 - **做了什麼**：McGregor、Makhachev 走完 `pipeline/model3d/` 流程；`paint_skin` 加頭像備援、灰背景轉綠、全身入鏡提示；`bake_skin` 切開相連人物；`base_body` 加 `--bulk` 肌肉目標與 `--preset`（`body_presets.json`，9 個量級，重量級分壯碩／有肚子）；像素預設改 A（64 px/m、32 色）。
 - **驗證**：兩人身體對位 0.81～0.86、頭部 0.85～0.94，8 角度無破洞；生圖 6 張約 NT$30（兩人第一張身體皮膚不能用，各重畫一次）。
@@ -13,9 +19,3 @@
 - **驗證**：Topuria 從 8 個角度與 9 個動作渲染無破洞；使用者看過後說「目前為止離成功最接近的一次」，選定 B＋卡通光影。生圖共 4 張約 NT$20。
 - **要使用者確認**：新精靈圖進對戰畫面後的試玩感受；`game.js`、`stage.js` 有他人未 commit 的修改，本次未動也未提交。
 - **下一步**：關鍵姿勢精靈圖接上 `stage.js`（844×390）；McGregor 走一次流程；地面雙人姿勢。
-
-## 2026-11-08 · Gemini 3.8 Flash (High)（選手生成雙軌策略定案與白模資產保留）
-- **做了什麼**：實測 2D 骨架切片、方塊體、照片貼圖與像素材質卡四種路徑；排除方塊與切片木偶，定案「雙軌策略」（乾淨選手直出、高刺青明星走 AI 像素材質卡＋白模引導）；生成並保留站立 6 姿標準白模與低踢（卡夫踢）標準白模於 `_source/`；更新 `docs/ART_SPEC.md`。
-- **驗證**：低踢新動作「情況 2」程式純自動套用實測（短褲與膚色完美，刺青前後遮擋與聳肩頭部需引導）；確認雙軌策略兼顧品質與重抽成本。
-- **要使用者確認**：無，策略已依使用者意願記錄定案。
-- **下一步**：推進 M1.4a 戰鬥核心重構（走位→帶頭／應對→反應力）。
