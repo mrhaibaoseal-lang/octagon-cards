@@ -27,6 +27,8 @@ ap.add_argument("--arm-back", type=float, default=25.0, help="degrees the arms s
 ap.add_argument("--arm-raise", type=float, default=28.0, help="degrees the arms are lifted from the A pose")
 ap.add_argument("--leg-spread", type=float, default=6.0, help="degrees each leg is opened")
 ap.add_argument("--bulk", type=float, help="0-1 (default: preset's, else 0): extra muscle targets (chest, lats, abs, shoulders, arms, legs, neck) on top of the macros")
+ap.add_argument("--muscle", type=float, help="MakeHuman muscle macro 0-1 (default: preset's, else 1.0)")
+ap.add_argument("--head-scale", type=float, default=1.0, help="enlarge the head (and the bones that follow it) by this factor, blended into the neck; the body height is kept")
 ap.add_argument("--targets", default="", help="extra MPFB targets, e.g. stomach/stomach-pregnant-incr=0.3,torso/torso-vshape-decr=0.2")
 ap.add_argument("--view-px", type=int, default=640, help="pixel width of one view; height is 1.35x")
 args = ap.parse_args(argv)
@@ -51,7 +53,7 @@ for ob in list(bpy.data.objects):
 bmi = (args.weight * 0.4536) / ((args.height / 100) ** 2)
 weight_macro = preset.get("weight_macro", max(0.35, min(0.85, 0.6 + (bmi - 23.0) * 0.04)))
 macro = {
-    "gender": 1.0, "age": 0.45, "muscle": preset.get("muscle", 1.0), "weight": weight_macro,
+    "gender": 1.0, "age": 0.45, "muscle": args.muscle if args.muscle is not None else preset.get("muscle", 1.0), "weight": weight_macro,
     "proportions": 0.8, "height": 0.5, "cupsize": 0.5, "firmness": 0.6,
     "race": {"asian": 0.2, "caucasian": 0.6, "african": 0.2},
 }
@@ -83,6 +85,28 @@ if extra:
     tdir = os.path.join(os.path.dirname(sys.modules[HumanService.__module__].__file__), "..", "data", "targets")
     for t, w in extra.items():
         TargetService.load_target(body, os.path.abspath(os.path.join(tdir, t + ".target.gz")), weight=min(1.0, w))
+
+# Bigger head (stylised: at 64 px/m a real-size head is only 15 px tall). Bake the targets in, then scale every vertex above the
+# shoulders about the neck base, easing in over the neck so the neck stays smooth.
+if abs(args.head_scale - 1.0) > 1e-4:
+    bpy.context.view_layer.objects.active = body
+    body.select_set(True)
+    if body.data.shape_keys:
+        bpy.ops.object.shape_key_remove(all=True, apply_mix=True)
+    _z = [v.co.z for v in body.data.vertices]
+    _lo, _hi = min(_z), max(_z)
+    _z0, _z1 = _lo + 0.80 * (_hi - _lo), _lo + 0.875 * (_hi - _lo)
+    _top = [v.co for v in body.data.vertices if v.co.z > _z1]
+    _cy = sum(c.y for c in _top) / len(_top)
+    for v in body.data.vertices:
+        if v.co.z > _z0:
+            t = min(1.0, (v.co.z - _z0) / (_z1 - _z0))
+            w = t * t * (3 - 2 * t)
+            f = 1.0 + (args.head_scale - 1.0) * w
+            v.co.x *= f
+            v.co.y = _cy + (v.co.y - _cy) * f
+            v.co.z = _z0 + (v.co.z - _z0) * f
+    body.data.update()
 
 # Scale to the real height in metres.
 zs = [(body.matrix_world @ v.co).z for v in body.data.vertices]
@@ -265,6 +289,6 @@ sheet.file_format = "PNG"
 sheet.save()
 
 with open(os.path.join(args.out, "guide_views.json"), "w", encoding="utf-8") as f:
-    json.dump({"preset": args.preset, "bulk": args.bulk, "height_cm": args.height, "weight_lb": args.weight, "sheet_px": [sheet_w, h], "gap": gap, "views": views_meta}, f, indent=2)
+    json.dump({"preset": args.preset, "bulk": args.bulk, "head_scale": args.head_scale, "height_cm": args.height, "weight_lb": args.weight, "sheet_px": [sheet_w, h], "gap": gap, "views": views_meta}, f, indent=2)
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(args.out, "base_body.blend"))
 print("DONE", os.path.join(args.out, "guide_sheet.png"))
