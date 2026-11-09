@@ -185,3 +185,53 @@ html,body{height:100%;background:#05070a;color:var(--text);font-family:"Noto San
 #bot{position:absolute}
 .res.hit{color:var(--green)} .res.miss{color:#9aa4b7}
 .rc.dead{opacity:.5}
+
+/* ---- 0.2：牌型、提示、距離箭頭 ---- */
+:root{--combo:#b07cff;--trap:#2fc4b2;--feint:#7fb2ff;--fire:#ff9a3c}
+.card .n{font-size:15px;margin-top:2px}
+.card .pct{font-size:27px}
+.card .tx{font-size:10.5px;color:#aab3c4;line-height:1.25;margin-top:2px;min-height:13px}
+.card .kw{position:absolute;right:5px;top:9px;font-size:10px;font-weight:800;border-radius:4px;padding:1px 5px;color:#fff}
+.kw.combo{background:#4a2f7a;color:#e3d2ff} .kw.combo.live{background:var(--combo);color:#fff;box-shadow:0 0 10px var(--combo);animation:pulseKw 1s infinite}
+@keyframes pulseKw{50%{transform:scale(1.12)}}
+.kw.ko{background:var(--red)} .kw.counter{background:#26324b;color:#9fc0ff} .kw.push{background:#2d3b2a;color:#b6f0a6}
+.kw.trap{background:#0f3f3a;color:#8ff3e6} .kw.feint{background:#1d2e4f;color:#b9d2ff}
+.card.trap{background:linear-gradient(#0f2a2a,#0b1c1d);border-color:#1f6e66}
+.card.trap::before{background:var(--trap)}
+.card.feint{border-style:dashed;border-color:#4d6fa8;background:linear-gradient(#162238,#111a2b)}
+.card.feint::before{background:var(--feint)}
+.card .big{font-size:24px;line-height:1.1;margin-top:3px}
+.card.combolive{border-color:var(--combo);box-shadow:0 0 12px rgba(176,124,255,.45)}
+.card.charged{border-color:var(--fire);box-shadow:0 0 14px rgba(255,154,60,.55)}
+.card.charged .chg{position:absolute;left:6px;top:-9px;font-size:10px;font-weight:800;color:#1a0d00;background:var(--fire);border-radius:4px;padding:1px 5px}
+.card .holdbtn{position:absolute;left:6px;bottom:22px;font-size:10px;font-weight:800;padding:1px 6px;border-radius:9px;border:1px solid #475369;color:#aab3c4;background:#121824;z-index:2}
+.card .holdbtn.on{background:var(--fire);color:#1a0d00;border-color:var(--fire)}
+.card.held{outline:2px dashed var(--fire);outline-offset:2px}
+.card .ft{gap:4px}
+/* 場上標記 */
+.board{position:absolute;top:8px;display:flex;flex-direction:column;gap:4px;z-index:2;max-width:260px}
+.board.p{left:10px;align-items:flex-start} .board.o{right:10px;align-items:flex-end}
+.mk{font-size:12px;font-weight:700;padding:3px 8px;border-radius:7px;background:#121824cc;border:1px solid #33405a;white-space:nowrap}
+.mk.trap{border-color:var(--trap);color:#8ff3e6} .mk.fire{border-color:var(--fire);color:#ffc48f} .mk.open{border-color:var(--red);color:#ff9d9a}
+.mk.combo{border-color:var(--combo);color:#dcc6ff}
+/* 距離箭頭 */
+.reach{position:absolute;height:16px;bottom:96px;pointer-events:none;z-index:1;transition:opacity .15s}
+.reach .bar{position:absolute;left:0;right:12px;top:5px;height:6px;border-radius:3px;background:var(--rc);opacity:.55}
+.reach .tip{position:absolute;right:0;top:0;width:0;height:0;border-left:14px solid var(--rc);border-top:8px solid transparent;border-bottom:8px solid transparent;opacity:.75}
+.reach .lb{position:absolute;left:0;top:-20px;font-size:11px;font-weight:800;color:var(--rc);white-space:nowrap;text-shadow:0 0 4px #000}
+.reach.ok{--rc:#3ecf8e} .reach.no{--rc:#f0524f}
+.reach.o{transform:scaleX(-1)} .reach.o .lb{transform:scaleX(-1)}
+/* 大字演出 */
+.banner{position:absolute;left:0;right:0;top:58px;text-align:center;font-size:30px;font-weight:900;letter-spacing:2px;pointer-events:none;z-index:4;animation:ban 1.1s ease-out forwards;text-shadow:0 0 16px currentColor,0 2px 0 #000}
+@keyframes ban{0%{transform:scale(.4);opacity:0}25%{transform:scale(1.15);opacity:1}70%{opacity:1}100%{transform:scale(1);opacity:0}}
+#help{position:absolute;left:50%;top:44px;transform:translateX(-50%);z-index:3;font-size:11px;padding:2px 9px;border-radius:9px;background:#161c28;border:1px solid #33405a;color:var(--dim);cursor:pointer}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;text-align:left;max-width:700px}
+.legend div{font-size:13px;color:var(--text);line-height:1.45}
+.legend b{display:inline-block;min-width:74px;padding:1px 6px;border-radius:5px;margin-right:6px;font-size:12px;text-align:center}
+#cap .tipicon{margin-right:6px}
+.card.sel::after{display:none}
+.card .holdbtn{position:static;margin-right:auto}
+.card.off .note{position:static;background:none;color:#ff9d9a;font-size:10.5px;text-align:left;margin-top:2px;padding:0}
+.card .ft .why{margin-right:auto}
+#cap b{color:#fff}
+#help{left:auto;right:10px;top:auto;bottom:34px;transform:none}

@@ -1,18 +1,21 @@
 // node --test prototype/web/bout/test.js — rules of the card bout engine.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createBout, playBeat, settleKnockdown, actions, hitChance, checkInvariants, cardIds } from "./engine.js";
-import { data, fight, rngOf } from "./sim.js";
-import { createAI, createMasher } from "./ai.js";
+import { createBout, playBeat, settleKnockdown, actions, hitChance, dmgMul, heldCard, checkInvariants, cardIds } from "./engine.js";
+import { data, fight } from "./sim.js";
+import { createMasher } from "./ai.js";
 
+const cfg = data.config;
 const fresh = (seed = 1) => createBout(data, "holloway", "poirier", seed);
-const setHand = (st, s, ids) => { st[s].hand = ids.slice(); st[s].known = []; };
+const setHand = (st, s, ids, charged = -1) => { st[s].hand = ids.map((id, i) => ({ id, charged: i === charged })); };
+const at = (dist, a, b, seed = 1) => { const st = fresh(seed); st.dist = dist; setHand(st, "a", a); setHand(st, "b", b); return st; };
+const JABS = ["jab", "jab", "lowkick", "lowkick"];
 
-test("a bout starts with a full hand and no known cards", () => {
+test("a bout starts with a fresh hand of handDraw cards", () => {
   const st = fresh();
-  assert.equal(st.a.hand.length, data.config.startHand);
-  assert.equal(st.b.known.length, 0);
-  assert.equal(st.dist, data.config.dist.start);
+  assert.equal(st.a.hand.length, cfg.handDraw);
+  assert.equal(heldCard(st, "a"), null);
+  assert.equal(st.dist, cfg.dist.start);
 });
 
 test("same seed gives the same bout", () => {
@@ -23,124 +26,141 @@ test("same seed gives the same bout", () => {
 });
 
 test("cards out of range are listed but not ok", () => {
-  const st = fresh();
-  st.dist = 0;
-  setHand(st, "a", ["dirty", "jab", "hook", "lowkick", "cross"]);
+  const st = at(1, ["dirty", "jab", "hook", "lowkick"], JABS);
   const acts = actions(st, "a").filter((a) => a.kind === "card");
-  assert.deepEqual(acts.map((a) => a.ok), [false, true, false, true, false]);
+  assert.deepEqual(acts.map((a) => a.ok), [false, true, false, true]);
   assert.equal(acts[0].why, "range");
 });
 
-test("moving happens before attacks: a short card whiffs when the opponent retreats", () => {
+test("every beat the unplayed cards are thrown away except the held one, which is charged and public", () => {
+  const st = at(1, ["jab", "cross", "hook", "lowkick"], JABS);
+  playBeat(st, { card: 0, hold: 2 }, { move: "guard" });
+  assert.equal(st.a.hand.length, cfg.handDraw + 1);
+  assert.equal(st.a.hand[0].id, "hook");
+  assert.equal(st.a.hand[0].charged, true);
+  assert.equal(heldCard(st, "a"), "hook");
+  assert.equal(st.a.hand.filter((h) => h.charged).length, 1);
+  // no hold → a completely new hand
+  playBeat(st, { move: "guard" }, { move: "guard" });
+  assert.equal(st.a.hand.length, cfg.handDraw);
+  assert.equal(heldCard(st, "a"), null);
+});
+
+test("you cannot hold the card you are playing", () => {
+  const st = at(1, ["jab", "cross", "hook", "lowkick"], JABS);
+  assert.throws(() => playBeat(st, { card: 0, hold: 0 }, { move: "guard" }), /bad hold/);
+});
+
+test("a charged card hits harder", () => {
   const st = fresh();
-  st.dist = 1;
-  setHand(st, "a", ["jab", "jab", "jab", "jab", "jab"]);
-  setHand(st, "b", ["jab", "jab", "jab", "jab", "jab"]);
+  const hook = data.cards.hook;
+  assert.ok(Math.abs(dmgMul(st, "a", hook, true, false) - cfg.charge.dmgMul) < 1e-9);
+  assert.equal(dmgMul(st, "a", hook, false, false), 1);
+});
+
+test("movement comes first: a close-range card whiffs when the opponent retreats", () => {
+  const st = at(2, ["cross", "jab", "jab", "jab"], JABS);
   const ev = playBeat(st, { card: 0 }, { move: "retreat" });
-  // distance went 1 -> 0; jab reaches 0 and 1, so use a card that only works at 1+: cross
-  assert.equal(st.dist, 0);
+  assert.equal(st.dist, 1);
   const atk = ev.find((e) => e.t === "attack" && e.by === "a");
-  assert.ok(atk);
-  const st2 = fresh();
-  st2.dist = 1;
-  setHand(st2, "a", ["cross", "cross", "cross", "cross", "cross"]);
-  setHand(st2, "b", ["jab", "jab", "jab", "jab", "jab"]);
-  const ev2 = playBeat(st2, { card: 0 }, { move: "retreat" });
-  const atk2 = ev2.find((e) => e.t === "attack" && e.by === "a");
-  assert.equal(atk2.hit, false);
-  assert.equal(atk2.whiff, "range");
+  assert.equal(atk.hit, false);
+  assert.equal(atk.whiff, "range");
+});
+
+test("combo cards get stronger only after you landed last beat", () => {
+  const st = fresh();
+  const cross = data.cards.cross;
+  const p0 = hitChance(st, "a", cross).p;
+  st.a.landedLast = true;
+  const p1 = hitChance(st, "a", cross);
+  assert.ok(Math.abs(p1.p - (p0 + cfg.combo.hitBonus)) < 1e-9);
+  assert.ok(p1.why.includes("combo"));
+  assert.ok(Math.abs(dmgMul(st, "a", cross, false, false) - cfg.combo.dmgMul) < 1e-9);
+  assert.equal(hitChance(st, "a", data.cards.jab).why.includes("combo"), false); // jab is not a combo card
 });
 
 test("counter card gets the bonus only when the opponent made that basic move", () => {
   const st = fresh();
-  const jab = data.cards.upper; // has a counter tag and no skill bonus for Holloway (a jab would be clamped at the cap)
-  const base = hitChance(st, "a", jab, false, null).p;
-  const vsAdvance = hitChance(st, "a", jab, false, "advance");
-  assert.ok(Math.abs(vsAdvance.p - (base + data.config.hit.counterBonus)) < 1e-9);
-  assert.ok(vsAdvance.why.includes("counter"));
-  assert.equal(hitChance(st, "a", jab, false, "retreat").p, base);
+  const up = data.cards.upper;
+  const base = hitChance(st, "a", up, false, null).p;
+  assert.ok(Math.abs(hitChance(st, "a", up, false, "advance").p - (base + cfg.hit.counterBonus)) < 1e-9);
+  assert.equal(hitChance(st, "a", up, false, "retreat").p, base);
 });
 
-test("an open opponent is easier to hit, and the opening lasts one beat", () => {
+test("a feint opens a defending opponent, and does nothing against an attacker", () => {
+  const st = at(1, ["fakejab", "jab", "jab", "jab"], JABS);
+  const ev = playBeat(st, { card: 0 }, { move: "guard" });
+  assert.equal(ev.find((e) => e.t === "feint").ok, true);
+  assert.equal(st.b.open, 1);
+  const st2 = at(1, ["fakejab", "jab", "jab", "jab"], ["jab", "jab", "jab", "jab"]);
+  const ev2 = playBeat(st2, { card: 0 }, { card: 0 });
+  assert.equal(ev2.find((e) => e.t === "feint").ok, false);
+  assert.equal(st2.b.open, 0);
+});
+
+test("a trap is face-down for its owner, fires on the matching action and can cancel that strike", () => {
+  const st = at(2, ["trapslip", "jab", "jab", "jab"], ["jab", "jab", "jab", "jab"]);
+  playBeat(st, { card: 0 }, { move: "guard" });
+  assert.ok(st.a.trap);
+  // b throws a straight punch into it
+  setHand(st, "b", ["cross", "jab", "jab", "jab"]);
+  setHand(st, "a", ["jab", "jab", "jab", "jab"]);
+  st.dist = 2;
+  const head0 = st.b.head;
+  const ev = playBeat(st, { move: "guard" }, { card: 0 });
+  const tr = ev.find((e) => e.t === "trap");
+  assert.ok(tr && tr.cancel);
+  assert.equal(ev.find((e) => e.t === "attack" && e.by === "b").whiff, "trapped");
+  assert.ok(st.b.head > head0);
+  assert.equal(st.a.trap, null);
+});
+
+test("a trap expires after its beats and only one can be set", () => {
+  const st = at(1, ["trapcounter", "trapcatch", "jab", "jab"], JABS);
+  playBeat(st, { card: 0, hold: 1 }, { move: "guard" });
+  assert.ok(st.a.trap);
+  const acts = actions(st, "a").filter((a) => a.kind === "card" && data.cards[a.id].kind === "trap");
+  assert.ok(acts.every((a) => !a.ok && a.why === "trap"));
+  playBeat(st, { move: "guard" }, { move: "guard" });
+  assert.equal(st.a.trap, null);
+});
+
+test("a push kick moves the opponent away when it lands", () => {
+  for (let seed = 1; seed < 100; seed++) {
+    const st = at(2, ["teep", "jab", "jab", "jab"], JABS, seed);
+    const ev = playBeat(st, { card: 0 }, { move: "guard" });
+    if (ev.find((e) => e.t === "attack" && e.by === "a").hit) {
+      assert.equal(st.dist, 1);
+      return;
+    }
+  }
+  assert.fail("teep never landed");
+});
+
+test("an open opponent is easier to hit and a missed heavy card opens you", () => {
   const st = fresh();
   const cross = data.cards.cross;
   const p0 = hitChance(st, "a", cross).p;
   st.b.open = 1;
-  assert.ok(Math.abs(hitChance(st, "a", cross).p - (p0 + data.config.hit.openBonus)) < 1e-9);
-  setHand(st, "a", ["jab", "jab", "jab", "jab", "jab"]);
-  setHand(st, "b", ["jab", "jab", "jab", "jab", "jab"]);
-  st.dist = 1;
-  playBeat(st, { move: "guard" }, { move: "guard" });
-  assert.equal(st.b.open, 0);
-});
-
-test("a missed heavy card leaves the thrower open next beat", () => {
-  let seen = 0;
-  for (let seed = 1; seed < 200 && !seen; seed++) {
-    const st = fresh(seed);
-    st.dist = 2;
-    setHand(st, "a", ["hook", "hook", "hook", "hook", "hook"]);
-    setHand(st, "b", ["jab", "jab", "jab", "jab", "jab"]);
-    const ev = playBeat(st, { card: 0 }, { move: "guard" });
-    const atk = ev.find((e) => e.t === "attack" && e.by === "a");
-    if (!atk.hit) {
-      assert.equal(st.a.open, 1);
-      seen++;
+  assert.ok(Math.abs(hitChance(st, "a", cross).p - (p0 + cfg.hit.openBonus)) < 1e-9);
+  for (let seed = 1; seed < 200; seed++) {
+    const s2 = at(2, ["hook", "jab", "jab", "jab"], JABS, seed);
+    const ev = playBeat(s2, { card: 0 }, { move: "guard" });
+    if (!ev.find((e) => e.t === "attack" && e.by === "a").hit) {
+      assert.equal(s2.a.open, 1);
+      return;
     }
   }
-  assert.ok(seen > 0);
+  assert.fail("hook never missed");
 });
 
-test("boost costs extra stamina and hits harder", () => {
-  const a = fresh(5);
-  const b = fresh(5);
-  for (const st of [a, b]) {
-    st.dist = 1;
-    setHand(st, "a", ["cross", "jab", "jab", "jab", "jab"]);
-    setHand(st, "b", ["jab", "jab", "jab", "jab", "jab"]);
-  }
-  const sa = a.a.stamina;
-  playBeat(a, { card: 0 }, { move: "guard" });
-  playBeat(b, { card: 0, boost: true }, { move: "guard" });
-  const costPlain = sa - (a.a.stamina - data.config.stamina.regen * data.fighters.holloway.cardio);
-  const costBoost = sa - (b.a.stamina - data.config.stamina.regen * data.fighters.holloway.cardio);
-  assert.ok(Math.abs(costBoost - costPlain - data.config.boost.cost) < 1e-9);
-});
-
-test("you cannot play a card you cannot afford or that is out of range", () => {
-  const st = fresh();
-  st.dist = 1;
+test("you cannot play a card you cannot afford", () => {
+  const st = at(2, ["flurry", "jab", "jab", "jab"], JABS);
   st.a.stamina = 1;
-  setHand(st, "a", ["flurry", "jab", "jab", "jab", "jab"]);
   assert.throws(() => playBeat(st, { card: 0 }, { move: "guard" }));
-  st.a.stamina = 10;
-  setHand(st, "a", ["hook", "jab", "jab", "jab", "jab"]);
-  assert.throws(() => playBeat(st, { card: 0 }, { move: "guard" }), /out of range/);
 });
 
-test("a played card leaves the hand and a new one is drawn face-up (known to the opponent)", () => {
-  const st = fresh(3);
-  st.dist = 1;
-  setHand(st, "a", ["jab", "cross", "lowkick", "bodykick", "highkick"]);
-  setHand(st, "b", ["jab", "jab", "jab", "jab", "jab"]);
-  playBeat(st, { card: 0 }, { move: "guard" });
-  assert.equal(st.a.hand.length, data.config.handMax);
-  assert.ok(st.a.fresh);
-  assert.deepEqual(st.a.known, [st.a.fresh]);
-  assert.deepEqual([...st.a.hand].sort(), ["bodykick", "cross", "highkick", "lowkick", st.a.fresh].sort());
-});
-
-test("a full hand does not draw (holding cards)", () => {
-  const st = fresh();
-  st.dist = 1;
-  setHand(st, "a", ["jab", "cross", "lowkick", "bodykick", "highkick"]);
-  setHand(st, "b", ["jab", "jab", "jab", "jab", "jab"]);
-  playBeat(st, { move: "guard" }, { move: "guard" });
-  assert.equal(st.a.hand.length, 5);
-  assert.equal(st.a.fresh, null);
-});
-
-test("knockdown: chase or hold both resolve, three knockdowns is a TKO", () => {
+test("knockdown: three knockdowns is a TKO; a chase can finish", () => {
   const st = fresh();
   st.pending = { by: "a", down: "b" };
   st.b.knockdowns = 2;
@@ -153,11 +173,11 @@ test("knockdown: chase or hold both resolve, three knockdowns is a TKO", () => {
   assert.ok(st2.over || st2.beat >= 1);
 });
 
-test("a bout ends in three rounds with a decision or earlier; judges read three cards", () => {
+test("bouts end, judges read three cards", () => {
   for (let seed = 1; seed <= 20; seed++) {
     const { st } = fight("holloway", "poirier", seed);
     assert.ok(st.over);
-    if (st.over.cards) assert.equal(st.over.cards.length, data.config.scoring.judges);
+    if (st.over.cards) assert.equal(st.over.cards.length, cfg.scoring.judges);
   }
 });
 
@@ -165,13 +185,13 @@ test("invariants hold over many random bouts (masher vs masher)", () => {
   for (let seed = 1; seed <= 60; seed++) fight("holloway", "poirier", seed, createMasher, createMasher);
 });
 
-test("engine never reads card ids: every card property comes from the JSON", () => {
-  assert.ok(cardIds(data).length >= 10);
+test("every card property comes from the JSON", () => {
   for (const id of cardIds(data)) {
     const c = data.cards[id];
-    assert.ok(["head", "body", "leg"].includes(c.region), id);
-    assert.ok(c.range.every((d) => d >= 0 && d <= 3), id);
-    assert.ok(c.hit > 0 && c.hit < 1 && c.dmg > 0 && c.cost > 0, id);
+    assert.ok(["strike", "feint", "trap"].includes(c.kind), id);
+    assert.ok(c.text && c.text.length <= 14, `${id} text too long for the card face`);
+    if (c.kind === "strike") assert.ok(["head", "body", "leg"].includes(c.region) && c.hit > 0 && c.dmg > 0, id);
+    if (c.kind === "trap") assert.ok(c.trap.on.move || c.trap.on.tag, id);
   }
   for (const f of ["holloway", "poirier"]) for (const k of Object.keys(data.fighters[f].weights)) assert.ok(data.cards[k], `${f} weights unknown card ${k}`);
 });
