@@ -1,11 +1,11 @@
 {
- "_doc": "卡牌版選手。weights 抽牌權重（擅長的出現率高）；skill 該招的命中加成；power 傷害倍率；chin 頭部承受量（越高越不容易被打倒）；cardio 體力回復倍率。ai＝電腦打法（真實數字）：range 偏好距離（0~3）、aggression 0~1、caution 0~1、body 打身腿偏好、adapt 學你習慣的程度、noise 隨機性。",
+ "_doc": "卡牌版選手。weights 抽牌權重（擅長的出現率高）；skill 該招的命中加成；power 傷害倍率；chin 頭部承受量（越高越不容易被打倒）；cardio 體力回復倍率。ai＝電腦打法（真實數字）：range 偏好距離（0~3）、aggression 0~1、caution 0~1、body 打身腿偏好、adapt 學你習慣的程度、noise 隨機性。 rangeBonus 在自己最舒服的距離打實率加成（0遠 1中 2近 3纏抱）。",
  "holloway": {
   "name": "Max Holloway",
   "short": "Holloway",
   "style": "高頻打擊",
-  "power": 0.96,
-  "chin": 120.0,
+  "power": 1.0,
+  "chin": 130,
   "cardio": 1.3,
   "weights": {
    "jab": 14,
@@ -32,7 +32,8 @@
   "skill": {
    "jab": 0.05,
    "flurry": 0.06,
-   "bodyshot": 0.04
+   "bodyshot": 0.04,
+   "cross": 0.04
   },
   "ai": {
    "range": 1.4,
@@ -41,13 +42,17 @@
    "body": 0.4,
    "adapt": 0.5,
    "noise": 0.25
+  },
+  "rangeBonus": {
+   "1": 0.12,
+   "2": 0.06
   }
  },
  "poirier": {
   "name": "Dustin Poirier",
   "short": "Poirier",
   "style": "反擊重拳",
-  "power": 1.1,
+  "power": 1.03,
   "chin": 100.0,
   "cardio": 0.95,
   "weights": {
@@ -84,6 +89,9 @@
    "body": 0.3,
    "adapt": 0.6,
    "noise": 0.25
+  },
+  "rangeBonus": {
+   "2": 0.12
   }
  }
 }

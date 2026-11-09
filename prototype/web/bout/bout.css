@@ -235,3 +235,27 @@ html,body{height:100%;background:#05070a;color:var(--text);font-family:"Noto San
 .card .ft .why{margin-right:auto}
 #cap b{color:#fff}
 #help{left:auto;right:10px;top:auto;bottom:34px;transform:none}
+
+/* ---- 0.3：命中／打實、步法、埋 ---- */
+.card .pct{font-size:26px;margin-top:0}
+.card .cl{font-size:10.5px;color:#cfd6e3;font-weight:700;margin-top:-1px}
+.card .big + .tx{margin-top:0}
+.card .trapbtn{font-size:10px;font-weight:800;padding:1px 6px;border-radius:9px;border:1px solid #1f6e66;color:#8ff3e6;background:#0b1c1d}
+.card .trapbtn.on{background:var(--trap);color:#03201c}
+.card .trapbtn.off{opacity:.4}
+.card.trapping{outline:2px dashed var(--trap);outline-offset:2px}
+.card.off .note{margin-top:0}
+.steps{position:absolute;left:10px;bottom:6px;display:flex;gap:4px;align-items:center;z-index:3}
+.steps .sl{font-size:11px;color:var(--dim);margin-right:2px}
+.steps .sb{font-size:12px;font-weight:800;padding:4px 10px;border-radius:9px;background:#161c28;border:1px solid #33405a;color:#cfd6e3;cursor:pointer}
+.steps .sb.on{background:#1d2a45;border-color:var(--blue);color:#fff;box-shadow:0 0 8px rgba(76,141,255,.5)}
+.steps .sb.off{opacity:.35;cursor:default}
+.fighter.ghosting{opacity:.8}
+.float.small{font-size:15px;opacity:.85}
+.spark.small{font-size:24px;color:#cfd6e3;text-shadow:none}
+#help{bottom:6px}
+.clock small{white-space:nowrap}
+.rc{padding:6px 10px;min-height:0}
+.rc b{font-size:16px;margin-top:0;line-height:1.2}
+.rc .pct{font-size:22px}
+.reveal{align-items:flex-start;padding-top:2px}

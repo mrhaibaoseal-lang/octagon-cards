@@ -1,5 +1,5 @@
 {
- "_doc": "卡牌版（站立）的規則數字。引擎不寫死任何數值或牌名，全部從這裡和 cards.json／fighters.json 讀。每手：沒出的牌全丟，只留「蓄力」那一張（對手看得到），再抽 handDraw 張新牌。spec: docs/GAME_DESIGN.md",
+ "_doc": "卡牌版（站立）的規則數字。引擎不寫死任何數值或牌名。每手：主動作（出牌可帶一步步法，或基本動作）＋可選「留」一張蓄力（對手看得到）＋可選「埋」一張預判。拳腳大多會碰到（land），差別是擦到（grazeMul）還是打實（clean）。spec: docs/GAME_DESIGN.md",
  "rounds": 3,
  "beatsPerRound": 12,
  "secondsPerBeat": 25,
@@ -24,8 +24,14 @@
   "lowPenalty": 0.15
  },
  "hit": {
-  "min": 0.05,
-  "max": 0.95,
+  "baseMiss": 0.09,
+  "tiredMiss": 0.08,
+  "boostMiss": -0.03,
+  "minMiss": 0.03,
+  "maxMiss": 0.6,
+  "grazeMul": 0.35,
+  "cleanMin": 0.05,
+  "cleanMax": 0.95,
   "openBonus": 0.2,
   "counterBonus": 0.3
  },
@@ -52,7 +58,7 @@
    "dist": 0,
    "cost": 1,
    "regen": 0,
-   "evade": 0.25
+   "evade": 0.3
   },
   "guard": {
    "label": "架擋",
@@ -119,5 +125,8 @@
  "charge": {
   "dmgMul": 1.15
  },
- "drawRangeBias": 2.5
+ "drawRangeBias": 1.6,
+ "step": {
+  "cost": 0
+ }
 }

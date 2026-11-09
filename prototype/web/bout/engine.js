@@ -1,11 +1,13 @@
-// Octagon Cards — card bout engine (standing, prototype 0.2 of the card direction, 2026-11-09).
+// Octagon Cards — card bout engine (standing, prototype 0.3 of the card direction, 2026-11-09).
 // Pure rules: no DOM, no clock. The browser and the simulation use this same file.
 // All numbers and card properties come from rules/bout/*.json; the engine never compares card names.
 // Spec: docs/GAME_DESIGN.md.
 //
-// One beat: both sides secretly pick one card (or a basic move) and may mark one other card to HOLD.
-// Reveal → traps check → movement → feints → strikes. Then every unplayed card is thrown away except the held one,
-// which stays (charged, and visible to the opponent), and four fresh cards are drawn.
+// One beat, chosen secretly by both sides at once:
+//   main action  = a card (with a STEP: back / stay / in) or a basic move (advance, retreat, sidestep, guard)
+//   side actions = HOLD one other card to next beat (charged, public) and/or SET one trap card face-down
+// Reveal → old traps check → movement (steps + moves) → feints → strikes. Most strikes land (graze or clean);
+// only ~10-15% miss outright. Then the unplayed cards are thrown away except the held one, and four fresh cards are drawn.
 
 export const other = (s) => (s === "a" ? "b" : "a");
 export const SIDES = ["a", "b"];
@@ -45,13 +47,13 @@ function newFighter(data, id) {
     body: 0,
     leg: 0,
     knockdowns: 0,
-    open: 0, // 破綻：這一手別人打你命中 +openBonus
+    open: 0, // 破綻：這一手別人打你更容易打實
     hand: [], // [{ id, charged }]；charged＝上一手蓄力留下來的（對手看得到）
-    trap: null, // { id, left }：蓋著的預判牌（對手只知道有，不知道是什麼）
-    landedLast: false, // 上一手有打中 → 連段牌變強
-    hist: { advance: 0, retreat: 0, sidestep: 0, guard: 0, card: 0, feint: 0, trap: 0 },
-    tagHist: {}, // 出過的牌的標籤次數（電腦用來學你的習慣）
-    dealt: 0, // 這回合造成的傷害（判定用）
+    trap: null, // { id, left }：埋著的預判牌（對手只知道有，不知道是什麼）
+    landedLast: false, // 上一手有打實 → 連段牌變強
+    hist: { advance: 0, retreat: 0, sidestep: 0, guard: 0, card: 0, feint: 0, stepIn: 0, stepOut: 0 },
+    tagHist: {},
+    dealt: 0,
     kdTaken: 0,
     landed: 0,
     thrown: 0,
@@ -68,7 +70,7 @@ export function createBout(data, idA, idB, seed = 1) {
     a: newFighter(data, idA),
     b: newFighter(data, idB),
     over: null,
-    pending: null, // 擊倒後等待「追擊／穩住」
+    pending: null,
     rounds: [],
     events: [],
     nextOpen: { a: 0, b: 0 },
@@ -81,8 +83,9 @@ export function createBout(data, idA, idB, seed = 1) {
 export const headRatio = (st, s) => st[s].head / st.data.fighters[st[s].id].chin;
 export const danger = (st, s) => headRatio(st, s) >= st.data.config.head.dangerRatio;
 export const limping = (st, s) => st[s].leg >= st.data.config.leg.limp;
-/** The card the fighter is holding (charged) — public information. */
 export const heldCard = (st, s) => st[s].hand.find((h) => h.charged)?.id || null;
+/** Bonus to clean hits a fighter gets at distance d (their favourite range). */
+export const rangeBonus = (st, s, d) => st.data.fighters[st[s].id].rangeBonus?.[d] || 0;
 
 function drawId(st, s) {
   const f = st.data.fighters[st[s].id];
@@ -93,7 +96,8 @@ function drawId(st, s) {
   for (const [id, w] of Object.entries(f.weights)) {
     const card = st.data.cards[id];
     if (copies(id) >= st.data.config.handCopies) continue;
-    const fits = card.range.includes(st.dist) ? st.data.config.drawRangeBias : 1; // cards that work at this distance come up more
+    const near = card.range.some((d) => Math.abs(d - st.dist) <= 1);
+    const fits = near ? st.data.config.drawRangeBias : 1;
     const k = w * fits * (card.rarity === "sig" && dng ? st.data.config.head.sigDangerBoost : 1);
     ws.push([id, k]);
     total += k;
@@ -112,17 +116,27 @@ export function moveCost(st, s, id) {
   const extra = limping(st, s) && mv.dist !== 0 ? st.data.config.leg.moveCost : 0;
   return mv.cost + extra;
 }
+export const stepCost = (st, s, step) => (step ? st.data.config.step.cost + (limping(st, s) ? st.data.config.leg.moveCost : 0) : 0);
+export const stepOk = (st, s, step) => st.dist + step >= 0 && st.dist + step <= 3 && stepCost(st, s, step) <= st[s].stamina;
 
-/** Everything a fighter may choose this beat. ok=false rows are shown greyed out (why says why). */
-export function actions(st, s) {
+/**
+ * What a fighter may choose this beat, given the step they plan (-1 back, 0, +1 in).
+ * Trap cards are never the main action: ok means "can be set this beat" (side action).
+ */
+export function actions(st, s, step = 0) {
   const me = st[s];
   const out = [];
+  const d = clamp(st.dist + step, 0, 3);
   me.hand.forEach((h, idx) => {
     const card = st.data.cards[h.id];
-    const inRange = card.range.includes(st.dist);
-    const afford = card.cost <= me.stamina;
-    const trapBusy = card.kind === "trap" && !!me.trap;
-    out.push({ kind: "card", idx, id: h.id, charged: h.charged, cost: card.cost, ok: inRange && afford && !trapBusy, why: !inRange ? "range" : !afford ? "stamina" : trapBusy ? "trap" : null });
+    if (card.kind === "trap") {
+      const ok = !me.trap && card.cost <= me.stamina;
+      out.push({ kind: "card", idx, id: h.id, charged: h.charged, cost: card.cost, side: true, ok, why: me.trap ? "trap" : ok ? null : "stamina" });
+      return;
+    }
+    const inRange = card.range.includes(d);
+    const afford = card.cost + stepCost(st, s, step) <= me.stamina;
+    out.push({ kind: "card", idx, id: h.id, charged: h.charged, cost: card.cost, ok: inRange && afford, why: !inRange ? "range" : !afford ? "stamina" : null });
   });
   for (const [id, mv] of Object.entries(st.data.config.moves)) {
     const cost = moveCost(st, s, id);
@@ -132,31 +146,43 @@ export function actions(st, s) {
   return out;
 }
 
-/** Is the combo bonus live for s (they landed last beat)? */
 export const comboLive = (st, s, card) => !!card.combo && st[s].landedLast;
 
-/** Hit chance of a strike thrown by s. oppMove = the opponent's basic move this beat (unknown while choosing → null). */
-export function hitChance(st, s, card, boost = false, oppMove = null) {
+/**
+ * Odds of a strike thrown by s at distance d.
+ * land  = chance it touches at all (most do); clean = chance a landed strike is clean (full damage) instead of a graze.
+ * exp   = expected share of the card's damage (used by the AI).
+ * opp   = the opponent's revealed action, if known: { move } or { step }.
+ */
+export function odds(st, s, card, { boost = false, opp = null, d = st.dist } = {}) {
   const c = st.data.config;
+  const h = c.hit;
   const me = st[s];
-  const opp = st[other(s)];
+  const op = st[other(s)];
   const f = st.data.fighters[me.id];
-  let p = card.hit + (f.skill?.[card.id] || 0);
+  const tired = me.stamina / me.staminaMax < c.stamina.low;
+  let miss = h.baseMiss + (tired ? h.tiredMiss : 0) + (boost ? h.boostMiss : 0);
+  let clean = card.hit + (f.skill?.[card.id] || 0);
   const why = [];
-  if (opp.open > 0) { p += c.hit.openBonus; why.push("open"); }
-  if (comboLive(st, s, card)) { p += c.combo.hitBonus; why.push("combo"); }
-  if (me.stamina / me.staminaMax < c.stamina.low) { p -= c.stamina.lowPenalty; why.push("tired"); }
-  if (boost) p += c.boost.hitBonus;
-  if (oppMove) {
-    if (card.counter && card.counter === oppMove) { p += c.hit.counterBonus; why.push("counter"); }
-    const mv = c.moves[oppMove];
-    if (mv?.guard) p -= mv.guard.hit[card.region] || 0;
-    if (mv?.evade) p -= mv.evade;
+  const rb = rangeBonus(st, s, d);
+  if (rb) { clean += rb; why.push("range"); }
+  if (op.open > 0) { clean += h.openBonus; why.push("open"); }
+  if (comboLive(st, s, card)) { clean += c.combo.hitBonus; why.push("combo"); }
+  if (tired) { clean -= c.stamina.lowPenalty; why.push("tired"); }
+  if (boost) clean += c.boost.hitBonus;
+  if (opp) {
+    const advancing = opp.move === "advance" || opp.step > 0;
+    if (card.counter === "advance" && advancing) { clean += h.counterBonus; why.push("counter"); }
+    const mv = opp.move ? c.moves[opp.move] : null;
+    if (mv?.guard) clean -= mv.guard.hit[card.region] || 0;
+    if (mv?.evade) miss += mv.evade;
   }
-  return { p: clamp(p, c.hit.min, c.hit.max), why };
+  miss = clamp(miss, h.minMiss, h.maxMiss);
+  clean = clamp(clean, h.cleanMin, h.cleanMax);
+  const land = 1 - miss;
+  return { land, clean, exp: land * (clean + (1 - clean) * h.grazeMul), why };
 }
 
-/** Damage multiplier a strike would get before guard (charged / combo / boost). */
 export function dmgMul(st, s, card, charged, boost) {
   const c = st.data.config;
   return (charged ? c.charge.dmgMul : 1) * (comboLive(st, s, card) ? c.combo.dmgMul : 1) * (boost ? c.boost.dmgMul : 1);
@@ -164,31 +190,43 @@ export function dmgMul(st, s, card, charged, boost) {
 
 function validate(st, s, ch) {
   const me = st[s];
-  if (ch.hold != null && (ch.hold === ch.card || !me.hand[ch.hold])) throw new Error("bad hold");
+  const step = ch.step || 0;
+  if (ch.hold != null && (ch.hold === ch.card || ch.hold === ch.trap || !me.hand[ch.hold])) throw new Error("bad hold");
+  let cost = 0;
+  if (ch.trap != null) {
+    const t = me.hand[ch.trap];
+    if (!t || st.data.cards[t.id].kind !== "trap" || ch.trap === ch.card) throw new Error("bad trap");
+    if (me.trap) throw new Error("trap already set");
+    cost += st.data.cards[t.id].cost;
+  }
   if (ch.move) {
     if (!st.data.config.moves[ch.move]) throw new Error(`unknown move ${ch.move}`);
-    if (moveCost(st, s, ch.move) > me.stamina) throw new Error("not enough stamina");
-    return;
+    if (step) throw new Error("a basic move has no extra step");
+    cost += moveCost(st, s, ch.move);
+  } else {
+    const h = me.hand[ch.card];
+    if (!h) throw new Error("no such card");
+    const card = st.data.cards[h.id];
+    if (card.kind === "trap") throw new Error("traps are set, not played");
+    if (![-1, 0, 1].includes(step) || !stepOk(st, s, step)) throw new Error("bad step");
+    if (!card.range.includes(st.dist + step)) throw new Error("out of range");
+    cost += card.cost + (ch.boost ? st.data.config.boost.cost : 0) + stepCost(st, s, step);
   }
-  const h = me.hand[ch.card];
-  if (!h) throw new Error("no such card");
-  const card = st.data.cards[h.id];
-  if (!card.range.includes(st.dist)) throw new Error("out of range");
-  if (card.kind === "trap" && me.trap) throw new Error("trap already set");
-  if (card.cost + (ch.boost ? st.data.config.boost.cost : 0) > me.stamina) throw new Error("not enough stamina");
+  if (cost > me.stamina + 1e-9) throw new Error("not enough stamina");
 }
 
-const describe = (a) => (a.kind === "move" ? { kind: "move", id: a.id } : { kind: a.card.kind, id: a.card.id, boost: a.boost, charged: a.charged });
+const describe = (a) => (a.kind === "move" ? { kind: "move", id: a.id, trapSet: a.trapSet } : { kind: a.card.kind, id: a.card.id, boost: a.boost, charged: a.charged, step: a.step, trapSet: a.trapSet });
 
-/** Does a trap card fire against this action of its owner's opponent? */
+/** Does a trap fire against this action of its owner's opponent? */
 function trapFires(trap, act) {
   const on = trap.on;
+  if (on.move === "advance") return (act.kind === "move" && act.id === "advance") || act.step > 0;
   if (on.move) return act.kind === "move" && act.id === on.move;
-  if (on.tag) return act.kind !== "move" && act.card.kind === "strike" && act.card.tags.includes(on.tag);
+  if (on.tag) return act.kind === "strike" && act.card.tags.includes(on.tag);
   return false;
 }
 
-function applyHit(st, s, card, dmg, ev, e) {
+function applyDamage(st, s, card, dmg, e, canKO) {
   const c = st.data.config;
   const me = st[s];
   const t = other(s);
@@ -198,6 +236,7 @@ function applyHit(st, s, card, dmg, ev, e) {
   e.dmg = Math.round(dmg * 10) / 10;
   if (card.region === "head") {
     tg.head += dmg;
+    if (!canKO) return false;
     const ratio = headRatio(st, t);
     const heavy = card.heavy ? 1 : c.head.koLight;
     const pk = clamp((card.ko || 0) * (1 + ratio) + Math.max(0, ratio - c.head.koDanger) * c.head.koScale * heavy, 0, c.head.koCap);
@@ -212,7 +251,7 @@ function applyHit(st, s, card, dmg, ev, e) {
 }
 
 /**
- * Resolve one beat. ca/cb = { card: handIndex, boost?: true, hold?: handIndex } or { move: "advance"|..., hold?: handIndex }.
+ * Resolve one beat. Choice: { card, step?, boost?, hold?, trap? } or { move, hold?, trap? }.
  * Returns the event list. If a knockdown happened, st.pending is set and the caller must call settleKnockdown().
  */
 export function playBeat(st, ca, cb) {
@@ -223,69 +262,74 @@ export function playBeat(st, ca, cb) {
   const ch = { a: ca, b: cb };
   for (const s of SIDES) validate(st, s, ch[s]);
 
-  // pay, take the played card out, remember what is held
   const acts = {};
   for (const s of SIDES) {
     const me = st[s];
     const x = ch[s];
     const holdId = x.hold != null ? me.hand[x.hold].id : null;
+    const trapCard = x.trap != null ? st.data.cards[me.hand[x.trap].id] : null;
+    if (trapCard) me.stamina -= trapCard.cost;
     if (x.move) {
       me.stamina -= moveCost(st, s, x.move);
-      acts[s] = { kind: "move", id: x.move, holdId };
+      acts[s] = { kind: "move", id: x.move, step: 0, holdId, trapCard };
       me.hist[x.move]++;
     } else {
       const h = me.hand[x.card];
       const card = st.data.cards[h.id];
-      me.stamina -= card.cost + (x.boost ? c.boost.cost : 0);
-      acts[s] = { kind: card.kind, card, boost: !!x.boost, charged: h.charged, holdId };
+      const step = x.step || 0;
+      me.stamina -= card.cost + (x.boost ? c.boost.cost : 0) + stepCost(st, s, step);
+      acts[s] = { kind: card.kind, card, step, boost: !!x.boost, charged: h.charged, holdId, trapCard };
       me.hist[card.kind === "strike" ? "card" : card.kind]++;
+      if (step > 0) me.hist.stepIn++;
+      if (step < 0) me.hist.stepOut++;
       for (const tg of card.tags) me.tagHist[tg] = (me.tagHist[tg] || 0) + 1;
       if (card.kind === "strike") me.thrown++;
     }
+    acts[s].trapSet = !!trapCard;
   }
   st.lastActs = acts;
   ev.push({ t: "reveal", a: describe(acts.a), b: describe(acts.b) });
 
-  // traps set on earlier beats fire first; a fired trap can cancel the action that tripped it
+  const nextOpen = { a: 0, b: 0 };
   const cancelled = { a: false, b: false };
   const kd = {};
+  // traps set on earlier beats fire first: always a clean hit, may cancel the strike, leaves the victim open
   for (const s of SIDES) {
     const me = st[s];
     if (!me.trap) continue;
     const trap = st.data.cards[me.trap.id];
     const vs = acts[other(s)];
-    if (trapFires(trap.trap, vs)) {
-      me.trap = null;
-      const e = { t: "trap", by: s, id: trap.id, region: trap.region, cancel: !!trap.trap.cancel && vs.kind !== "move" };
-      if (e.cancel) cancelled[other(s)] = true;
-      const dmg = trap.trap.dmg * st.data.fighters[me.id].power;
-      if (applyHit(st, s, trap, dmg, ev, e)) kd[s] = other(s);
-      ev.push(e);
-    }
+    if (!trapFires(trap.trap, vs)) continue;
+    me.trap = null;
+    const e = { t: "trap", by: s, id: trap.id, region: trap.region, cancel: !!trap.trap.cancel && vs.kind === "strike" };
+    if (e.cancel) cancelled[other(s)] = true;
+    nextOpen[other(s)] = Math.max(nextOpen[other(s)], trap.trap.open || 0);
+    if (applyDamage(st, s, trap, trap.trap.dmg * st.data.fighters[me.id].power, e, true)) kd[s] = other(s);
+    ev.push(e);
   }
-  // a newly played trap goes down face-down (it works from the next beat)
+  // traps set this beat go down face-down (they work from the next beat)
   for (const s of SIDES) {
-    const a = acts[s];
-    if (a.kind === "trap") {
-      st[s].trap = { id: a.card.id, left: a.card.trap.beats };
+    const t = acts[s].trapCard;
+    if (t) {
+      st[s].trap = { id: t.id, left: t.trap.beats };
       ev.push({ t: "trapSet", by: s });
     }
   }
 
-  // movement
+  // movement: basic moves and the steps that came with cards
   const before = st.dist;
   let d = before;
-  for (const s of SIDES) if (acts[s].kind === "move") d += c.moves[acts[s].id].dist;
+  for (const s of SIDES) d += acts[s].kind === "move" ? c.moves[acts[s].id].dist : acts[s].step;
   st.dist = clamp(d, 0, 3);
   if (st.dist !== before) ev.push({ t: "move", from: before, to: st.dist });
 
-  const nextOpen = { a: 0, b: 0 };
-  // feints: if the opponent defended, they are open next beat
+  // feints: if the opponent defended (or stepped away, for feints that list "retreat"), they are open next beat
   for (const s of SIDES) {
     const a = acts[s];
     if (a.kind !== "feint") continue;
     const vs = acts[other(s)];
-    const ok = vs.kind === "move" && a.card.feint.against.includes(vs.id);
+    const against = a.card.feint.against;
+    const ok = (vs.kind === "move" && against.includes(vs.id)) || (against.includes("retreat") && vs.step < 0);
     if (ok) nextOpen[other(s)] = Math.max(nextOpen[other(s)], a.card.feint.open);
     ev.push({ t: "feint", by: s, id: a.card.id, ok });
   }
@@ -296,27 +340,30 @@ export function playBeat(st, ca, cb) {
     const a = acts[s];
     if (a.kind !== "strike") continue;
     if (cancelled[s]) {
-      ev.push({ t: "attack", by: s, id: a.card.id, region: a.card.region, hit: false, whiff: "trapped", p: 0, why: [] });
-      res[s] = { hit: false, trapped: true };
+      ev.push({ t: "attack", by: s, id: a.card.id, region: a.card.region, hit: false, whiff: "trapped", land: 0, clean: 0, why: [] });
+      res[s] = { trapped: true };
       continue;
     }
-    const oppMove = acts[other(s)].kind === "move" ? acts[other(s)].id : null;
-    const hc = hitChance(st, s, a.card, a.boost, oppMove);
-    const roll = rand(st);
-    const inRange = a.card.range.includes(st.dist);
-    res[s] = { card: a.card, boost: a.boost, charged: a.charged, p: hc.p, why: hc.why, inRange, hit: inRange && roll < hc.p, oppMove, mul: dmgMul(st, s, a.card, a.charged, a.boost) };
+    const vs = acts[other(s)];
+    // each fighter steps into his own strike: the opponent's card-step does not carry him out of range,
+    // only a full basic move (retreat / advance) does
+    const at = clamp(before + a.step + (vs.kind === "move" ? c.moves[vs.id].dist : 0), 0, 3);
+    const o = odds(st, s, a.card, { boost: a.boost, opp: vs.kind === "move" ? { move: vs.id } : { step: vs.step }, d: at });
+    const inRange = a.card.range.includes(at);
+    const landed = inRange && rand(st) < o.land;
+    const clean = landed && rand(st) < o.clean;
+    res[s] = { card: a.card, boost: a.boost, charged: a.charged, o, inRange, hit: landed, clean, guardMv: vs.kind === "move" ? c.moves[vs.id] : null, mul: dmgMul(st, s, a.card, a.charged, a.boost) };
   }
   let push = 0;
   for (const s of SIDES) {
     const r = res[s];
     if (!r || r.trapped) continue;
-    const e = { t: "attack", by: s, id: r.card.id, boost: r.boost, charged: r.charged, p: r.p, region: r.card.region, hit: r.hit, whiff: r.hit ? null : r.inRange ? "miss" : "range", why: r.why };
+    const e = { t: "attack", by: s, id: r.card.id, boost: r.boost, charged: r.charged, land: r.o.land, clean: r.o.clean, region: r.card.region, hit: r.hit, quality: r.hit ? (r.clean ? "clean" : "graze") : null, whiff: r.hit ? null : r.inRange ? "miss" : "range", why: r.o.why };
     if (r.hit) {
-      const guardMv = r.oppMove ? c.moves[r.oppMove] : null;
-      const gm = guardMv?.dmgMul ? guardMv.dmgMul[r.card.region] : 1;
-      const dmg = r.card.dmg * st.data.fighters[st[s].id].power * r.mul * gm;
-      if (applyHit(st, s, r.card, dmg, ev, e)) kd[s] = other(s);
-      if (r.card.push) push += r.card.push;
+      const gm = r.guardMv?.dmgMul ? r.guardMv.dmgMul[r.card.region] : 1;
+      const dmg = r.card.dmg * st.data.fighters[st[s].id].power * r.mul * gm * (r.clean ? 1 : c.hit.grazeMul);
+      if (applyDamage(st, s, r.card, dmg, e, r.clean)) kd[s] = other(s);
+      if (r.clean && r.card.push) push += r.card.push;
     } else if (r.card.heavy) {
       nextOpen[s] = 1;
       e.openSelf = true;
@@ -329,7 +376,7 @@ export function playBeat(st, ca, cb) {
     if (st.dist !== from) ev.push({ t: "move", from, to: st.dist, push: true });
   }
   for (const s of SIDES) {
-    st[s].landedLast = !!res[s]?.hit;
+    st[s].landedLast = !!res[s]?.clean;
     st[s].staminaMax = Math.max(c.stamina.min, c.stamina.max - st[s].body * c.body.maxLoss);
     st[s].stamina = Math.min(st[s].stamina, st[s].staminaMax);
   }
@@ -365,8 +412,7 @@ export function settleKnockdown(st, chase) {
     return ev;
   }
   if (chase) {
-    const pay = Math.min(atk.stamina, c.chase.cost);
-    atk.stamina -= pay;
+    atk.stamina -= Math.min(atk.stamina, c.chase.cost);
     const tired = dn.stamina / dn.staminaMax < c.stamina.low ? c.chase.tiredBonus : 0;
     const pf = chaseOdds(st, p.down) + tired;
     const win = rand(st) < pf;
@@ -399,14 +445,12 @@ function endBeat(st) {
     const mvRegen = a?.kind === "move" ? c.moves[a.id].regen || 0 : 0;
     me.stamina = Math.min(me.staminaMax, me.stamina + c.stamina.regen * f.cardio + mvRegen);
     me.open = st.nextOpen[s];
-    if (me.trap && --me.trap.left <= 0) me.trap = null;
-    // throw away everything except the held card; the held card is charged
+    if (me.trap && !a?.trapSet && --me.trap.left <= 0) me.trap = null;
     const kept = [];
     if (a?.holdId) {
       const h = me.hand.find((x) => x.id === a.holdId);
       if (h) kept.push({ id: h.id, charged: true });
     }
-    // the played card is gone even if it had the same id as the held one
     me.hand = kept;
     refill(st, s);
   }
@@ -473,10 +517,8 @@ function finish(st, winner, method, cards = null) {
   st.events.push({ t: "end", ...st.over });
 }
 
-/** Seconds left on the round clock (display only). */
 export const clock = (st) => (st.data.config.beatsPerRound - st.beat) * st.data.config.secondsPerBeat;
 
-/** Cheap self-check used by tests and the simulation. */
 export function checkInvariants(st) {
   const c = st.data.config;
   for (const s of SIDES) {
