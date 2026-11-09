@@ -134,8 +134,9 @@
   "steady": { "label": "穩打", "text": "沒有特別偏向，照手牌打" },
   "probe": { "label": "試探", "text": "輸出低、體力回得很快、多抽假動作；回合結束多看清他一個真實弱點", "dmgMul": 0.8, "regenMul": 1.35, "scout": true, "draw": [{ "when": { "kind": "feint" }, "mul": 1.8 }] },
   "pressure": { "label": "壓迫", "text": "近距離的牌變多，他每次後退多花 1 體力；你的體力回得慢", "regenMul": 0.7, "foeRetreatCost": 1, "draw": [{ "when": { "near": true }, "mul": 1.5 }] },
-  "counter": { "label": "守反", "text": "預判、迎擊牌變多，架擋多回 1 體力，受到的傷害 -5%；自己出手較輕", "dmgMul": 0.9, "takenMul": 0.95, "guardRegen": 1, "draw": [{ "when": { "kind": "trap" }, "mul": 1.5 }, { "when": { "counter": true }, "mul": 1.4 }] },
-  "burst": { "label": "爆發", "text": "重拳多、打實更重；體力回得很慢，累了就會崩", "dmgMul": 1.25, "regenMul": 0.5, "draw": [{ "when": { "heavy": true }, "mul": 1.8 }] }
+  "counter": { "label": "守反", "text": "預判、迎擊牌變多，架擋多回 1 體力，受到的傷害 -5%；自己出手較輕", "dmgMul": 0.9, "takenMul": 0.95, "guardRegen": 1, "draw": [{ "when": { "kind": "trap" }, "mul": 1.5 }, { "when": { "counter": true }, "mul": 1.4 }, { "when": { "kind": "sprawl" }, "mul": 1.8 }] },
+  "burst": { "label": "爆發", "text": "重拳多、打實更重；體力回得很慢，累了就會崩", "dmgMul": 1.25, "regenMul": 0.5, "draw": [{ "when": { "heavy": true }, "mul": 1.8 }] },
+  "grapple": { "label": "抓摔", "text": "抱腿、抱摔牌變多，摔倒成功率 +8%；站立出手較輕", "dmgMul": 0.9, "tdBonus": 0.08, "draw": [{ "when": { "kind": "takedown" }, "mul": 2.4 }, { "when": { "kind": "sprawl" }, "mul": 0.5 }] }
  },
  "target": {
   "_doc": "主攻部位加成：drawMul 該部位的牌抽得多；clean 打實率加成；dmgMul 傷害倍率（身、腿的傷害權重低，所以倍率較大）。加成大小看對手那個部位已經累積多少傷：scale = base + perRatio × 傷勢比例（上限 cap）。完好的部位只有小加成，已經受傷的部位才是真正的弱點（對方腳弱就打腳）。",
@@ -153,5 +154,76 @@
   "doctorBody": 0.45,
   "feelNoise": 0.35,
   "feelEdge": 0.18
+ },
+ "takedown": {
+  "_doc": "站立進地面（0.5）。抱腿／抱摔牌的成功率＝牌的 hit ＋自己的 wrestle －對手的 tdDef ＋計畫加成；對手出頭部拳腳時更容易鑽進去（vsHeadStrike），對手的牌帶「破摔」（counter:shoot，如膝擊、上勾拳）時變難（breakPenalty），對手側移／架擋／後退也影響（vsMove）。壓趴牌擋下抱腿的機率看自己的 tdDef 和對手的 wrestle；擋下就換你壓在他上面（ground.sprawlPos）。失敗的人下一手露破綻。",
+  "min": 0.05,
+  "max": 0.85,
+  "tired": 0.1,
+  "vsHeadStrike": 0.1,
+  "breakPenalty": 0.2,
+  "vsMove": { "guard": -0.1, "sidestep": -0.15, "retreat": -0.1, "advance": 0.05 },
+  "failOpen": 1,
+  "score": 4,
+  "stuffShare": 0.5
+ },
+ "ground": {
+  "_doc": "地面（0.5）。位置三階：0 護腿（上位在下位的腿裡）→ 1 壓制 → 2 背後。每手雙方各出一張自己角色（top／bottom）的地面牌或基本動作，同時翻開。成功率＝牌的 hit ＋自己的能力 skill.me －對手的能力 skill.foe ＋ vs（對手這手做了什麼的修正）＋位置修正。同時成功的兩個位置變化互相抵消（僵持）。鎖技成功就進降伏小遊戲（sub）。幾手沒進展，裁判叫起。",
+  "min": 0.05,
+  "max": 0.9,
+  "tired": 0.1,
+  "openBonus": 0.15,
+  "posNames": ["護腿", "壓制", "背後"],
+  "posDmg": [0.75, 1.0, 0.9],
+  "control": [1.5, 2.5, 3.5],
+  "stallMax": 4,
+  "standDist": 1,
+  "sprawlPos": 1,
+  "sweepPos": 0,
+  "sweepOpen": 1,
+  "koMul": 1.0,
+  "subPos": [-0.05, 0, 0.1],
+  "getupPos": [0, -0.1, -0.22],
+  "skill": {
+   "pound": { "me": "top", "foe": "bottom" },
+   "advance": { "me": "top", "foe": "escape" },
+   "sub": { "me": "sub", "foe": "escape" },
+   "sweep": { "me": "bottom", "foe": "top" },
+   "escape": { "me": "escape", "foe": "top" },
+   "getup": { "me": "escape", "foe": "top" }
+  },
+  "moves": {
+   "ride": { "label": "壓住", "role": "top", "act": "ride", "cost": 0, "regen": 0.5, "drain": 1, "text": "穩住回氣，他每手流失體力、很難起身" },
+   "release": { "label": "放他起來", "role": "top", "act": "release", "cost": 0, "regen": 0, "text": "回到站立" },
+   "defend": { "label": "護住", "role": "bottom", "act": "defend", "cost": 0, "regen": 1, "dmgMul": 0.5, "text": "擋住拳肘、回體力" },
+   "getup": { "label": "起身", "role": "bottom", "act": "getup", "cost": 1, "hit": 0.34, "regen": 0, "text": "想站起來，失敗被壓回去" }
+  },
+  "vs": {
+   "top": {
+    "pound": { "defend": -0.15, "escape": -0.05, "sweep": -0.05, "getup": 0.1, "sub": -0.05 },
+    "advance": { "defend": -0.03, "escape": -0.2, "sweep": -0.2, "getup": -0.1, "sub": -0.05 },
+    "sub": { "defend": -0.08, "escape": -0.15, "sweep": -0.1, "getup": -0.05, "sub": -0.1 }
+   },
+   "bottom": {
+    "sweep": { "ride": -0.3, "advance": -0.15, "sub": -0.05 },
+    "escape": { "ride": -0.3, "pound": 0.05, "advance": -0.15, "sub": -0.1 },
+    "getup": { "ride": -0.3, "pound": -0.05, "advance": -0.15, "sub": -0.15 },
+    "sub": { "ride": -0.2, "pound": 0.05, "advance": -0.1, "sub": -0.1 }
+   }
+  },
+  "sub": {
+   "_doc": "降伏小遊戲：最多 rounds 輪，每輪雙方各一次出手時機 q（0~1）。meter ＝ start ＋ edgeWeight×(鎖的人 sub －守的人 escape) ＋牌的 power；每輪 meter += qteWeight×(攻 q －守 q) ＋ drift。meter ≥ tap 拍地板，≤ escape 或輪數用完就脫出。電腦與自動用 aiQ ± aiNoise 當 q。",
+   "rounds": 3,
+   "start": 0,
+   "edgeWeight": 1.0,
+   "tap": 1.1,
+   "escape": -0.9,
+   "qteWeight": 1.6,
+   "drift": 0.1,
+   "aiQ": 0.5,
+   "aiNoise": 0.5,
+   "failCostAtk": 1,
+   "failCostDef": 1
+  }
  }
 }

@@ -1,6 +1,6 @@
 // Browser page for the card bout (bout.html): drawing and input. Rules are engine.js, the opponent is ai.js.
 // Layout follows mock.html (844x390). Fighters are placeholder shapes until sprites are wired in.
-import { createBout, playBeat, settleKnockdown, actions, odds, comboLive, heldCard, danger, headRatio, limping, clock, prepare, chaseOdds, stepOk, setPlan, doCorner, cornerOptions, injuries, PLANS, TARGETS } from "./engine.js";
+import { createBout, playBeat, settleKnockdown, actions, odds, comboLive, heldCard, danger, headRatio, limping, clock, prepare, chaseOdds, stepOk, setPlan, doCorner, cornerOptions, injuries, PLANS, TARGETS, tdOdds, sprawlOdds, groundCardOdds, groundRole, subInfo, subRound, autoQuality } from "./engine.js";
 import { createAI } from "./ai.js";
 
 const load = async (n) => (await fetch(`rules/bout/${n}.json`)).json();
@@ -9,7 +9,11 @@ const cfg = data.config;
 const params = new URLSearchParams(location.search);
 const IDS = Object.keys(data.fighters).filter((k) => !k.startsWith("_"));
 const ME = IDS.includes(params.get("me")) ? params.get("me") : "holloway";
-const FOE = IDS.find((k) => k !== ME);
+const pickFoe = (want) => (IDS.includes(want) && want !== ME ? want : IDS.includes("makhachev") && ME !== "makhachev" ? "makhachev" : IDS.find((k) => k !== ME));
+let FOE = pickFoe(params.get("foe"));
+const GACT = { pound: "重擊", advance: "升位", sub: "🔒 鎖技", sweep: "反轉", escape: "脫逃" };
+const POS = cfg.ground.posNames;
+const gName = (id) => data.cards[id]?.name || cfg.ground.moves[id]?.label || id;
 const REGION = { head: "頭", body: "身", leg: "腿" };
 const DN = cfg.dist.names;
 const $ = (s) => document.querySelector(s);
@@ -44,7 +48,8 @@ fit();
 // ---------- state ----------
 let st, ai, busy = false, sel = null, holdIdx = null, trapIdx = null, step = 0, holdFired = false;
 function resetChoice() { sel = null; holdIdx = null; trapIdx = null; step = 0; }
-function newBout() {
+function newBout(foe) {
+  if (typeof foe === "string") FOE = pickFoe(foe);
   const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
   st = createBout(data, ME, FOE, seed);
   let a = (seed * 31 + 7) >>> 0;
@@ -55,7 +60,7 @@ function newBout() {
   $("#ov").hidden = true;
   render();
   let seen = false;
-  try { seen = localStorage.getItem("bout.help4") === "1"; } catch {}
+  try { seen = localStorage.getItem("bout.help5") === "1"; } catch {}
   if (!seen) showHelp(() => beginRound(null));
   else beginRound(null);
 }
@@ -68,7 +73,25 @@ const leftX = (d) => CENTER - GAP[d] / 2 - W;
 const rightX = (d) => CENTER + GAP[d] / 2;
 /** Where the player would stand after the planned step (the opponent stays put). */
 const previewLeft = () => leftX(st.dist) + (GAP[st.dist] - GAP[Math.max(0, Math.min(3, st.dist + step))]);
+function placeGround() {
+  const top = st.ground.top;
+  const base = CENTER - 76;
+  const shift = [18, 40, -12][st.ground.pos];
+  for (const [el, s] of [[$("#fp"), "a"], [$("#fo"), "b"]]) {
+    el.classList.add("lie");
+    el.classList.remove("ghosting");
+    el.style.left = (s === top ? base + shift : base) + "px";
+    el.style.bottom = s === top ? "42px" : "";
+  }
+}
 function placeFighters(preview = false) {
+  const gl = st.mode === "ground";
+  $("#stage").classList.toggle("ground", gl);
+  if (gl) return placeGround();
+  for (const id of ["#fp", "#fo"]) {
+    $(id).classList.remove("lie");
+    $(id).style.bottom = "";
+  }
   $("#fp").style.left = (preview ? previewLeft() : leftX(st.dist)) + "px";
   $("#fo").style.left = rightX(st.dist) + "px";
   $("#fp").classList.toggle("ghosting", preview && step !== 0);
@@ -79,15 +102,26 @@ const cardOf = (id) => data.cards[id];
 const rangeText = (c) => (c.range.length === 4 ? "任何距離" : c.range.map((d) => DN[d]).join("／"));
 const pct = (x) => Math.round(x * 100);
 function keyword(c, live) {
+  if (c.kind === "takedown") return '<span class="kw td">🤼 抓摔</span>';
+  if (c.kind === "sprawl") return '<span class="kw td">🛡 反摔</span>';
+  if (c.kind === "ground") return `<span class="kw ${c.act === "sub" ? "sub" : "td"}">${GACT[c.act]}</span>`;
   if (c.kind === "trap") return '<span class="kw trap">👁 預判</span>';
   if (c.kind === "feint") return '<span class="kw feint">🎭 假動作</span>';
   if (c.ko >= 0.1 || (c.heavy && c.region === "head" && danger(st, "b"))) return '<span class="kw ko">KO</span>';
   if (c.combo) return `<span class="kw combo ${live ? "live" : ""}">⛓ 連段${live ? "!" : ""}</span>`;
   if (c.counter) return '<span class="kw counter">迎擊</span>';
+  if (c.breaks) return '<span class="kw push">破摔</span>';
   if (c.push) return '<span class="kw push">推開</span>';
   return "";
 }
 function describeCard(c, charged) {
+  if (c.kind === "takedown") return `<em>${c.name}</em> · 🤼 抓摔 · 可用：${rangeText(c)} · 成功 ${pct(tdOdds(st, "a", c).p)}% · 成功進地面、你在上位；失敗露破綻`;
+  if (c.kind === "sprawl") return `<em>${c.name}</em> · 🛡 反摔 · 他抱腿時擋下 ${pct(sprawlOdds(st, "a", c))}%、你壓到上面；他沒抱腿就白花一手`;
+  if (c.kind === "ground") {
+    const o = groundCardOdds(st, "a", c.id);
+    const what = { pound: "打頭", advance: c.to === 1 ? "升到壓制" : "升到背後", sweep: "翻到他上面", escape: "往下脫出一階", sub: "鎖上就進入降伏小遊戲" }[c.act];
+    return `<em>${c.name}</em> · ${what} · 成功 ${pct(o.p)}% · 要位置：${c.pos.map((p) => POS[p]).join("／")}${c.act === "pound" ? " · 護住時只有一半傷害" : ""}${charged ? " · 🔥 蓄力" : ""}`;
+  }
   if (c.kind === "trap") return `<em>${c.name}</em> · 👁 預判：點「埋」蓋起來（不佔這一手），等 ${c.trap.beats} 手：${c.text}，一定打實${c.trap.cancel ? "、擋掉他那一招" : ""}，他還會露破綻`;
   if (c.kind === "feint") return `<em>${c.name}</em> · 🎭 假動作：${c.text}。他若出手，你會白挨一下`;
   const d = Math.max(0, Math.min(3, st.dist + step));
@@ -95,6 +129,7 @@ function describeCard(c, charged) {
   const bits = [`<em>${c.name}</em>`, `打${REGION[c.region]}`, `可打到：${rangeText(c)}`, `碰到 ${pct(o.land)}% · 打實 ${pct(o.clean)}%`];
   if (c.combo) bits.push(comboLive(st, "a", c) ? "⛓ 連段發動" : "⛓ 連段：上一手打實時更強");
   if (c.counter) bits.push("他往前時打實 +30%");
+  if (c.breaks) bits.push("他抱腿時打實 +30%、摔不進來");
   if (c.push) bits.push("打實把他推開");
   if (c.heavy) bits.push("打空露破綻");
   if (charged) bits.push("🔥 蓄力");
@@ -127,6 +162,11 @@ function renderBoards() {
   const me = st.a, op = st.b;
   let p = "", o = "";
   if (st.plan.a.plan !== "steady" || st.plan.a.target) p += mk("plan", `📋 ${cfg.plans[st.plan.a.plan].label}${st.plan.a.target ? "·主攻" + cfg.target[st.plan.a.target].label : ""}`);
+  if (st.mode === "ground") {
+    p += mk("grd", st.ground.top === "a" ? "⬆ 你在上位" : "⬇ 你在下位");
+    o += mk("grd", st.ground.top === "b" ? "⬆ 他在上位" : "⬇ 他在下位");
+    if (st.ground.stall >= 2) p += mk("open", `⏱ ${st.ground.stall} 手沒進展，裁判快叫起`);
+  }
   if (me.trap) p += mk("trap", `👁 你埋了：${cardOf(me.trap.id).name}（剩 ${me.trap.left} 手）`);
   const mh = heldCard(st, "a");
   if (mh) p += mk("fire", `🔥 你在蓄力：${cardOf(mh).name}`);
@@ -143,13 +183,13 @@ function renderBoards() {
 function renderSteps() {
   const opts = [[-1, "◀ 退一步"], [0, "原地"], [1, "進一步 ▶"]];
   $("#steps").innerHTML = '<span class="sl">步法</span>' + opts.map(([v, t]) => `<span class="sb ${step === v ? "on" : ""} ${stepOk(st, "a", v) ? "" : "off"}" data-step="${v}">${t}</span>`).join("");
-  $("#steps").hidden = busy;
+  $("#steps").hidden = busy || st.mode === "ground";
 }
 function renderHud() {
   renderSide("a", "p");
   renderSide("b", "o");
   const sec = clock(st);
-  $("#clock").innerHTML = st.over ? "結束" : `R${st.round + 1} · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}<small>第 ${st.beat + 1} 手 / ${cfg.beatsPerRound} · 距離「${DN[st.dist]}」</small>`;
+  $("#clock").innerHTML = st.over ? "結束" : `R${st.round + 1} · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}<small>第 ${st.beat + 1} 手 / ${cfg.beatsPerRound} · ${st.mode === "ground" ? `地面 · ${st.ground.top === "a" ? "你在上位" : "你在下位"} · ${POS[st.ground.pos]}` : `距離「${DN[st.dist]}」`}</small>`;
   placeFighters(!busy);
   renderBoards();
 }
@@ -173,9 +213,20 @@ function renderHand() {
         else if (o.why.includes("range")) why = '<span class="why">↑你的距離</span>';
         else if (o.why.includes("tired")) why = '<span class="why dn">↓體力</span>';
         else if ((f.skill?.[a.id] || 0) >= 0.04) why = '<span class="why">↑擅長</span>';
+      } else if (c.kind === "takedown") {
+        const o = tdOdds(st, "a", c);
+        mid = `<div class="pct">${pct(o.p)}<small>%</small></div><div class="cl">摔倒成功</div>`;
+        if (o.why.includes("tired")) why = '<span class="why dn">↓體力</span>';
+      } else if (c.kind === "sprawl") {
+        mid = `<div class="pct">${pct(sprawlOdds(st, "a", c))}<small>%</small></div><div class="cl">他抱腿時擋下</div>`;
+      } else if (c.kind === "ground") {
+        const o = groundCardOdds(st, "a", a.id);
+        mid = `<div class="pct">${pct(o.p)}<small>%</small></div><div class="cl">${c.text}</div>`;
+        if (o.why.includes("open")) why = '<span class="why">↑破綻</span>';
+        else if (o.why.includes("tired")) why = '<span class="why dn">↓體力</span>';
       } else mid = `<div class="big">${c.kind === "trap" ? "👁" : "🎭"}</div><div class="tx">${c.text}</div>`;
-      const note = a.ok ? "" : `<div class="note">${a.why === "range" ? `需要「${rangeText(c)}」` : a.why === "trap" ? "已經埋了一張" : "體力不足"}</div>`;
-      const cls = [c.kind === "strike" ? c.region : c.kind, c.rarity === "sig" ? "sig" : "", a.ok ? "" : "off", sel === a.idx ? "sel" : "", live ? "combolive" : "", a.charged ? "charged" : "", holdIdx === a.idx ? "held" : "", trapIdx === a.idx ? "trapping" : ""].join(" ");
+      const note = a.ok ? "" : `<div class="note">${a.why === "pos" ? "位置不對" : a.why === "range" ? `需要「${rangeText(c)}」` : a.why === "trap" ? "已經埋了一張" : "體力不足"}</div>`;
+      const cls = [c.kind === "strike" ? c.region : c.kind === "takedown" || c.kind === "sprawl" ? "grap" : c.kind === "ground" ? (c.act === "sub" ? "gsub" : c.act === "pound" ? "head" : "grap") : c.kind, c.rarity === "sig" ? "sig" : "", a.ok ? "" : "off", sel === a.idx ? "sel" : "", live ? "combolive" : "", a.charged ? "charged" : "", holdIdx === a.idx ? "held" : "", trapIdx === a.idx ? "trapping" : ""].join(" ");
       const trapBtn = c.kind === "trap" ? `<span class="trapbtn ${trapIdx === a.idx ? "on" : ""} ${a.ok ? "" : "off"}" data-trap="${a.idx}">${trapIdx === a.idx ? "已埋" : "埋"}</span>` : "";
       return `<div class="card ${cls}" data-idx="${a.idx}" data-ok="${a.ok ? 1 : 0}" data-side="${a.side ? 1 : 0}">
         ${a.charged ? '<span class="chg">🔥 蓄力</span>' : ""}${keyword(c, live)}
@@ -184,10 +235,19 @@ function renderHand() {
     })
     .join("");
   const sub = { advance: "整手往前", retreat: "整手後退（躲開）", sidestep: "閃開攻擊", guard: "擋住，回一點體力" };
+  const gl = st.mode === "ground";
   $("#acts").innerHTML = actions(st, "a", 0)
     .filter((a) => a.kind === "move")
-    .map((a) => `<div class="act ${a.ok ? "" : "off"}" data-move="${a.id}" data-ok="${a.ok ? 1 : 0}">${cfg.moves[a.id].label}<small>${a.cost ? `⚡${a.cost} ` : ""}${sub[a.id] || ""}</small></div>`)
+    .map((a) => {
+      if (gl) {
+        const mv = cfg.ground.moves[a.id];
+        const o = mv.hit != null ? groundCardOdds(st, "a", a.id) : null;
+        return `<div class="act ${a.ok ? "" : "off"}" data-move="${a.id}" data-ok="${a.ok ? 1 : 0}">${mv.label}${o ? ` ${pct(o.p)}%` : ""}<small>${a.cost ? `⚡${a.cost} ` : ""}${mv.text}</small></div>`;
+      }
+      return `<div class="act ${a.ok ? "" : "off"}" data-move="${a.id}" data-ok="${a.ok ? 1 : 0}">${cfg.moves[a.id].label}<small>${a.cost ? `⚡${a.cost} ` : ""}${sub[a.id] || ""}</small></div>`;
+    })
     .join("");
+  $("#acts").classList.toggle("two", gl);
   renderReach();
   renderSteps();
 }
@@ -202,7 +262,16 @@ function setCap(html, dim = false) {
   c.className = dim ? "dim" : "";
 }
 /** The single most useful thing to know right now. */
+function groundTip() {
+  const top = st.ground.top === "a";
+  const p = st.ground.pos;
+  const open = st.b.open ? "他露出破綻，這手更容易成功。" : "";
+  const stall = st.ground.stall >= 2 ? "⏱ 幾手沒進展，裁判快叫起。" : "";
+  if (top) return `<span class="tipicon">⬆</span>${open}${stall}${["護腿裡：先「過腿」到壓制，砸拳只有 75% 力道", "壓制中：砸拳肘擊、鎖手臂，或抓背到背後", "背後：裸絞最容易鎖上，也可以繼續砸拳"][p]}`;
+  return `<span class="tipicon">⬇</span>${open}${stall}${["你在護腿：掃翻、三角鎖、斷頭台，或起身；護住能減半傷害", "被壓制：護住保命，或脫逃一階；起身很難", "被抓背：護住防裸絞，脫逃回壓制"][p]}`;
+}
 function tip() {
+  if (st.mode === "ground") return groundTip();
   const me = st.a, op = st.b;
   const playable = (s) => actions(st, "a", s).some((a) => a.kind === "card" && a.ok && !a.side);
   const oh = heldCard(st, "b");
@@ -216,7 +285,7 @@ function tip() {
 }
 function renderReach() {
   const r = $("#reach");
-  if (sel == null || busy) { r.hidden = true; return; }
+  if (sel == null || busy || st.mode === "ground") { r.hidden = true; return; }
   const h = st.a.hand[sel];
   if (!h) { r.hidden = true; return; }
   const c = cardOf(h.id);
@@ -317,21 +386,45 @@ $("#help").addEventListener("click", () => !busy && showHelp());
 const nameOf = (s) => (s === "a" ? "你" : st[s].short);
 const stepWord = (d) => (d.step > 0 ? "進一步＋" : d.step < 0 ? "退一步＋" : "");
 function descLabel(d, hidden) {
-  if (d.kind === "move") return cfg.moves[d.id].label;
+  if (d.kind === "move") return (cfg.moves[d.id] || cfg.ground.moves[d.id]).label;
   if (hidden) return "蓋了一張牌";
   return stepWord(d) + cardOf(d.id).name + (d.boost ? "（加注）" : "");
 }
+function revealGroundHtml(ev, r) {
+  const one = (s, who) => {
+    const d = r[s];
+    const c = d.kind === "ground" ? cardOf(d.id) : null;
+    const color = !c ? "#556" : c.act === "sub" ? "var(--gsub)" : c.act === "pound" ? "var(--head)" : "var(--grap)";
+    const atk = ev.find((e) => e.t === "gattack" && e.by === s);
+    const tr = ev.find((e) => e.t === "gtry" && e.by === s);
+    let big = "—", res = '<div class="res miss"> </div>';
+    if (atk) { big = `${pct(atk.p)}%`; res = `<div class="res ${atk.hit ? "hit" : "miss"}">${atk.hit ? "打中" : "沒打到"}</div>`; }
+    else if (tr && tr.p != null) { big = `${pct(tr.p)}%`; res = `<div class="res ${tr.ok ? "hit" : "miss"}">${tr.ok ? "成功" : "失敗"}</div>`; }
+    return `<div class="rc" style="--c:${color}"><small>${who} · ${d.role === "top" ? "上位" : "下位"}</small><b>${gName(d.id)}</b><div class="pct" ${big === "—" ? 'style="font-size:18px;margin-top:8px"' : ""}>${big}</div>${res}</div>`;
+  };
+  return one("a", "你") + '<div class="vs">VS</div>' + one("b", st.b.short);
+}
 function revealHtml(ev) {
   const r = ev.find((e) => e.t === "reveal");
+  if (r.ground) return revealGroundHtml(ev, r);
   const atk = (s) => ev.find((e) => e.t === "attack" && e.by === s);
   const fe = (s) => ev.find((e) => e.t === "feint" && e.by === s);
   const one = (s, who) => {
     const d = r[s];
     const a = atk(s);
     const c = d.kind !== "move" ? cardOf(d.id) : null;
-    const color = !c ? "#556" : c.kind === "feint" ? "var(--feint)" : `var(--${c.region})`;
+    const color = !c ? "#556" : c.kind === "feint" ? "var(--feint)" : c.region ? `var(--${c.region})` : "var(--grap)";
     let big = "—", res = '<div class="res miss"> </div>';
-    if (a) {
+    const td = ev.find((e) => e.t === "takedown" && e.by === s);
+    const spr = c?.kind === "sprawl" ? ev.find((e) => e.t === "takedown" && e.by !== s) : null;
+    if (td) {
+      big = `${pct(td.p)}%`;
+      res = `<div class="res ${td.ok ? "hit" : "miss"}">${td.ok ? "摔倒了！" : td.whiff === "sprawled" ? "被壓趴" : td.whiff === "range" ? "距離不夠" : "被擋住"}</div>`;
+    } else if (spr) {
+      big = `${pct(spr.sprawlP)}%`;
+      res = `<div class="res ${spr.whiff === "sprawled" ? "hit" : "miss"}">${spr.whiff === "sprawled" ? "擋下了！" : "沒擋下"}</div>`;
+    } else if (c?.kind === "sprawl") res = '<div class="res miss">他沒抱腿</div>';
+    else if (a) {
       big = a.whiff === "trapped" ? "—" : `${pct(a.land)}%`;
       res = a.hit ? `<div class="res hit">${a.quality === "clean" ? "打實！" : "擦到"}</div>` : `<div class="res miss">${a.whiff === "range" ? "距離不夠" : a.whiff === "trapped" ? "被預判" : "落空"}</div>`;
     } else if (fe(s)) res = `<div class="res ${fe(s).ok ? "hit" : "miss"}">${fe(s).ok ? "騙到了" : "沒騙到"}</div>`;
@@ -413,6 +506,66 @@ async function animate(ev) {
         setCap(`${nameOf(e.by)} <em>${name}</em> ${e.whiff === "range" ? "距離不夠，落空" : "被躲開"}${e.openSelf ? " · 露出破綻" : ""}`);
       }
       await sleep(780);
+    } else if (e.t === "takedown") {
+      const t = e.by === "a" ? "b" : "a";
+      const name = cardOf(e.id).name;
+      await lunge(e.by);
+      if (e.ok) {
+        banner("🤼 摔倒了！", "var(--grap)");
+        shake(t);
+        setCap(`${nameOf(e.by)}的<em>${name}</em>成功，${e.by === "a" ? st.b.short : "你"}被摔倒在地`);
+      } else {
+        setCap(e.whiff === "sprawled" ? `${nameOf(t)}壓趴擋下了<em>${name}</em>` : e.whiff === "range" ? `${nameOf(e.by)}的<em>${name}</em>距離不夠` : e.whiff === "ko" ? "倒地了，抱腿取消" : `${nameOf(e.by)}的<em>${name}</em>被擋住了，露出破綻`);
+      }
+      await sleep(900);
+    } else if (e.t === "sprawl") {
+      setCap(`${nameOf(e.by)}壓趴，但對手沒有抱腿——白花一手`);
+      await sleep(600);
+    } else if (e.t === "tdClash") {
+      banner("互相纏鬥", "#fff");
+      setCap("兩個人同時抱腿，纏在一起沒摔成");
+      renderHud();
+      await sleep(900);
+    } else if (e.t === "ground") {
+      renderHud();
+      banner(e.how === "sprawl" ? "🛡 壓趴！" : "進入地面", "var(--grap)");
+      setCap(`${nameOf(e.top)}壓在上位（${POS[e.pos]}）${e.how === "sprawl" ? "：抱腿被壓趴反制" : ""}`);
+      await sleep(900);
+    } else if (e.t === "gattack") {
+      const t = e.by === "a" ? "b" : "a";
+      const name = cardOf(e.id).name;
+      if (e.hit) {
+        spark(t); shake(t); floatText(t, `-${e.dmg}`);
+        setCap(`${nameOf(e.by)} <em>${name}</em> 打中${e.by === "a" ? "他" : "你"}的頭`);
+      } else setCap(`${nameOf(e.by)} <em>${name}</em> 沒打到`);
+      await sleep(750);
+    } else if (e.t === "gtry") {
+      if (e.act === "release") setCap(`${nameOf(e.by)}放對手起來`);
+      else setCap(`${nameOf(e.by)} <em>${gName(e.id)}</em> ${e.ok ? "成功" : "失敗"}`);
+      await sleep(e.ok ? 500 : 600);
+    } else if (e.t === "gpos") {
+      renderHud();
+      banner(e.how === "advance" ? `⬆ ${POS[e.to]}` : `⬇ 脫出到${POS[e.to]}`, "var(--grap)");
+      setCap(`位置：${POS[e.from]} → ${POS[e.to]}`);
+      await sleep(900);
+    } else if (e.t === "swap") {
+      renderHud();
+      banner("🔄 掃翻！", "var(--grap)");
+      setCap(`${nameOf(e.top)}翻到了上位，對手露出破綻`);
+      await sleep(1000);
+    } else if (e.t === "scramble") {
+      banner("僵持", "#fff");
+      setCap("兩邊同時得手，互相抵消");
+      await sleep(800);
+    } else if (e.t === "subLock") {
+      banner("🔒 鎖上了！", "var(--gsub)");
+      setCap(`${nameOf(e.by)}鎖上了<em>${cardOf(e.id).name}</em>${e.by === "a" ? "" : "！掙脫它"}`);
+      await sleep(900);
+    } else if (e.t === "standup") {
+      renderHud();
+      banner(e.how === "ref" ? "裁判叫起" : e.how === "getup" ? "站起來了！" : "放人起來", "#fff");
+      setCap(e.how === "ref" ? "幾手沒進展，裁判把兩人叫起來重新開始" : e.how === "getup" ? `${nameOf(e.by)}成功站起來` : `${nameOf(e.by)}放對手起來`);
+      await sleep(900);
     } else if (e.t === "clash") {
       banner("互中！", "#fff");
       setCap("兩人同時打實，都晃了一下！");
@@ -468,12 +621,81 @@ async function afterBeat(ev) {
     $("#fp").classList.remove("down");
     $("#fo").classList.remove("down");
   }
+  if (st.subPending) events = events.concat(await runSub());
   showReveal(false);
   busy = false;
   render();
   if (st.over) { busy = true; return showEnd(); }
   const re = events.find((e) => e.t === "roundEnd");
   if (re) { busy = true; return beginRound(re); }
+}
+
+// ---------- the squeeze: a timing minigame per round ----------
+const AUTO_SUB = params.has("autosub"); // automated play-tests only
+async function runSub() {
+  const all = [];
+  const ov = $("#ov");
+  const humanAtk = st.subPending.by === "a";
+  const gstat = data.fighters[st.a.id].ground[humanAtk ? "sub" : "escape"];
+  let auto = AUTO_SUB;
+  const fillOf = (m) => Math.max(0, Math.min(1, (m + 0.9) / 2)) * 100;
+  const frame = (info, msg = "") => {
+    ov.className = "ov dark";
+    ov.innerHTML = `<h1 style="font-size:24px">🔒 ${info.name}　${humanAtk ? "你鎖上了！" : "你被鎖住了！"}</h1>
+      <div class="tug2"><span class="lb">${humanAtk ? "他脫出" : "你脫出"}</span><div class="trk"><div class="fill ${humanAtk ? "mine" : "his"}" id="fill" style="width:${fillOf(info.meter)}%"></div></div><span class="lb">${humanAtk ? "他拍地板" : "你拍地板"}</span></div>
+      <div class="tbar" id="tbar"><div class="zone" id="zone"></div><div class="mark" id="mark"></div></div>
+      <p id="sinfo">${msg || `第 ${info.round + 1} / ${info.rounds} 輪 · 標記進到亮區時按${humanAtk ? "「扣緊」" : "「掙脫」"}（亮區大小看你的${humanAtk ? "鎖技" : "脫逃"}能力）`}</p>
+      <div style="display:flex;gap:10px"><button class="btn gold" id="tap">${humanAtk ? "扣緊！" : "掙脫！"}</button><button class="btn" id="auto">自動</button></div>`;
+    ov.hidden = false;
+  };
+  const timing = () =>
+    new Promise((res) => {
+      if (auto) return res(autoQuality(st));
+      const c = 0.3 + Math.random() * 0.4;
+      const w = 0.12 + gstat * 0.6;
+      const zone = $("#zone"), mark = $("#mark");
+      zone.style.left = (c - w) * 100 + "%";
+      zone.style.width = w * 2 * 100 + "%";
+      const t0 = performance.now();
+      let m = 0, raf = 0, done = false;
+      const finish = (q) => {
+        if (done) return;
+        done = true;
+        cancelAnimationFrame(raf);
+        removeEventListener("keydown", onKey);
+        res(q);
+      };
+      const loop = (now) => {
+        const t = (now - t0) / 1000;
+        m = Math.abs(((t / 0.9) % 2) - 1);
+        mark.style.left = m * 100 + "%";
+        if (t > 3) return finish(0.1);
+        raf = requestAnimationFrame(loop);
+      };
+      const tap = () => finish(Math.max(0, Math.min(1, 1 - Math.abs(m - c) / (1.4 * w))));
+      const onKey = (e) => { if (e.code === "Space") { e.preventDefault(); tap(); } };
+      addEventListener("keydown", onKey);
+      $("#tap").onclick = tap;
+      $("#auto").onclick = () => { auto = true; finish(autoQuality(st)); };
+      raf = requestAnimationFrame(loop);
+    });
+  while (st.subPending) {
+    const info = subInfo(st);
+    frame(info);
+    const q = await timing();
+    const qa = humanAtk ? q : autoQuality(st);
+    const qd = humanAtk ? autoQuality(st) : q;
+    const ev = subRound(st, qa, qd);
+    all.push(...ev);
+    const e = ev.find((x) => x.t === "subRound");
+    const fl = $("#fill");
+    if (fl) fl.style.width = fillOf(e.meter) + "%";
+    const you = humanAtk ? qa : qd, him = humanAtk ? qd : qa;
+    if ($("#sinfo")) $("#sinfo").innerHTML = `你的時機 ${pct(you)}% · 他 ${pct(him)}%${e.done === "tap" ? ` · <b>${humanAtk ? "他拍地板了！" : "你拍地板了…"}</b>` : e.done === "escape" ? ` · <b>${humanAtk ? "他脫出了" : "你掙脫了！"}</b>` : ""}`;
+    await sleep(e.done ? 1400 : 900);
+  }
+  ov.hidden = true;
+  return all;
 }
 
 function chooseChase() {
@@ -564,6 +786,7 @@ function coachHtml(info) {
     lines.push(`🗣 教練：<i>${FEEL[info.intel.feel]}</i>`);
     for (const f of info.intel.facts) {
       if (f.k === "aim") lines.push(`他這回合出了 ${f.n} 次拳腳：頭 ${pct(f.head)}% · 身 ${pct(f.body)}% · 腿 ${pct(f.leg)}%`);
+      else if (f.k === "td") lines.push(`他這回合抱摔試了 ${f.tried} 次、成功 ${f.ok} 次，有 ${f.gbeats} 手在地面`);
       else if (f.k === "habit") lines.push(`他 ${f.of} 手裡有 ${f.n} 手選了「${HABIT[f.what]}」`);
       else if (f.k === "weak") lines.push(`🔍 試探看出來了：他的${f.what === "chin" ? `下巴比一般人脆（只有平均的 ${pct(f.ratio)}%）` : `體力比一般人差（只有平均的 ${pct(f.ratio)}%）`}`);
       else if (f.k === "range") lines.push(`🔍 試探看出來了：他最舒服的距離是「${DN[f.dist]}」`);
@@ -629,9 +852,12 @@ function showEnd() {
   ov.className = "ov dark";
   ov.innerHTML = `<h1>${win}</h1><p style="font-size:16px;color:var(--text)">${o.method}${o.cards ? "" : ` · 第 ${o.round} 回合`}</p>
     ${cards ? `<div class="cardsread">裁判計分　${cards}</div>` : ""}
-    <button class="btn gold" id="again">再來一場</button>`;
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">${IDS.filter((k) => k !== ME).map((k) => `<button class="btn gold" data-foe="${k}">再打一場 vs ${data.fighters[k].short}<small style="display:block;font-weight:400;color:var(--dim)">${data.fighters[k].style}</small></button>`).join("")}</div>`;
   ov.hidden = false;
-  $("#again").onclick = newBout;
+  ov.onclick = (e) => {
+    const b = e.target.closest("[data-foe]");
+    if (b) { ov.onclick = null; newBout(b.dataset.foe); }
+  };
 }
 
 function showHelp(done) {
@@ -647,16 +873,17 @@ function showHelp(done) {
       <div><b style="background:var(--fire);color:#1a0d00">🔥 留／蓄力</b>沒出的牌每手換新。點「留」保住一張到下一手，它會變重，但對手看得到。</div>
       <div><b style="background:#3a1717;color:#ff9d9a">破綻</b>重拳打空、被騙、被預判都會露破綻：下一手被打實的機會大增。發紅光就是破綻。</div>
       <div><b style="background:#3a2d0a;color:var(--gold)">📋 計畫</b>每回合開打前選一個計畫和主攻部位，對手也同時選。回合之間在角落聽教練、休息；受傷時還能找醫生（三選二）。</div>
+      <div><b style="background:#1f4a3a;color:#9ff0c8">🤼 地面</b>抱腿、抱摔成功就進地面（也可能被壓趴反制）。上位：過腿→壓制→背後，砸拳或鎖技；下位：護住、脫逃、掃翻、起身。鎖技成功就進「降伏小遊戲」：看準時機按。幾手沒進展，裁判叫起。</div>
       <div><b style="background:#161c28;color:#fff">距離</b>點牌會出現箭頭：綠色打得到，紅色打不到。每個選手有自己最舒服的距離（↑你的距離）。</div>
     </div>
     <button class="btn gold" id="gotit">開始打</button>`;
   ov.hidden = false;
   $("#gotit").onclick = () => {
     ov.hidden = true;
-    try { localStorage.setItem("bout.help4", "1"); } catch {}
+    try { localStorage.setItem("bout.help5", "1"); } catch {}
     if (done) done();
   };
 }
 
-window.__bout = { get st() { return st; }, play, newBout, data, beginRound };
+window.__bout = { get st() { return st; }, play, newBout, data, beginRound, get foe() { return FOE; } };
 newBout();

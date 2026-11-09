@@ -34,7 +34,7 @@ export function prepare(data) {
 }
 export const cardIds = (data) => Object.keys(data.cards).filter((k) => !k.startsWith("_"));
 
-const newRhist = () => ({ card: 0, feint: 0, advance: 0, retreat: 0, sidestep: 0, guard: 0, stepIn: 0, stepOut: 0, head: 0, body: 0, leg: 0 });
+const newRhist = () => ({ card: 0, feint: 0, advance: 0, retreat: 0, sidestep: 0, guard: 0, stepIn: 0, stepOut: 0, head: 0, body: 0, leg: 0, td: 0, tdOk: 0, gbeats: 0 });
 
 function newFighter(data, id) {
   const f = data.fighters[id];
@@ -53,7 +53,8 @@ function newFighter(data, id) {
     hand: [], // [{ id, charged }]；charged＝上一手蓄力留下來的（對手看得到）
     trap: null, // { id, left }：埋著的預判牌（對手只知道有，不知道是什麼）
     landedLast: false, // 上一手有打實 → 連段牌變強
-    hist: { advance: 0, retreat: 0, sidestep: 0, guard: 0, card: 0, feint: 0, stepIn: 0, stepOut: 0 },
+    hist: { advance: 0, retreat: 0, sidestep: 0, guard: 0, card: 0, feint: 0, takedown: 0, sprawl: 0, stepIn: 0, stepOut: 0 },
+    ghist: { pound: 0, advance: 0, sub: 0, sweep: 0, escape: 0, getup: 0, ride: 0, release: 0, defend: 0 }, // 地面習慣（AI 看得到）
     rhist: newRhist(), // 這一回合的習慣（回合結束時存進 rounds，教練從這裡看）
     tagHist: {},
     dealt: 0,
@@ -70,6 +71,10 @@ export function createBout(data, idA, idB, seed = 1) {
     round: 0,
     beat: 0,
     dist: data.config.dist.start,
+    mode: "stand", // "stand" | "ground"
+    ground: null, // { top: "a"|"b", pos: 0 護腿 | 1 壓制 | 2 背後, stall }
+    subPending: null, // 降伏小遊戲進行中：{ by, cardId, meter, round }
+    switched: false, // 這一手換了場景或換了上下位：留牌失效
     a: newFighter(data, idA),
     b: newFighter(data, idB),
     over: null,
@@ -132,7 +137,30 @@ export function planDmg(st, s, card) {
 }
 const foeRetreat = (st, s) => st.data.config.plans[st.plan[other(s)].plan].foeRetreatCost || 0;
 
+export const groundRole = (st, s) => (st.ground.top === s ? "top" : "bottom");
+const groundFit = (card, role, pos) => card.role === role && card.pos.includes(pos);
+
+/** On the ground the hand comes from the role's ground pool (top / bottom); only cards that fit the current position are dealt. */
+function drawGround(st, s) {
+  const f = st.data.fighters[st[s].id];
+  const role = groundRole(st, s);
+  const copies = (id) => st[s].hand.filter((h) => h.id === id).length;
+  const ws = [];
+  let total = 0;
+  for (const [id, w] of Object.entries(f.groundWeights?.[role] || {})) {
+    const card = st.data.cards[id];
+    if (!groundFit(card, role, st.ground.pos) || copies(id) >= st.data.config.handCopies) continue;
+    ws.push([id, w]);
+    total += w;
+  }
+  if (!ws.length) return null;
+  let r = rand(st) * total;
+  for (const [id, k] of ws) if ((r -= k) < 0) return id;
+  return ws[ws.length - 1][0];
+}
+
 function drawId(st, s) {
+  if (st.mode === "ground") return drawGround(st, s);
   const f = st.data.fighters[st[s].id];
   const dng = danger(st, s);
   const copies = (id) => st[s].hand.filter((h) => h.id === id).length;
@@ -153,7 +181,10 @@ function drawId(st, s) {
 }
 function refill(st, s) {
   const c = st.data.config;
-  for (let i = 0; i < c.handDraw && st[s].hand.length < c.handMax; i++) st[s].hand.push({ id: drawId(st, s), charged: false });
+  for (let i = 0; i < c.handDraw && st[s].hand.length < c.handMax; i++) {
+    const id = drawId(st, s);
+    if (id) st[s].hand.push({ id, charged: false });
+  }
 }
 
 export function moveCost(st, s, id) {
@@ -169,6 +200,7 @@ export const stepOk = (st, s, step) => st.dist + step >= 0 && st.dist + step <= 
  * Trap cards are never the main action: ok means "can be set this beat" (side action).
  */
 export function actions(st, s, step = 0) {
+  if (st.mode === "ground") return groundActions(st, s);
   const me = st[s];
   const out = [];
   const d = clamp(st.dist + step, 0, 3);
@@ -220,6 +252,7 @@ export function odds(st, s, card, { boost = false, opp = null, d = st.dist } = {
   if (opp) {
     const advancing = opp.move === "advance" || opp.step > 0;
     if (card.counter === "advance" && advancing) { clean += h.counterBonus; why.push("counter"); }
+    if (card.breaks && opp.shoot) { clean += h.counterBonus; why.push("counter"); }
     const mv = opp.move ? c.moves[opp.move] : null;
     if (mv?.guard) clean -= mv.guard.hit[card.region] || 0;
     if (mv?.evade) miss += mv.evade;
@@ -257,7 +290,7 @@ function validate(st, s, ch) {
     if (card.kind === "trap") throw new Error("traps are set, not played");
     if (![-1, 0, 1].includes(step) || !stepOk(st, s, step)) throw new Error("bad step");
     if (!card.range.includes(st.dist + step)) throw new Error("out of range");
-    cost += card.cost + (ch.boost ? st.data.config.boost.cost : 0) + stepCost(st, s, step);
+    cost += card.cost + (ch.boost && card.kind === "strike" ? st.data.config.boost.cost : 0) + stepCost(st, s, step);
   }
   if (cost > me.stamina + 1e-9) throw new Error("not enough stamina");
 }
@@ -273,7 +306,7 @@ function trapFires(trap, act) {
   return false;
 }
 
-function applyDamage(st, s, card, dmg, e, canKO) {
+function applyDamage(st, s, card, dmg, e, canKO, koMul = 1) {
   const c = st.data.config;
   const me = st[s];
   const t = other(s);
@@ -287,7 +320,7 @@ function applyDamage(st, s, card, dmg, e, canKO) {
     if (!canKO) return false;
     const ratio = headRatio(st, t);
     const heavy = card.heavy ? 1 : c.head.koLight;
-    const pk = clamp((card.ko || 0) * (1 + ratio) + Math.max(0, ratio - c.head.koDanger) * c.head.koScale * heavy, 0, c.head.koCap);
+    const pk = clamp(((card.ko || 0) * (1 + ratio) + Math.max(0, ratio - c.head.koDanger) * c.head.koScale * heavy) * koMul, 0, c.head.koCap);
     e.koP = Math.round(pk * 1000) / 1000;
     return rand(st) < pk;
   }
@@ -305,6 +338,8 @@ function applyDamage(st, s, card, dmg, e, canKO) {
 export function playBeat(st, ca, cb) {
   if (st.over) throw new Error("bout is over");
   if (st.pending) throw new Error("knockdown pending");
+  if (st.subPending) throw new Error("submission pending");
+  if (st.mode === "ground") return playGround(st, ca, cb);
   const c = st.data.config;
   const ev = (st.events = []);
   const ch = { a: ca, b: cb };
@@ -326,10 +361,12 @@ export function playBeat(st, ca, cb) {
       const h = me.hand[x.card];
       const card = st.data.cards[h.id];
       const step = x.step || 0;
-      me.stamina -= card.cost + (x.boost ? c.boost.cost : 0) + stepCost(st, s, step);
-      acts[s] = { kind: card.kind, card, step, boost: !!x.boost, charged: h.charged, holdId, trapCard };
+      const boost = !!x.boost && card.kind === "strike";
+      me.stamina -= card.cost + (boost ? c.boost.cost : 0) + stepCost(st, s, step);
+      acts[s] = { kind: card.kind, card, step, boost, charged: h.charged, holdId, trapCard };
       me.hist[card.kind === "strike" ? "card" : card.kind]++;
-      me.rhist[card.kind === "strike" ? "card" : card.kind]++;
+      const rk = card.kind === "strike" ? "card" : card.kind === "takedown" ? "td" : card.kind === "feint" ? "feint" : null;
+      if (rk) me.rhist[rk]++;
       if (step > 0) { me.hist.stepIn++; me.rhist.stepIn++; }
       if (step < 0) { me.hist.stepOut++; me.rhist.stepOut++; }
       for (const tg of card.tags) me.tagHist[tg] = (me.tagHist[tg] || 0) + 1;
@@ -398,7 +435,7 @@ export function playBeat(st, ca, cb) {
     // each fighter steps into his own strike: the opponent's card-step does not carry him out of range,
     // only a full basic move (retreat / advance) does
     const at = clamp(before + a.step + (vs.kind === "move" ? c.moves[vs.id].dist : 0), 0, 3);
-    const o = odds(st, s, a.card, { boost: a.boost, opp: vs.kind === "move" ? { move: vs.id } : { step: vs.step }, d: at });
+    const o = odds(st, s, a.card, { boost: a.boost, opp: vs.kind === "move" ? { move: vs.id } : { step: vs.step, shoot: vs.kind === "takedown" }, d: at });
     const inRange = a.card.range.includes(at);
     const landed = inRange && rand(st) < o.land;
     const clean = landed && rand(st) < o.clean;
@@ -429,6 +466,49 @@ export function playBeat(st, ca, cb) {
     st[s].landedLast = !!res[s]?.clean;
     st[s].staminaMax = Math.max(c.stamina.min, c.stamina.max - st[s].body * c.body.maxLoss);
     st[s].stamina = Math.min(st[s].stamina, st[s].staminaMax);
+  }
+
+  // takedown shots and sprawls: rolled in the same beat as the strikes; a knockdown cancels them
+  const shooters = SIDES.filter((s) => acts[s].kind === "takedown");
+  for (const s of SIDES) {
+    if (acts[s].kind !== "sprawl") continue;
+    if (acts[other(s)].kind !== "takedown") ev.push({ t: "sprawl", by: s, wasted: true });
+  }
+  if (shooters.length) {
+    const t = c.takedown;
+    const knocked = !!(kd.a || kd.b);
+    const won = [];
+    let stuffedBy = null;
+    for (const s of shooters) {
+      const a = acts[s];
+      const vs = acts[other(s)];
+      const at = clamp(before + a.step + (vs.kind === "move" ? c.moves[vs.id].dist : 0), 0, 3);
+      const inRange = a.card.range.includes(at);
+      const strike = vs.kind === "strike" ? vs.card : null;
+      const o = tdOdds(st, s, a.card, { opp: { move: vs.kind === "move" ? vs.id : null, strikeHead: !!strike && strike.region === "head" && !strike.breaks, breakIt: !!strike && !!strike.breaks } });
+      const sprawlP = vs.kind === "sprawl" ? sprawlOdds(st, other(s), vs.card) : 0;
+      const sprawled = !knocked && inRange && vs.kind === "sprawl" && rand(st) < sprawlP;
+      const ok = !knocked && inRange && !sprawled && rand(st) < o.p;
+      const e = { t: "takedown", by: s, id: a.card.id, p: o.p, why: o.why, ok, whiff: knocked ? "ko" : !inRange ? "range" : sprawled ? "sprawled" : ok ? null : "stuffed", sprawlP };
+      ev.push(e);
+      if (ok) { won.push(s); st[s].rhist.tdOk++; }
+      else {
+        nextOpen[s] = Math.max(nextOpen[s], t.failOpen);
+        if (sprawled) stuffedBy = other(s);
+      }
+    }
+    if (won.length === 2) {
+      ev.push({ t: "tdClash" });
+      st.dist = 3;
+    } else if (won.length === 1) {
+      const s = won[0];
+      st[s].dealt += t.score;
+      startGround(st, s, acts[s].card.lands ?? 0, ev, "takedown");
+    } else if (stuffedBy) {
+      st[stuffedBy].dealt += t.score * t.stuffShare;
+      startGround(st, stuffedBy, c.ground.sprawlPos, ev, "sprawl");
+    }
+    if (st.mode === "ground") nextOpen.a = nextOpen.b = 0;
   }
 
   if (kd.a && kd.b) {
@@ -493,19 +573,21 @@ function endBeat(st) {
     const f = st.data.fighters[me.id];
     const a = acts?.[s];
     const pl = c.plans[st.plan[s].plan];
-    const mvDef = a?.kind === "move" ? c.moves[a.id] : null;
+    const mvDef = a?.kind === "move" ? c.moves[a.id] || c.ground.moves[a.id] : null;
     const mvRegen = mvDef ? (mvDef.regen || 0) + (mvDef.guard ? pl.guardRegen || 0 : 0) : 0;
     me.stamina = Math.min(me.staminaMax, me.stamina + c.stamina.regen * f.cardio * (pl.regenMul ?? 1) + mvRegen);
     me.open = st.nextOpen[s];
     if (me.trap && !a?.trapSet && --me.trap.left <= 0) me.trap = null;
     const kept = [];
-    if (a?.holdId) {
+    if (a?.holdId && !st.switched) {
       const h = me.hand.find((x) => x.id === a.holdId);
-      if (h) kept.push({ id: h.id, charged: true });
+      // on the ground a held card only stays if it still fits the position
+      if (h && (st.mode !== "ground" || groundFit(st.data.cards[h.id], groundRole(st, s), st.ground.pos))) kept.push({ id: h.id, charged: true });
     }
     me.hand = kept;
     refill(st, s);
   }
+  st.switched = false;
   st.nextOpen = { a: 0, b: 0 };
   st.beat++;
   if (st.beat >= c.beatsPerRound) endRound(st);
@@ -538,6 +620,16 @@ function endRound(st) {
   }
   st.round++;
   st.beat = 0;
+  if (st.mode === "ground") {
+    // the bell: both fighters are stood up for the next round
+    st.mode = "stand";
+    st.ground = null;
+    st.dist = c.ground.standDist;
+    for (const s of SIDES) {
+      st[s].hand = [];
+      refill(st, s);
+    }
+  }
   if (st.round >= c.rounds) decide(st);
 }
 
@@ -571,6 +663,287 @@ function decide(st) {
 function finish(st, winner, method, cards = null) {
   st.over = { winner, method, round: st.round + 1, beat: st.beat, cards };
   st.events.push({ t: "end", ...st.over });
+}
+
+// ---------- takedowns, the ground and submissions ----------
+// Standing → ground: a takedown card (or a successful sprawl) starts it. On the ground the same one-beat shape holds:
+// each side picks a ground card of its role (top / bottom) or a basic ground move, both reveal, then it resolves.
+// Position is three steps: 0 護腿 (top inside the guard) → 1 壓制 → 2 背後. A lock that gets in starts the squeeze minigame
+// (st.subPending): rounds of tug-of-war where each side's timing quality (0..1) moves a meter. Simulation uses autoQuality().
+
+/** Chance a takedown card works for s. opp: { move, strikeHead, breakIt } describes what the other side does this beat. */
+export function tdOdds(st, s, card, { opp = null } = {}) {
+  const c = st.data.config;
+  const t = c.takedown;
+  const me = st.data.fighters[st[s].id].ground;
+  const fo = st.data.fighters[st[other(s)].id].ground;
+  let p = card.hit + me.wrestle - fo.tdDef + (c.plans[st.plan[s].plan].tdBonus || 0);
+  const why = [];
+  if (st[s].stamina / st[s].staminaMax < c.stamina.low) { p -= t.tired; why.push("tired"); }
+  if (opp) {
+    if (opp.strikeHead) { p += t.vsHeadStrike; why.push("low"); }
+    if (opp.breakIt) { p -= t.breakPenalty; why.push("break"); }
+    if (opp.move && t.vsMove[opp.move]) p += t.vsMove[opp.move];
+  }
+  return { p: clamp(p, t.min, t.max), why };
+}
+/** Chance a sprawl stuffs a shot (only matters if the other side shoots). */
+export function sprawlOdds(st, s, card) {
+  const t = st.data.config.takedown;
+  const me = st.data.fighters[st[s].id].ground;
+  const fo = st.data.fighters[st[other(s)].id].ground;
+  return clamp(card.hit + me.tdDef - fo.wrestle, t.min, t.max);
+}
+
+function startGround(st, top, pos, ev, how) {
+  st.mode = "ground";
+  st.ground = { top, pos, stall: 0 };
+  st.switched = true;
+  for (const s of SIDES) {
+    st[s].trap = null;
+    st[s].landedLast = false;
+    st[s].open = 0;
+  }
+  ev.push({ t: "ground", top, pos, how });
+}
+function standUp(st, how, ev, by = null) {
+  st.mode = "stand";
+  st.ground = null;
+  st.dist = st.data.config.ground.standDist;
+  st.switched = true;
+  for (const s of SIDES) st[s].landedLast = false;
+  ev.push({ t: "standup", how, by });
+}
+
+export function groundActions(st, s) {
+  const me = st[s];
+  const role = groundRole(st, s);
+  const out = [];
+  me.hand.forEach((h, idx) => {
+    const card = st.data.cards[h.id];
+    const fits = groundFit(card, role, st.ground.pos);
+    const afford = card.cost <= me.stamina;
+    out.push({ kind: "card", idx, id: h.id, charged: h.charged, cost: card.cost, ok: fits && afford, why: !fits ? "pos" : !afford ? "stamina" : null });
+  });
+  for (const [id, mv] of Object.entries(st.data.config.ground.moves)) {
+    if (mv.role !== role) continue;
+    const afford = mv.cost <= me.stamina;
+    out.push({ kind: "move", id, cost: mv.cost, ok: afford, why: afford ? null : "stamina" });
+  }
+  return out;
+}
+
+const ATTEMPT = ["pound", "advance", "sub", "sweep", "escape", "getup"];
+/** Chance that ground action `act` (base = the card's or move's own number) works for s. oppAct = what the other side does, if known. */
+export function groundOdds(st, s, act, base, oppAct = null) {
+  const g = st.data.config.ground;
+  const me = st.data.fighters[st[s].id].ground;
+  const fo = st.data.fighters[st[other(s)].id].ground;
+  const sk = g.skill[act];
+  let p = base + me[sk.me] - fo[sk.foe];
+  const why = [];
+  if (act === "sub") p += g.subPos[st.ground.pos];
+  if (act === "getup") p += g.getupPos[st.ground.pos];
+  if (st[s].stamina / st[s].staminaMax < st.data.config.stamina.low) { p -= g.tired; why.push("tired"); }
+  if (st[other(s)].open > 0) { p += g.openBonus; why.push("open"); }
+  if (oppAct) p += g.vs[groundRole(st, s)][act]?.[oppAct] || 0;
+  return { p: clamp(p, g.min, g.max), why };
+}
+/** What a ground card or move would do, for the card face. */
+export function groundCardOdds(st, s, idOrMove) {
+  const g = st.data.config.ground;
+  const mv = g.moves[idOrMove];
+  if (mv) return mv.hit != null ? groundOdds(st, s, mv.act, mv.hit) : null;
+  const card = st.data.cards[idOrMove];
+  return groundOdds(st, s, card.act, card.hit);
+}
+
+function groundAct(st, s, ch) {
+  const g = st.data.config.ground;
+  const role = groundRole(st, s);
+  if (ch.move) {
+    const mv = g.moves[ch.move];
+    if (!mv || mv.role !== role) throw new Error("bad ground move");
+    return { kind: "move", id: ch.move, act: mv.act, base: mv.hit ?? 0, cost: mv.cost };
+  }
+  const h = st[s].hand[ch.card];
+  if (!h) throw new Error("no such card");
+  const card = st.data.cards[h.id];
+  if (!groundFit(card, role, st.ground.pos)) throw new Error("wrong position");
+  return { kind: "ground", id: card.id, act: card.act, base: card.hit, cost: card.cost, card, charged: h.charged };
+}
+
+function playGround(st, ca, cb) {
+  const c = st.data.config;
+  const g = c.ground;
+  const ev = (st.events = []);
+  const ch = { a: ca, b: cb };
+  const acts = {};
+  for (const s of SIDES) {
+    const x = ch[s];
+    const me = st[s];
+    if (x.trap != null) throw new Error("no traps on the ground");
+    if (x.hold != null && (x.hold === x.card || !me.hand[x.hold])) throw new Error("bad hold");
+    const a = groundAct(st, s, x);
+    if (a.cost > me.stamina + 1e-9) throw new Error("not enough stamina");
+    a.s = s;
+    a.role = groundRole(st, s);
+    a.holdId = x.hold != null ? me.hand[x.hold].id : null;
+    acts[s] = a;
+  }
+  for (const s of SIDES) {
+    const a = acts[s];
+    st[s].stamina -= a.cost;
+    st[s].ghist[a.act]++;
+    st[s].rhist.gbeats++;
+  }
+  st.lastActs = acts;
+  const top0 = st.ground.top;
+  const pos = st.ground.pos;
+  ev.push({ t: "reveal", ground: true, top: top0, pos, a: { kind: acts.a.kind, id: acts.a.id, act: acts.a.act, role: acts.a.role, charged: acts.a.charged }, b: { kind: acts.b.kind, id: acts.b.id, act: acts.b.act, role: acts.b.role, charged: acts.b.charged } });
+
+  const nextOpen = { a: 0, b: 0 };
+  let progress = false;
+  const bot0 = other(top0);
+
+  if (acts[top0].act === "release") {
+    ev.push({ t: "gtry", by: top0, act: "release", id: acts[top0].id, ok: true });
+    standUp(st, "release", ev, top0);
+    st.nextOpen = nextOpen;
+    endBeat(st);
+    return ev;
+  }
+
+  // every attempt is rolled once, against what the other side chose
+  const p = {}, hit = {};
+  for (const s of SIDES) {
+    const a = acts[s];
+    if (!ATTEMPT.includes(a.act)) continue;
+    p[s] = groundOdds(st, s, a.act, a.base, acts[other(s)].act).p;
+    hit[s] = rand(st) < p[s];
+  }
+
+  // ground strikes land one by one; a stoppage ends it
+  for (const s of SIDES) {
+    const a = acts[s];
+    if (a.act !== "pound") continue;
+    const e = { t: "gattack", by: s, id: a.id, p: p[s], hit: hit[s], region: a.card.region, pos };
+    if (hit[s]) {
+      const f = st.data.fighters[st[s].id];
+      const guarded = acts[other(s)].act === "defend" ? g.moves.defend.dmgMul : 1;
+      const dmg = a.card.dmg * f.power * f.ground.gnp * g.posDmg[pos] * (a.charged ? c.charge.dmgMul : 1) * planDmg(st, s, a.card) * guarded;
+      const stop = applyDamage(st, s, a.card, dmg, e, true, g.koMul);
+      ev.push(e);
+      progress = true;
+      if (stop) {
+        finish(st, s, "TKO（地面重擊）");
+        return ev;
+      }
+    } else ev.push(e);
+  }
+
+  // locks that got in, and position changes
+  const subWin = SIDES.filter((s) => acts[s].act === "sub" && hit[s]);
+  const moveWin = SIDES.filter((s) => ["advance", "sweep", "escape", "getup"].includes(acts[s].act) && hit[s]);
+  const tries = {};
+  for (const s of SIDES) {
+    const a = acts[s];
+    if (a.act === "pound" || !ATTEMPT.includes(a.act)) continue;
+    tries[s] = { t: "gtry", by: s, act: a.act, id: a.id, p: p[s], ok: !!hit[s] };
+    ev.push(tries[s]);
+  }
+  if (subWin.length === 2) {
+    ev.push({ t: "scramble", why: "sub" });
+    for (const s of subWin) tries[s].ok = false;
+  } else if (subWin.length === 1) {
+    for (const s of moveWin) if (s !== subWin[0]) tries[s].ok = false;
+    progress = true;
+    startSub(st, subWin[0], acts[subWin[0]], ev);
+  } else if (moveWin.length >= 2) {
+    ev.push({ t: "scramble", why: "move" });
+    for (const s of moveWin) tries[s].ok = false;
+  } else if (moveWin.length === 1) {
+    const s = moveWin[0];
+    const a = acts[s];
+    progress = true;
+    if (a.act === "advance") {
+      const to = a.card.to;
+      ev.push({ t: "gpos", from: pos, to, how: a.act, by: s });
+      st.ground.pos = to;
+    } else if (a.act === "escape") {
+      const to = Math.max(0, pos - 1);
+      ev.push({ t: "gpos", from: pos, to, how: a.act, by: s });
+      st.ground.pos = to;
+    } else if (a.act === "sweep") {
+      st.ground.top = s;
+      st.ground.pos = g.sweepPos;
+      st.switched = true;
+      nextOpen[top0] = g.sweepOpen;
+      ev.push({ t: "swap", top: s, pos: g.sweepPos });
+    } else if (a.act === "getup") {
+      standUp(st, "getup", ev, s);
+    }
+  }
+
+  if (st.mode === "ground") {
+    if (acts[top0].act === "ride") st[bot0].stamina = Math.max(0, st[bot0].stamina - g.moves.ride.drain);
+    st[top0].dealt += g.control[pos];
+    if (progress) st.ground.stall = 0;
+    else if (++st.ground.stall >= g.stallMax) standUp(st, "ref", ev);
+  }
+  st.nextOpen = nextOpen;
+  if (st.subPending) return ev;
+  endBeat(st);
+  return ev;
+}
+
+function startSub(st, by, a, ev) {
+  const g = st.data.config.ground.sub;
+  const fa = st.data.fighters[st[by].id].ground;
+  const fd = st.data.fighters[st[other(by)].id].ground;
+  const meter = g.start + g.edgeWeight * (fa.sub - fd.escape) + (a.card.power || 0);
+  st.subPending = { by, cardId: a.id, meter, round: 0 };
+  ev.push({ t: "subLock", by, id: a.id, meter });
+}
+export const subInfo = (st) => {
+  const sp = st.subPending;
+  const g = st.data.config.ground.sub;
+  return sp ? { ...sp, rounds: g.rounds, tap: g.tap, escape: g.escape, name: st.data.cards[sp.cardId].name } : null;
+};
+/** A computer-played (or auto) squeeze: average timing with some luck. */
+export function autoQuality(st) {
+  const g = st.data.config.ground.sub;
+  return clamp(g.aiQ + (rand(st) - 0.5) * g.aiNoise, 0.05, 0.98);
+}
+/** One squeeze round. qAtk / qDef are timing qualities in 0..1 of the lock holder and the defender. */
+export function subRound(st, qAtk, qDef) {
+  const sp = st.subPending;
+  if (!sp) throw new Error("no submission pending");
+  const g = st.data.config.ground.sub;
+  const ev = (st.events = []);
+  const delta = g.qteWeight * (qAtk - qDef) + g.drift;
+  sp.meter += delta;
+  sp.round++;
+  const done = sp.meter >= g.tap ? "tap" : sp.meter <= g.escape || sp.round >= g.rounds ? "escape" : null;
+  ev.push({ t: "subRound", by: sp.by, meter: sp.meter, delta, round: sp.round, qa: qAtk, qd: qDef, done });
+  if (done === "tap") {
+    st.subPending = null;
+    finish(st, sp.by, `降伏（${st.data.cards[sp.cardId].name}）`);
+  } else if (done === "escape") {
+    const loser = other(sp.by);
+    st[sp.by].stamina = Math.max(0, st[sp.by].stamina - g.failCostAtk);
+    st[loser].stamina = Math.max(0, st[loser].stamina - g.failCostDef);
+    st.subPending = null;
+    st.ground.stall = 0;
+    endBeat(st);
+  }
+  return ev;
+}
+/** Play the whole squeeze automatically (computer vs computer, or the player's "auto" option). */
+export function settleSub(st) {
+  const all = [];
+  while (st.subPending) all.push(...subRound(st, autoQuality(st), autoQuality(st)));
+  return all;
 }
 
 // ---------- between rounds: plan and corner ----------
@@ -630,6 +1003,7 @@ function coachIntel(st, s) {
   if (strikes >= 3) facts.push({ k: "aim", head: mix.head / strikes, body: mix.body / strikes, leg: mix.leg / strikes, n: strikes });
   const habits = ["advance", "retreat", "sidestep", "guard", "feint"].map((x) => [x, mix[x]]).sort((x, y) => y[1] - x[1]);
   if (habits[0][1] >= 3) facts.push({ k: "habit", what: habits[0][0], n: habits[0][1], of: c.beatsPerRound });
+  if (mix.td >= 1 || mix.gbeats >= 1) facts.push({ k: "td", tried: mix.td, ok: mix.tdOk, gbeats: mix.gbeats });
   if (last.plan[s] === "probe") facts.push(scoutFact(st, s));
   const mine = last.dealt[s], his = last.dealt[o];
   const diff = (mine - his) / Math.max(1, mine + his) + (rand(st) - 0.5) * 2 * c.corner.feelNoise;
@@ -676,4 +1050,7 @@ export function checkInvariants(st) {
     if (f.head < 0 || f.body < 0 || f.leg < 0) throw new Error("negative damage");
   }
   if (st.dist < 0 || st.dist > 3) throw new Error("distance out of range");
+  if ((st.mode === "ground") !== !!st.ground) throw new Error("ground state out of sync");
+  if (st.ground && !(st.ground.pos >= 0 && st.ground.pos <= 2 && SIDES.includes(st.ground.top))) throw new Error("bad ground position");
+  if (st.ground) for (const s of SIDES) for (const h of st[s].hand) if (!st.data.cards[h.id].role && !st.subPending && !st.over) throw new Error("standing card in a ground hand");
 }

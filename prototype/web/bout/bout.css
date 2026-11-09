@@ -277,3 +277,24 @@ html,body{height:100%;background:#05070a;color:var(--text);font-family:"Noto San
 .tgt .pill{padding:5px 14px;border-radius:999px;background:#181d29;border:2px solid #3a4560;color:var(--text);font-size:14px;font-weight:700;cursor:pointer}
 .tgt .pill.on{border-color:var(--gold);color:var(--gold)}
 .ov .hint{font-size:11px;color:var(--dim);max-width:640px}
+
+/* ---- 0.5：地面、抓摔、降伏小遊戲 ---- */
+:root{--gsub:#e056a8}
+.card.gsub{--c:var(--gsub)}
+.kw.td{background:#1f4a3a;color:#9ff0c8} .kw.sub{background:#5a1f45;color:#ffb3e0}
+.mk.grd{border-color:var(--grap);color:#9ff0c8}
+.acts.two{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+.acts.two .act{font-size:14px}
+.fighter.lie .ar{display:none}
+.fighter.lie .sh{left:62px;top:6px;width:20px;height:30px}
+.fighter.lie.o.hit{animation:shake .35s}
+.fighter.lie.open{filter:drop-shadow(0 0 10px rgba(255,70,70,.9))}
+.tug2{display:flex;align-items:center;gap:10px;width:560px}
+.tug2 .lb{font-size:12px;color:var(--dim);width:64px;text-align:center}
+.trk{position:relative;flex:1;height:22px;border-radius:11px;background:#1b2231;border:1px solid #33405a;overflow:hidden}
+.trk .fill{height:100%;transition:width .35s}
+.fill.mine{background:linear-gradient(90deg,#2a62d6,var(--blue))}
+.fill.his{background:linear-gradient(90deg,#8a2a2a,var(--red))}
+.tbar{position:relative;width:560px;height:34px;border-radius:8px;background:#141a26;border:1px solid #33405a;overflow:hidden}
+.tbar .zone{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,rgba(62,207,142,.12),rgba(62,207,142,.75),rgba(62,207,142,.12))}
+.tbar .mark{position:absolute;top:-2px;bottom:-2px;width:6px;margin-left:-3px;background:#fff;border-radius:3px;box-shadow:0 0 8px #fff}

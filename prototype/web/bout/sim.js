@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBout, playBeat, settleKnockdown, checkInvariants, prepare, doCorner, setPlan, PLANS, SIDES } from "./engine.js";
+import { createBout, playBeat, settleKnockdown, settleSub, checkInvariants, prepare, doCorner, setPlan, PLANS, SIDES } from "./engine.js";
 import { createAI, createMasher, createFixedPlan } from "./ai.js";
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "rules", "bout");
@@ -42,7 +42,7 @@ export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = da
   const A = brainA(d, "a", ra);
   const B = brainB(d, "b", rb);
   let beats = 0;
-  const stats = { knockdowns: 0, whiffRange: 0, attacks: 0, hits: 0, plans: {} };
+  const stats = { knockdowns: 0, whiffRange: 0, attacks: 0, hits: 0, plans: {}, groundBeats: 0, tdTried: 0, tdOk: 0, subLocks: 0, groundPounds: 0 };
   let planned = -1;
   while (!st.over && beats < 400) {
     if (st.beat === 0 && planned !== st.round) {
@@ -50,8 +50,15 @@ export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = da
       beginRound(st, A, B);
       for (const s of SIDES) stats.plans[st.plan[s].plan] = (stats.plans[st.plan[s].plan] || 0) + 1;
     }
+    if (st.mode === "ground") stats.groundBeats++;
     const ev = playBeat(st, A.think(st), B.think(st));
-    for (const e of ev) if (e.t === "attack") { stats.attacks++; if (e.hit) stats.hits++; if (e.whiff === "range") stats.whiffRange++; }
+    for (const e of ev) {
+      if (e.t === "attack") { stats.attacks++; if (e.hit) stats.hits++; if (e.whiff === "range") stats.whiffRange++; }
+      if (e.t === "takedown") { stats.tdTried++; if (e.ok) stats.tdOk++; }
+      if (e.t === "gattack" && e.hit) stats.groundPounds++;
+      if (e.t === "subLock") stats.subLocks++;
+    }
+    if (st.subPending) settleSub(st);
     if (st.pending) {
       const brain = st.pending.by === "a" ? A : B;
       const ev2 = settleKnockdown(st, brain.chase(st));
@@ -67,7 +74,7 @@ export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = da
 function summarize(label, results) {
   const n = results.length;
   const wins = { a: 0, b: 0, draw: 0 };
-  let beats = 0, finish = 0, r1 = 0, kd = 0, atk = 0, hit = 0, whiff = 0;
+  let beats = 0, finish = 0, r1 = 0, kd = 0, atk = 0, hit = 0, whiff = 0, gb = 0, tdT = 0, tdO = 0, sl = 0, sub = 0, gtko = 0;
   for (const r of results) {
     const o = r.st.over;
     wins[o.winner ?? "draw"]++;
@@ -77,9 +84,13 @@ function summarize(label, results) {
     if (fin && o.round === 1) r1++;
     kd += r.stats.knockdowns;
     atk += r.stats.attacks; hit += r.stats.hits; whiff += r.stats.whiffRange;
+    gb += r.stats.groundBeats; tdT += r.stats.tdTried; tdO += r.stats.tdOk; sl += r.stats.subLocks;
+    if (o.method.startsWith("降伏")) sub++;
+    if (o.method.startsWith("TKO（地面")) gtko++;
   }
   const pct = (x) => `${Math.round((100 * x) / n)}%`;
   console.log(`${label.padEnd(34)} A ${pct(wins.a)}  B ${pct(wins.b)}  平 ${pct(wins.draw)} | 平均 ${(beats / n).toFixed(1)} 手 | 終結 ${pct(finish)}（R1 ${pct(r1)}）判定 ${pct(n - finish)} | 倒地 ${(kd / n).toFixed(2)}/場 | 命中 ${Math.round((100 * hit) / atk)}% 距離落空 ${Math.round((100 * whiff) / atk)}%`);
+  if (gb || tdT) console.log(`${"".padEnd(34)} 地面：佔 ${Math.round((100 * gb) / beats)}% 手 | 摔 ${(tdT / n).toFixed(1)} 次試／${(tdO / n).toFixed(1)} 次成功 | 鎖技 ${(sl / n).toFixed(2)}/場 | 降伏結束 ${pct(sub)} 地面TKO ${pct(gtko)}`);
   return { wins, n, beats };
 }
 
@@ -152,8 +163,31 @@ function nicheTable(N) {
   }
 }
 
+/**
+ * The ground game: each pairing of the three styles with the thinking computer on both sides (sides swapped),
+ * and each style against the masher. Pass: no style wins everything, the wrestler goes to the ground often and the
+ * strikers rarely, and skill still beats mashing on the ground.
+ */
+function groundTable(N) {
+  const ids = Object.keys(data.fighters).filter((k) => !k.startsWith("_"));
+  const swap = (rs) => rs.map((r) => ({ ...r, st: { ...r.st, over: { ...r.st.over, winner: r.st.over.winner === "a" ? "b" : r.st.over.winner === "b" ? "a" : null } } }));
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const x = Array.from({ length: N }, (_, k) => fight(ids[i], ids[j], 3000 + k));
+      const y = swap(Array.from({ length: N }, (_, k) => fight(ids[j], ids[i], 7000 + k)));
+      summarize(`${ids[i]} vs ${ids[j]}`, [...x, ...y]);
+    }
+    const m = Array.from({ length: N }, (_, k) => fight(ids[i], ids[i], 11000 + k, createAI, createMasher));
+    summarize(`${ids[i]}(AI) vs 亂按`, m);
+  }
+}
+
 if (process.argv[1] && process.argv[1].endsWith("sim.js")) {
   const N = Number(process.argv[2]) || 100;
+  if (process.argv[3] === "ground") {
+    groundTable(N);
+    process.exit(0);
+  }
   if (process.argv[3] === "plans") {
     planTable(N);
     process.exit(0);

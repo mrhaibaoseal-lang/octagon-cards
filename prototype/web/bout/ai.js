@@ -1,19 +1,25 @@
 // Opponent for the card bout. It sees what the player sees: the table, its own hand, the player's held card,
 // and whether the player has a trap set (not which). It learns the player's habits over the fight.
-import { actions, odds, dmgMul, other, danger, headRatio, limping, heldCard, chaseOdds, stepOk, stepCost, rangeBonus, cornerOptions, injuries, partRatio, PLANS, TARGETS } from "./engine.js";
+import { actions, odds, dmgMul, other, danger, headRatio, limping, heldCard, chaseOdds, stepOk, stepCost, rangeBonus, cornerOptions, injuries, partRatio, planDmg, tdOdds, sprawlOdds, groundOdds, groundRole, PLANS, TARGETS } from "./engine.js";
 
 const MOVES = ["advance", "retreat", "sidestep", "guard"];
-const KINDS = ["card", "feint", ...MOVES];
+const KINDS = ["card", "feint", "takedown", "sprawl", ...MOVES];
 
 /** How likely is the opponent to do each thing this beat (and how often they step in / out with a card). */
 function oppModel(st, s, adapt) {
   const o = st[other(s)];
-  const prior = { card: 0.6, feint: 0.06, advance: 0.1, retreat: 0.07, guard: 0.1, sidestep: 0.07 };
+  const fw = st.data.fighters[o.id].weights;
+  let wAll = 0, wTd = 0;
+  for (const [id, k] of Object.entries(fw)) {
+    wAll += k;
+    if (st.data.cards[id].kind === "takedown") wTd += k;
+  }
+  const prior = { card: 0.55, feint: 0.06, takedown: Math.min(0.3, (wTd / wAll) * 1.3), sprawl: 0.03, advance: 0.1, retreat: 0.07, guard: 0.1, sidestep: 0.07 };
   const n = KINDS.reduce((x, k) => x + (o.hist[k] || 0), 0);
   const out = {};
   const w = Math.min(adapt, n / (n + 6));
   for (const k of KINDS) out[k] = prior[k] * (1 - w) + (n > 0 ? (o.hist[k] || 0) / n : prior[k]) * w;
-  const cards = Math.max(1, o.hist.card + o.hist.feint);
+  const cards = Math.max(1, o.hist.card + o.hist.feint + o.hist.takedown + o.hist.sprawl);
   out.stepIn = 0.25 * (1 - w) + (o.hist.stepIn / cards) * w;
   out.stepOut = 0.15 * (1 - w) + (o.hist.stepOut / cards) * w;
   return out;
@@ -41,8 +47,70 @@ const regionValue = (st, s, card, prof) => {
   return 0.45 + prof.body * 0.4 + (limping(st, other(s)) ? 0.15 : 0);
 };
 
+/** What being on the ground is worth to `side` (damage-equivalent): high for grapplers who are better down there. */
+function groundValue(st, side, prof) {
+  const f = st.data.fighters[st[side].id].ground;
+  const fo = st.data.fighters[st[other(side)].id].ground;
+  const edge = f.top + f.sub - (fo.escape + fo.bottom);
+  const danger2 = danger(st, other(side)) ? 1 : 0;
+  return -1.5 + prof.grapple * 9 + edge * 10 + danger2;
+}
+
 export function createAI(data, side, rng) {
+  const thinkGround = (st) => {
+    const me = st[side];
+    const opp = st[other(side)];
+    const f = data.fighters[me.id];
+    const fo = data.fighters[opp.id];
+    const prof = f.ai;
+    const g = data.config.ground;
+    const role = groundRole(st, side);
+    const pos = st.ground.pos;
+    const stam = me.stamina / me.staminaMax;
+    const sv = 0.25 + (1 - stam) * 0.6;
+    // what the other side is likely to do: role priors, shifted by what they have done so far
+    const prior = role === "top" ? { defend: 0.35, escape: 0.22, sweep: 0.12, sub: 0.1, getup: 0.21 } : { pound: 0.38, advance: 0.18, sub: 0.12, ride: 0.27, release: 0.05 };
+    const n = Object.keys(prior).reduce((x, k) => x + (opp.ghist[k] || 0), 0);
+    const w = Math.min(prof.adapt, n / (n + 6));
+    const pOpp = {};
+    for (const k of Object.keys(prior)) pOpp[k] = prior[k] * (1 - w) + (n > 0 ? (opp.ghist[k] || 0) / n : prior[k]) * w;
+    const expP = (act, base) => Object.entries(pOpp).reduce((x, [k, pk]) => x + pk * groundOdds(st, side, act, base, k).p, 0);
+    let best = null;
+    const consider = (v, choice) => {
+      v *= 1 + (rng() - 0.5) * 2 * prof.noise;
+      if (!best || v > best.v) best = { v, choice };
+    };
+    const mine = f.ground;
+    for (const a of actions(st, side)) {
+      if (!a.ok) continue;
+      let v;
+      if (a.kind === "card") {
+        const card = data.cards[a.id];
+        const p = expP(card.act, card.hit);
+        if (card.act === "pound") {
+          const fac = 1 - (pOpp.defend || 0) * (1 - g.moves.defend.dmgMul);
+          const dmg = card.dmg * f.power * mine.gnp * g.posDmg[pos] * planDmg(st, side, card) * (a.charged ? data.config.charge.dmgMul : 1);
+          v = p * dmg * fac * 1.15 + (danger(st, other(side)) ? p * ((card.ko || 0) + 0.08) * 22 : 0);
+        } else if (card.act === "advance") v = p * (pos === 0 ? 3.2 : 3.8) * (0.7 + prof.grapple * 0.6);
+        else if (card.act === "sub") {
+          const tap = Math.max(0.05, Math.min(0.8, 0.3 + 1.2 * (mine.sub - fo.ground.escape) + (card.power || 0)));
+          v = p * (tap * 16 + 1.5);
+        } else if (card.act === "sweep") v = p * 5;
+        else v = p * (3 + pos * 1.2); // escape
+        v -= card.cost * sv;
+      } else {
+        const mv = g.moves[a.id];
+        if (mv.act === "ride") v = 0.3 + mv.regen * sv + mv.drain * 0.3;
+        else if (mv.act === "release") v = stam < 0.25 ? 1.6 : st.ground.stall >= g.stallMax - 1 ? 0.2 : -2 + (1 - prof.grapple) * 0.5;
+        else if (mv.act === "defend") v = (pOpp.pound || 0) * 4.5 * (1 - mv.dmgMul) + mv.regen * sv + (danger(st, side) ? 1.2 : 0);
+        else v = expP("getup", mv.hit) * (3 + (1 - prof.grapple) * 9) - mv.cost * sv; // getup
+      }
+      consider(v, a.kind === "card" ? { card: a.idx } : { move: a.id });
+    }
+    return best.choice;
+  };
   const think = (st) => {
+    if (st.mode === "ground") return thinkGround(st);
     const me = st[side];
     const opp = st[other(side)];
     const f = data.fighters[me.id];
@@ -72,6 +140,8 @@ export function createAI(data, side, rng) {
       ["cardIn", model.card * model.stepIn, 1],
       ["cardOut", model.card * model.stepOut, -1],
       ["feint", model.feint, 0],
+      ["takedown", model.takedown, 0],
+      ["sprawl", model.sprawl, 0],
       ...MOVES.map((m) => [m, model[m], cfg.moves[m].dist]),
     ];
     const strikeEV = (card, charged, step) => {
@@ -79,7 +149,7 @@ export function createAI(data, side, rng) {
       for (const [m, pm, dd] of scen) {
         const nd = Math.max(0, Math.min(3, st.dist + step + (MOVES.includes(m) ? dd : 0)));
         if (!card.range.includes(nd)) continue;
-        const opp2 = MOVES.includes(m) ? { move: m } : { step: dd };
+        const opp2 = MOVES.includes(m) ? { move: m } : { step: dd, shoot: m === "takedown" };
         ev += pm * odds(st, side, card, { opp: opp2, d: nd }).exp;
       }
       return ev * card.dmg * f.power * dmgMul(st, side, card, charged, false) * regionValue(st, side, card, prof);
@@ -103,6 +173,16 @@ export function createAI(data, side, rng) {
           if (step > 0 && opp.trap) v -= 1.2; // stepping in might walk into a counter trap
           if (card.ko && danger(st, other(side))) v += card.ko * 20;
           if (card.rarity === "sig") v += 0.5;
+        } else if (card.kind === "takedown") {
+          const o = tdOdds(st, side, card);
+          const sp = model.sprawl > 0.05 ? sprawlOdds(st, other(side), { hit: 0.5 }) * model.sprawl : 0;
+          const pOk = o.p * (1 - sp);
+          v = pOk * groundValue(st, side, prof) - (1 - pOk) * 1.6 - (card.cost + stepCost(st, side, step)) * sv;
+          if (step > 0 && opp.trap) v -= 1.2;
+        } else if (card.kind === "sprawl") {
+          if (step) continue;
+          const sp = sprawlOdds(st, side, card);
+          v = model.takedown * sp * (0.7 * Math.max(0, groundValue(st, other(side), data.fighters[opp.id].ai)) + 3) - card.cost * sv - 0.4;
         } else {
           if (step) continue; // feints are thrown standing
           const pDef = card.feint.against.reduce((x, m) => x + (model[m] || 0), 0) + (card.feint.against.includes("retreat") ? model.card * model.stepOut : 0);
@@ -196,6 +276,7 @@ export function createAI(data, side, rng) {
       probe: 0.3 + (st.round === 0 ? 0.25 : 0) + (stamR < 0.4 ? 0.9 : 0),
       pressure: 0.3 + prof.aggression * 0.3 + (oppStam < 0.45 ? 0.6 : 0) + (seen && seen.retreat + seen.stepOut >= 4 ? 0.3 : 0) - (stamR < 0.5 ? 0.8 : 0),
       counter: 0.1 + prof.caution * 0.3 + (myHead >= 0.45 ? 0.7 : 0) + (feel === "ours" ? 0.15 : 0) + (seen && seen.card + seen.stepIn >= 14 ? 0.2 : 0),
+      grapple: 0.05 + prof.grapple + (data.fighters[me.id].ground.wrestle - oppFighter.ground.tdDef) * 2.5 - (stamR < 0.4 ? 0.3 : 0),
       burst: 0.2 + (oppHead >= 0.5 ? 0.9 : 0) + (behind && lastRound ? 0.6 : 0) - (stamR < 0.6 ? 0.8 : 0) - (myHead >= 0.5 ? 0.4 : 0),
     };
     let best = "steady", bv = -1;
@@ -227,6 +308,14 @@ export function createAI(data, side, rng) {
 export function createMasher(data, side, rng) {
   return {
     think: (st) => {
+      if (st.mode === "ground") {
+        const ok = actions(st, side).filter((a) => a.ok);
+        const a = ok[Math.floor(rng() * ok.length)];
+        const choice = a.kind === "card" ? { card: a.idx } : { move: a.id };
+        const others = st[side].hand.map((_, i) => i).filter((i) => i !== choice.card);
+        if (rng() < 0.3 && others.length) choice.hold = others[Math.floor(rng() * others.length)];
+        return choice;
+      }
       const opts = [];
       for (const step of [-1, 0, 1]) {
         if (!stepOk(st, side, step)) continue;

@@ -225,8 +225,9 @@ test("invariants hold over many random bouts (masher vs masher)", () => {
 test("every card property comes from the JSON", () => {
   for (const id of cardIds(data)) {
     const c = data.cards[id];
-    assert.ok(["strike", "feint", "trap"].includes(c.kind), id);
+    assert.ok(["strike", "feint", "trap", "takedown", "sprawl", "ground"].includes(c.kind), id);
     assert.ok(c.text && c.text.length <= 14, `${id} text too long for the card face`);
+    if (c.kind === "ground") assert.ok(["top", "bottom"].includes(c.role) && c.act, id);
     if (c.kind === "strike") assert.ok(["head", "body", "leg"].includes(c.region) && c.hit > 0 && c.dmg > 0, id);
     if (c.kind === "trap") assert.ok((c.trap.on.move || c.trap.on.tag) && c.trap.beats > 0, id);
   }
@@ -368,4 +369,12 @@ test("whole bouts with plans and corners keep every invariant", () => {
     assert.ok(st.over);
     assert.equal(st.rounds.length, st.over.cards ? cfg.rounds : st.rounds.length);
   }
+});
+
+test("ground: thinking-computer bouts with a wrestler keep every invariant and end", () => {
+  for (let seed = 1; seed <= 40; seed++) assert.ok(fight("poirier", "makhachev", seed).st.over);
+});
+
+test("ground: a masher-vs-masher bout with a wrestler never breaks an invariant", () => {
+  for (let seed = 1; seed <= 40; seed++) fight("makhachev", "poirier", seed, createMasher, createMasher);
 });

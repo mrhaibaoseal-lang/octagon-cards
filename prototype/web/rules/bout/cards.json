@@ -1,5 +1,5 @@
 {
- "_doc": "站立牌池。kind：strike 出拳腳（預設）／feint 假動作（對手若防守，他下一手露破綻）／trap 預判牌（不佔一手：「埋」下去等 beats 手，對手做出 on 的動作就觸發：一定打實、可打斷他的攻擊、讓他露破綻）。region 打哪；range 能用的距離（0遠 1中 2近 3纏抱；預判牌任何距離都能蓋）；cost 體力；hit 打實率（碰到後打實而不是擦到的機率）；dmg 傷害；heavy 打空會露破綻；ko 額外擊倒機率；counter 對手選這個基本動作時命中大增；combo 上一手打中時更準更重（連段）；push 打中後把對手推開幾格；tags 給預判牌辨認（punch/straight/hook/kick/knee）；text 牌面上的一句話。",
+ "_doc": "站立牌池。kind：strike 出拳腳（預設）／feint 假動作（對手若防守，他下一手露破綻）／trap 預判牌（不佔一手：「埋」下去等 beats 手，對手做出 on 的動作就觸發：一定打實、可打斷他的攻擊、讓他露破綻）。region 打哪；range 能用的距離（0遠 1中 2近 3纏抱；預判牌任何距離都能蓋）；cost 體力；hit 打實率（碰到後打實而不是擦到的機率）；dmg 傷害；heavy 打空會露破綻；ko 額外擊倒機率；counter 對手選這個基本動作時命中大增；combo 上一手打中時更準更重（連段）；push 打中後把對手推開幾格；tags 給預判牌辨認（punch/straight/hook/kick/knee）；text 牌面上的一句話。 0.5 起：takedown 抱腿摔（成功進地面）／sprawl 壓趴（擋抱腿並壓到他上面）／ground 地面牌（role top|bottom、pos 可用位置、act pound|advance|sub|sweep|escape，advance 的 to 是去哪一階，sub 的 power 是鎖技本身的力道）；breaks＝破摔（對手抱腿時更準，也讓他更難摔進來）。",
  "jab": {
   "name": "刺拳",
   "region": "head",
@@ -66,7 +66,8 @@
   "tags": [
    "punch"
   ],
-  "text": "他衝進來時更準"
+  "text": "他衝進來時更準",
+  "breaks": true
  },
  "flurry": {
   "name": "連打",
@@ -189,7 +190,8 @@
   "tags": [
    "knee"
   ],
-  "text": "纏抱時最好用"
+  "text": "纏抱時最好用",
+  "breaks": true
  },
  "flyknee": {
   "name": "飛膝",
@@ -364,5 +366,183 @@
    "hook"
   ],
   "text": "Poirier 招牌"
+ },
+ "shoot": {
+  "name": "抱腿",
+  "kind": "takedown",
+  "range": [
+   1,
+   2
+  ],
+  "cost": 2,
+  "hit": 0.3,
+  "lands": 0,
+  "tags": [],
+  "text": "抱腿摔：成功進地面"
+ },
+ "bodylock": {
+  "name": "抱摔",
+  "kind": "takedown",
+  "range": [
+   3
+  ],
+  "cost": 2,
+  "hit": 0.38,
+  "lands": 0,
+  "tags": [],
+  "text": "纏抱時把他摔倒"
+ },
+ "sprawl": {
+  "name": "壓趴",
+  "kind": "sprawl",
+  "cost": 1,
+  "hit": 0.5,
+  "tags": [],
+  "text": "他抱腿→擋下並壓上去"
+ },
+ "g_pound": {
+  "name": "砸拳",
+  "kind": "ground",
+  "role": "top",
+  "pos": [
+   0,
+   1,
+   2
+  ],
+  "act": "pound",
+  "region": "head",
+  "cost": 1,
+  "hit": 0.62,
+  "dmg": 4,
+  "tags": [],
+  "text": "地面重拳"
+ },
+ "g_elbow": {
+  "name": "肘擊",
+  "kind": "ground",
+  "role": "top",
+  "pos": [
+   0,
+   1
+  ],
+  "act": "pound",
+  "region": "head",
+  "cost": 2,
+  "hit": 0.52,
+  "dmg": 7,
+  "ko": 0.05,
+  "tags": [],
+  "text": "壓著打的肘"
+ },
+ "g_pass": {
+  "name": "過腿",
+  "kind": "ground",
+  "role": "top",
+  "pos": [
+   0
+  ],
+  "act": "advance",
+  "to": 1,
+  "cost": 2,
+  "hit": 0.5,
+  "tags": [],
+  "text": "繞過腿到壓制"
+ },
+ "g_back": {
+  "name": "抓背",
+  "kind": "ground",
+  "role": "top",
+  "pos": [
+   1
+  ],
+  "act": "advance",
+  "to": 2,
+  "cost": 2,
+  "hit": 0.45,
+  "tags": [],
+  "text": "壓制到背後"
+ },
+ "g_arm": {
+  "name": "手臂鎖",
+  "kind": "ground",
+  "role": "top",
+  "pos": [
+   1
+  ],
+  "act": "sub",
+  "cost": 2,
+  "hit": 0.42,
+  "power": 0,
+  "tags": [],
+  "text": "壓制裡鎖手臂"
+ },
+ "g_rnc": {
+  "name": "裸絞",
+  "kind": "ground",
+  "role": "top",
+  "pos": [
+   2
+  ],
+  "act": "sub",
+  "cost": 2,
+  "hit": 0.48,
+  "power": 0.15,
+  "tags": [],
+  "text": "背後勒脖子"
+ },
+ "g_sweep": {
+  "name": "掃翻",
+  "kind": "ground",
+  "role": "bottom",
+  "pos": [
+   0
+  ],
+  "act": "sweep",
+  "cost": 2,
+  "hit": 0.45,
+  "tags": [],
+  "text": "翻到他上面"
+ },
+ "g_escape": {
+  "name": "脫逃",
+  "kind": "ground",
+  "role": "bottom",
+  "pos": [
+   1,
+   2
+  ],
+  "act": "escape",
+  "cost": 2,
+  "hit": 0.45,
+  "tags": [],
+  "text": "脫出一階"
+ },
+ "g_tri": {
+  "name": "三角鎖",
+  "kind": "ground",
+  "role": "bottom",
+  "pos": [
+   0
+  ],
+  "act": "sub",
+  "cost": 2,
+  "hit": 0.36,
+  "power": 0.05,
+  "tags": [],
+  "text": "從下面鎖他"
+ },
+ "g_guil": {
+  "name": "斷頭台",
+  "kind": "ground",
+  "role": "bottom",
+  "pos": [
+   0
+  ],
+  "act": "sub",
+  "cost": 1,
+  "hit": 0.3,
+  "power": -0.05,
+  "tags": [],
+  "text": "抱頭勒脖子"
  }
 }
