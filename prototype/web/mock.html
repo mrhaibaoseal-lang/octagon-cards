@@ -218,9 +218,9 @@ html,body{height:100%;background:#05070a;color:var(--text);font-family:"Noto San
 
     <!-- 翻牌 -->
     <div class="reveal" data-show="resolve">
-      <div class="rc" style="--c:var(--leg)"><small>你</small><b>低踢</b><div class="pct">61%</div><div class="res hit">命中</div></div>
+      <div class="rc" id="rcL"></div>
       <div class="vs">VS</div>
-      <div class="rc" style="--c:#556"><small>Poirier</small><b>前進</b><div class="pct" style="font-size:18px;margin-top:8px">—</div><div class="res miss">距離：中 → 近</div></div>
+      <div class="rc" id="rcR"></div>
     </div>
   </div>
 
@@ -311,12 +311,33 @@ function go(k){
   if(k==='qte'){fo.classList.remove('hurtleg')}
   $('#dollO').children[0].className = (k==='down')?'h w2':'h w1';
 }
+/* 假結果：每個選擇對應一個寫死的結算，只為了讓模型的流程像真的 */
+const OUT = {
+  '刺拳':{c:'var(--head)',pct:'55%',res:'迎擊命中',hit:true, o:['前進','距離：中 → 近'],cap:'Holloway <em>刺拳</em> 迎擊命中頭部'},
+  '連打':{c:'var(--head)',pct:'42%',res:'落空，你露出破綻',hit:false,o:['後退','距離：中 → 遠'],cap:'Holloway <em>連打</em> 打空，Poirier 退開了'},
+  '低踢':{c:'var(--leg)', pct:'61%',res:'命中',hit:true, o:['前進','距離：中 → 近'],cap:'Holloway <em>低踢</em> 命中 Poirier 的左腿'},
+  '旋踢':{c:'var(--gold)',pct:'38%',res:'KO 命中！',hit:true,ko:true,o:['抱腿','距離不夠，落空'],cap:'Holloway <em>旋踢</em> 命中頭部！'},
+  '前進':{c:'#556',pct:'—',res:'距離：中 → 近',hit:false,o:['低踢 61%','命中你的腿'],cap:'你前進了一步，吃了一記低踢',oc:'var(--leg)',oh:true},
+  '後退':{c:'#556',pct:'—',res:'距離：中 → 遠',hit:false,o:['前進','距離又拉近了'],cap:'你後退，Poirier 追上來'},
+  '側移':{c:'#556',pct:'—',res:'脫離籠邊 ⚡-1',hit:false,o:['刺拳 55%','打空'],cap:'你側移脫離籠邊，刺拳落空',oc:'var(--head)'},
+  '架擋':{c:'#556',pct:'—',res:'擋下 · 體力 +1',hit:false,o:['刺拳 55%','被擋下'],cap:'你架住了，刺拳被擋下',oc:'var(--head)'}
+};
+let lastPlay='低踢';
+function renderResolve(){
+  const o=OUT[lastPlay], pr=o.pct!=='—';
+  $('#rcL').style.setProperty('--c',o.c);
+  $('#rcL').innerHTML='<small>你</small><b>'+lastPlay+'</b><div class="pct" '+(pr?'':'style="font-size:18px;margin-top:8px"')+'>'+o.pct+'</div><div class="res '+(o.hit?'hit':'miss')+'">'+o.res+'</div>';
+  $('#rcR').style.setProperty('--c',o.oc||'#556');
+  $('#rcR').innerHTML='<small>Poirier</small><b>'+o.o[0]+'</b><div class="pct" style="font-size:18px;margin-top:8px">—</div><div class="res '+(o.oh?'hit':'miss')+'">'+o.o[1]+'</div>';
+  $('#cap').innerHTML=o.cap;
+  const fo=$('#fo'); fo.classList.toggle('hit',!!o.hit&&!o.oh); document.querySelectorAll('.spark').forEach(e=>e.style.display=(o.hit&&!o.oh)?'block':'none');
+}
 document.querySelectorAll('[data-play]').forEach(el=>{
   el.addEventListener('click',()=>{
     if(el.classList.contains('card')){
       if(!el.classList.contains('sel')){document.querySelectorAll('.card').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');return}
     }
-    go('resolve');
+    lastPlay=el.dataset.play; go('resolve'); renderResolve();
   })
 });
 document.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.go)));
@@ -325,11 +346,11 @@ document.querySelectorAll('.tg').forEach(el=>el.addEventListener('click',()=>{do
 document.querySelectorAll('.bigc').forEach(el=>el.addEventListener('click',()=>go('cards')));
 document.querySelector('.ring').addEventListener('click',()=>{const m=document.querySelector('.tug .me');m.style.width=Math.min(96,parseFloat(m.style.width||58)+10)+'%'});
 document.querySelector('.resolve-next');
-document.querySelector('.reveal').addEventListener('click',()=>go('cards'));
+document.querySelector('.reveal').addEventListener('click',()=>go(OUT[lastPlay].ko?'down':'cards'));
 
 function fit(){const w=innerWidth,h=innerHeight-34;const s=Math.min(w/844,h/390);frame.style.transform='scale('+s+')'}
 addEventListener('resize',fit);fit();
-const q=new URLSearchParams(location.search).get('s');go(SCREENS[q]?q:'cards');
+const q=new URLSearchParams(location.search).get('s');go(SCREENS[q]?q:'cards');if(q==='resolve')renderResolve();
 </script>
 </body>
 </html>
