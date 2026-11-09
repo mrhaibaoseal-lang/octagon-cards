@@ -5,7 +5,8 @@
 
 ## 目前
 - **戰鬥回到卡牌，從頭重想（2026-11-09，使用者核准 Opus 5.5 重建版）**：手牌加權抽、留著最多 5 張；距離四格＋籠邊；一手一個決定（出牌或基本動作）同時翻開、命中率是看得到的真數字；對手新抽的牌看得到（讀牌）；破綻、倒地追擊／穩住、回合前計畫、角落三選二、地面 QTE。規格 `docs/GAME_DESIGN.md`（即時版封存 `archive/GAME_DESIGN_RT.md`），真實比賽底稿 `docs/UFC_REAL_PATTERNS.md`。
-- **等使用者**：開 `prototype/web/mock.html`（只有畫面，沒有規則；可點牌、點分頁）看清不清楚、緊不緊張。通過才做站立最小版引擎。
+- **站立最小版已可玩（2026-11-09）**：`prototype/web/bout.html`（Holloway 對 Poirier，三回合；`?me=poirier` 換邊）。測試 `node --test prototype/web/bout/test.js`（15 項），模擬 `node prototype/web/bout/sim.js 300`。
+- **等使用者**：打幾場，說看不看得懂、緊不緊張、讀牌／倒地追擊有沒有感覺、電腦太強太弱。通過才加換牌、籠邊、回合前計畫與角落，再做地面與 QTE。
 - **美術**：新方向的姿勢需求等規則定了再寫進美術待辦；`rt.html` 保留但不再是方向。
 
 ## 進度

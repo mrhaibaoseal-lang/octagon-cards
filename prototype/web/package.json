@@ -7,6 +7,8 @@
     "test": "node test/engine.test.js",
     "sim": "node sim.js",
     "test:deck": "node --test deck/test.js",
-    "sim:deck": "node deck/sim.js"
+    "sim:deck": "node deck/sim.js",
+    "test:bout": "node --test bout/test.js",
+    "sim:bout": "node bout/sim.js"
   }
 }

@@ -1,0 +1,27 @@
+{
+ "_doc": "卡牌版（站立最小版）的規則數字。引擎不寫死任何數值或牌名，全部從這裡和 cards.json／fighters.json 讀。spec: docs/GAME_DESIGN.md",
+ "rounds": 3,
+ "beatsPerRound": 12,
+ "secondsPerBeat": 25,
+ "handMax": 5,
+ "handCopies": 2,
+ "startHand": 5,
+ "dist": { "names": ["遠", "中", "近", "纏抱"], "start": 1 },
+ "stamina": { "max": 10, "min": 4, "regen": 1, "roundRecover": 4, "low": 0.25, "lowPenalty": 0.15 },
+ "hit": { "min": 0.05, "max": 0.95, "openBonus": 0.2, "counterBonus": 0.3 },
+ "boost": { "cost": 1, "dmgMul": 1.35, "hitBonus": 0.05 },
+ "moves": {
+  "advance": { "label": "前進", "dist": 1, "cost": 0, "regen": 0 },
+  "retreat": { "label": "後退", "dist": -1, "cost": 0, "regen": 0 },
+  "sidestep": { "label": "側移", "dist": 0, "cost": 1, "regen": 0, "evade": 0.25 },
+  "guard": { "label": "架擋", "dist": 0, "cost": 0, "regen": 1.5, "hit": { "head": 0.2, "body": 0.1, "leg": 0.05 }, "dmgMul": { "head": 0.5, "body": 0.8, "leg": 0.9 } }
+ },
+ "damageWeight": { "head": 1.2, "body": 1.0, "leg": 0.8 },
+ "body": { "maxLoss": 0.25, "drain": 0.4 },
+ "leg": { "limp": 9, "moveCost": 1 },
+ "head": { "dangerRatio": 0.6, "koDanger": 0.5, "koScale": 0.9, "koLight": 0.3, "koCap": 0.75, "sigDangerBoost": 3 },
+ "knockdown": { "maxCount": 3, "staminaLoss": 2 },
+ "chase": { "cost": 4, "finishBase": 0.3, "finishPerHead": 0.35, "finishMax": 0.85, "tiredBonus": 0.1 },
+ "hold": { "recoverStamina": 2, "headRelief": 0.9 },
+ "scoring": { "judges": 3, "judgeNoise": 0.18, "knockdownBonus": 10 }
+}

@@ -1,0 +1,17 @@
+{
+ "_doc": "站立牌池。region 打哪個部位；range 能用的距離（0遠 1中 2近 3纏抱）；cost 體力；hit 基本命中率；dmg 傷害；heavy 打空會露破綻；ko 額外的擊倒機率（招牌與高踢）；counter 對手選了這個基本動作時命中大增；rarity normal／sig（招牌，被打到危險時出現率提高）。",
+ "jab": { "name": "刺拳", "region": "head", "range": [0, 1], "cost": 1, "hit": 0.62, "dmg": 3, "counter": "advance", "rarity": "normal" },
+ "cross": { "name": "直拳", "region": "head", "range": [1, 2], "cost": 2, "hit": 0.52, "dmg": 6, "rarity": "normal" },
+ "hook": { "name": "鉤拳", "region": "head", "range": [2, 3], "cost": 2, "hit": 0.5, "dmg": 8, "heavy": true, "rarity": "normal" },
+ "upper": { "name": "上勾拳", "region": "head", "range": [2, 3], "cost": 2, "hit": 0.52, "dmg": 8, "heavy": true, "counter": "advance", "rarity": "normal" },
+ "flurry": { "name": "連打", "region": "head", "range": [1, 2], "cost": 3, "hit": 0.42, "dmg": 10, "heavy": true, "rarity": "normal" },
+ "lowkick": { "name": "低踢", "region": "leg", "range": [0, 1, 2], "cost": 1, "hit": 0.58, "dmg": 3, "rarity": "normal" },
+ "bodykick": { "name": "中踢", "region": "body", "range": [0, 1], "cost": 2, "hit": 0.5, "dmg": 5, "rarity": "normal" },
+ "bodyshot": { "name": "打身", "region": "body", "range": [1, 2, 3], "cost": 2, "hit": 0.55, "dmg": 5, "rarity": "normal" },
+ "highkick": { "name": "高踢", "region": "head", "range": [0, 1], "cost": 3, "hit": 0.3, "dmg": 12, "heavy": true, "ko": 0.12, "rarity": "normal" },
+ "knee": { "name": "膝擊", "region": "body", "range": [2, 3], "cost": 2, "hit": 0.62, "dmg": 6, "rarity": "normal" },
+ "dirty": { "name": "髒拳", "region": "head", "range": [3], "cost": 1, "hit": 0.66, "dmg": 3, "rarity": "normal" },
+ "elbow": { "name": "肘擊", "region": "head", "range": [2, 3], "cost": 2, "hit": 0.5, "dmg": 7, "ko": 0.05, "rarity": "normal" },
+ "sigflurry": { "name": "瘋狂連打", "region": "head", "range": [1, 2], "cost": 3, "hit": 0.5, "dmg": 12, "heavy": true, "ko": 0.1, "rarity": "sig" },
+ "sighook": { "name": "左鉤重拳", "region": "head", "range": [2, 3], "cost": 3, "hit": 0.48, "dmg": 14, "heavy": true, "ko": 0.15, "rarity": "sig" }
+}
