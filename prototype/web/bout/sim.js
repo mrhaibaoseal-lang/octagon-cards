@@ -3,8 +3,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBout, playBeat, settleKnockdown, checkInvariants, prepare } from "./engine.js";
-import { createAI, createMasher } from "./ai.js";
+import { createBout, playBeat, settleKnockdown, checkInvariants, prepare, doCorner, setPlan, PLANS, SIDES } from "./engine.js";
+import { createAI, createMasher, createFixedPlan } from "./ai.js";
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "rules", "bout");
 const read = (n) => JSON.parse(readFileSync(join(dir, `${n}.json`), "utf8"));
@@ -21,16 +21,35 @@ export function rngOf(seed) {
   };
 }
 
-/** brainA/brainB: (data, side, rng) => { think(st), chase(st) } */
-export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = data) {
+/** Corner (from round 2 on) and then both plans, exactly as the browser does it. Returns the corner reports. */
+export function beginRound(st, A, B) {
+  const brains = { a: A, b: B };
+  const info = { a: null, b: null };
+  if (st.round > 0) for (const s of SIDES) info[s] = doCorner(st, s, brains[s].corner ? brains[s].corner(st) : ["coach", "rest"]);
+  for (const s of SIDES) {
+    const p = brains[s].plan ? brains[s].plan(st, info[s]) : { plan: "steady", target: null };
+    setPlan(st, s, p.plan, p.target);
+  }
+  return info;
+}
+
+/** brainA/brainB: (data, side, rng) => { think(st), chase(st), corner(st), plan(st, info) } */
+export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = data, setup = null) {
   const st = createBout(d, idA, idB, seed);
+  if (setup) setup(st);
   const ra = rngOf(seed * 7 + 1);
   const rb = rngOf(seed * 13 + 5);
   const A = brainA(d, "a", ra);
   const B = brainB(d, "b", rb);
   let beats = 0;
-  const stats = { knockdowns: 0, whiffRange: 0, attacks: 0, hits: 0 };
+  const stats = { knockdowns: 0, whiffRange: 0, attacks: 0, hits: 0, plans: {} };
+  let planned = -1;
   while (!st.over && beats < 400) {
+    if (st.beat === 0 && planned !== st.round) {
+      planned = st.round;
+      beginRound(st, A, B);
+      for (const s of SIDES) stats.plans[st.plan[s].plan] = (stats.plans[st.plan[s].plan] || 0) + 1;
+    }
     const ev = playBeat(st, A.think(st), B.think(st));
     for (const e of ev) if (e.t === "attack") { stats.attacks++; if (e.hit) stats.hits++; if (e.whiff === "range") stats.whiffRange++; }
     if (st.pending) {
@@ -64,8 +83,85 @@ function summarize(label, results) {
   return { wins, n, beats };
 }
 
+/**
+ * Do the plans and target parts carry real decisions? Every line is "A's win rate" over four pairings
+ * (Holloway/Poirier both ways and both mirrors). Pass: no fixed plan far above 50% against steady+head,
+ * and the thinking computer beats every fixed choice (otherwise choosing well is worth nothing).
+ */
+function planTable(N) {
+  const ids = ["holloway", "poirier"];
+  const vs = (label, mkA, mkB) => {
+    let w = 0, n = 0;
+    for (const [x, y] of [[ids[0], ids[1]], [ids[1], ids[0]], [ids[0], ids[0]], [ids[1], ids[1]]]) {
+      for (let i = 0; i < N; i++) {
+        const o = fight(x, y, 41000 + i, mkA, mkB).st.over.winner;
+        n++;
+        w += o === "a" ? 1 : o ? 0 : 0.5;
+      }
+    }
+    console.log(`${label.padEnd(34)} ${Math.round((100 * w) / n)}%`);
+  };
+  const F = (p, t) => (d, s, r) => createFixedPlan(d, s, r, p, t);
+  console.log("A 的勝率（越接近 50% 越表示兩邊的選擇一樣好）：");
+  for (const p of PLANS(data)) vs(`固定${p}+頭 對 steady+頭`, F(p, "head"), F("steady", "head"));
+  vs("steady+身 對 steady+頭", F("steady", "body"), F("steady", "head"));
+  vs("steady+腿 對 steady+頭", F("steady", "leg"), F("steady", "head"));
+  vs("steady+無 對 steady+頭", F("steady", null), F("steady", "head"));
+  vs("會想的電腦 對 steady+頭", createAI, F("steady", "head"));
+  vs("會想的電腦 對 steady+無", createAI, F("steady", null));
+  vs("會想的電腦 對 burst+頭", createAI, F("burst", "head"));
+  vs("會想的電腦 對 counter+頭", createAI, F("counter", "head"));
+  vs("會想的電腦 對 pressure+頭", createAI, F("pressure", "head"));
+  vs("會想的電腦 對 probe+頭", createAI, F("probe", "head"));
+}
+
+/**
+ * A plan should be the better choice in the situation it is made for. Each line starts a bout at round 2
+ * with a staged situation; A plays the plan, B plays "steady"; both use the same thinking computer otherwise.
+ * Pass: every plan is clearly above 50% in its own situation.
+ */
+function nicheTable(N) {
+  const ids = ["holloway", "poirier"];
+  const staged = (mutate) => (st) => {
+    st.round = 1;
+    st.rounds = [{ round: 1, dealt: { a: 0, b: 0 }, kd: { a: 0, b: 0 }, landed: { a: 0, b: 0 }, mix: { a: { ...st.a.rhist }, b: { ...st.b.rhist } }, plan: { a: "steady", b: "steady" } }];
+    mutate(st);
+  };
+  const body = (st, s, ratio) => { st[s].body = ratio * ((st.data.config.stamina.max - st.data.config.stamina.min) / st.data.config.body.maxLoss); st[s].staminaMax = Math.max(st.data.config.stamina.min, st.data.config.stamina.max - st[s].body * st.data.config.body.maxLoss); };
+  const head = (st, s, ratio) => { st[s].head = ratio * st.data.fighters[st[s].id].chin; };
+  const cases = [
+    ["probe 對 steady（我很累）", "probe", (st) => { st.a.stamina = 1.5; }],
+    ["pressure 對 steady（他很累）", "pressure", (st) => { st.b.stamina = 3; }],
+    ["burst 對 steady（他頭傷 70%）", "burst", (st) => head(st, "b", 0.7)],
+    ["counter 對 steady（我頭傷 60%）", "counter", (st) => head(st, "a", 0.6)],
+    ["steady+腿 對 steady+頭（他腿傷 60%）", "steady", (st) => { st.b.leg = 0.6 * st.data.config.leg.limp; }, "leg"],
+    ["steady+身 對 steady+頭（他身傷 60%）", "steady", (st) => body(st, "b", 0.6), "body"],
+    ["steady+頭 對 steady+頭（他頭傷 60%）", "steady", (st) => head(st, "b", 0.6), "head"],
+  ];
+  const F = (p, t) => (d, s, r) => createFixedPlan(d, s, r, p, t);
+  for (const [label, plan, mutate, target = "head"] of cases) {
+    let w = 0, n = 0;
+    for (const [x, y] of [[ids[0], ids[1]], [ids[1], ids[0]], [ids[0], ids[0]], [ids[1], ids[1]]]) {
+      for (let i = 0; i < N; i++) {
+        const o = fight(x, y, 61000 + i, F(plan, target), F("steady", "head"), data, staged(mutate)).st.over.winner;
+        n++;
+        w += o === "a" ? 1 : o ? 0 : 0.5;
+      }
+    }
+    console.log(`${label.padEnd(34)} ${Math.round((100 * w) / n)}%`);
+  }
+}
+
 if (process.argv[1] && process.argv[1].endsWith("sim.js")) {
   const N = Number(process.argv[2]) || 100;
+  if (process.argv[3] === "plans") {
+    planTable(N);
+    process.exit(0);
+  }
+  if (process.argv[3] === "niches") {
+    nicheTable(N);
+    process.exit(0);
+  }
   const ids = ["holloway", "poirier"];
   const run = (a, b, brainA, brainB, seed0) => Array.from({ length: N }, (_, i) => fight(a, b, seed0 + i, brainA, brainB));
   const swap = (rs) => rs.map((r) => ({ ...r, st: { ...r.st, over: { ...r.st.over, winner: r.st.over.winner === "a" ? "b" : r.st.over.winner === "b" ? "a" : null } } }));

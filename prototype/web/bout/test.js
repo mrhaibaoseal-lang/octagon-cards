@@ -1,7 +1,7 @@
 // node --test prototype/web/bout/test.js — rules of the card bout engine.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createBout, playBeat, settleKnockdown, actions, odds, dmgMul, heldCard, cardIds } from "./engine.js";
+import { createBout, playBeat, settleKnockdown, actions, odds, dmgMul, heldCard, cardIds, setPlan, planDmg, moveCost, stepCost, targetScale, partRatio, injuries, cornerOptions, doCorner, PLANS, TARGETS } from "./engine.js";
 import { data, fight } from "./sim.js";
 import { createMasher } from "./ai.js";
 
@@ -231,4 +231,141 @@ test("every card property comes from the JSON", () => {
     if (c.kind === "trap") assert.ok((c.trap.on.move || c.trap.on.tag) && c.trap.beats > 0, id);
   }
   for (const f of ["holloway", "poirier"]) for (const k of Object.keys(data.fighters[f].weights)) assert.ok(data.cards[k], `${f} weights unknown card ${k}`);
+});
+
+// ---------- round plan, target part and corner ----------
+const countKinds = (st, s, kind, n = 300) => {
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    setPlan(st, s, st.plan[s].plan, st.plan[s].target);
+    k += st[s].hand.filter((h) => data.cards[h.id].kind === kind).length;
+  }
+  return k;
+};
+
+test("a plan changes how often cards come: counter draws more traps, probe more feints", () => {
+  const base = fresh(5);
+  const steady = countKinds(base, "a", "trap");
+  const c = fresh(5);
+  c.plan.a = { plan: "counter", target: null };
+  assert.ok(countKinds(c, "a", "trap") > steady * 1.2, "counter should draw clearly more traps");
+  const p = fresh(5);
+  const f0 = countKinds(p, "a", "feint");
+  p.plan.a = { plan: "probe", target: null };
+  assert.ok(countKinds(p, "a", "feint") > f0 * 1.3, "probe should draw clearly more feints");
+});
+
+test("a target part raises how many cards for that part you draw", () => {
+  const count = (target) => {
+    const st = fresh(8);
+    st.plan.a = { plan: "steady", target };
+    let n = 0;
+    for (let i = 0; i < 300; i++) { setPlan(st, "a", "steady", target); n += st.a.hand.filter((h) => data.cards[h.id].region === "leg").length; }
+    return n;
+  };
+  assert.ok(count("leg") > count(null) * 1.3);
+});
+
+test("plans change damage and stamina exactly as configured; steady changes nothing", () => {
+  const st = fresh();
+  const jab = data.cards.jab;
+  assert.equal(planDmg(st, "a", jab), 1);
+  setPlan(st, "a", "burst", null);
+  assert.ok(near(planDmg(st, "a", jab), cfg.plans.burst.dmgMul));
+  setPlan(st, "a", "probe", null);
+  assert.ok(near(planDmg(st, "a", jab), cfg.plans.probe.dmgMul));
+  // regen: a guard beat restores more with probe than with burst
+  const gain = (plan) => {
+    const s2 = at(1, JABS, JABS);
+    setPlan(s2, "a", plan, null);
+    setHand(s2, "a", JABS);
+    s2.a.stamina = 5;
+    playBeat(s2, { move: "guard" }, { move: "guard" });
+    return s2.a.stamina - 5;
+  };
+  assert.ok(gain("probe") > gain("burst"));
+});
+
+test("pressure makes the opponent's retreat cost more, for a move and for a step back", () => {
+  const st = fresh();
+  assert.equal(moveCost(st, "b", "retreat"), cfg.moves.retreat.cost);
+  setPlan(st, "a", "pressure", null);
+  assert.equal(moveCost(st, "b", "retreat"), cfg.moves.retreat.cost + cfg.plans.pressure.foeRetreatCost);
+  assert.equal(stepCost(st, "b", -1), cfg.step.cost + cfg.plans.pressure.foeRetreatCost);
+  assert.equal(moveCost(st, "a", "retreat"), cfg.moves.retreat.cost, "pressure does not tax the one who presses");
+});
+
+test("the target bonus is small against a fresh part and large against a hurt one", () => {
+  const st = fresh();
+  setPlan(st, "a", "steady", "leg");
+  const fresh0 = targetScale(st, "a", "leg");
+  st.b.leg = cfg.leg.limp * 0.8;
+  const hurt = targetScale(st, "a", "leg");
+  assert.ok(hurt > fresh0 * 1.8, `${fresh0} → ${hurt}`);
+  const low = data.cards.lowkick;
+  assert.ok(planDmg(st, "a", low) > 1);
+  assert.equal(planDmg(st, "a", data.cards.jab), 1, "other parts get nothing");
+  assert.ok(odds(st, "a", low, { d: 1 }).why.includes("target"));
+  assert.ok(!odds(st, "a", data.cards.jab, { d: 1 }).why.includes("target"));
+});
+
+test("plans can only be chosen before a round starts, and only from the table", () => {
+  const st = fresh();
+  assert.throws(() => setPlan(st, "a", "nonsense", null), /unknown plan/);
+  assert.throws(() => setPlan(st, "a", "steady", "elbow"), /unknown target/);
+  playBeat(st, { move: "guard" }, { move: "guard" });
+  assert.throws(() => setPlan(st, "a", "burst", null), /before the round/);
+  assert.ok(PLANS(data).length >= 4 && TARGETS(data).length === 3);
+});
+
+test("corner: the doctor is only offered when something is hurt, and he treats the worst part", () => {
+  const st = fresh();
+  assert.equal(cornerOptions(st, "a").doctor, false);
+  assert.throws(() => doCorner(st, "a", ["doctor"]), /not available/);
+  st.a.head = data.fighters.holloway.chin * 0.8;
+  st.a.leg = cfg.leg.limp * 0.5;
+  assert.equal(injuries(st, "a")[0].part, "head");
+  const before = partRatio(st, "a", "head");
+  const r = doCorner(st, "a", ["doctor", "rest"]);
+  assert.equal(r.healed, "head");
+  assert.ok(near(partRatio(st, "a", "head"), before * (1 - cfg.corner.doctorRelief)));
+  assert.equal(r.rested, true);
+  assert.throws(() => doCorner(st, "a", ["coach", "rest", "doctor"]), /two at most/);
+});
+
+test("corner: rest restores stamina up to the cap; the coach reports true habits and an honest-but-noisy feel", () => {
+  const st = fresh(11);
+  for (let i = 0; i < cfg.beatsPerRound; i++) playBeat(st, { move: "guard" }, { move: "retreat" });
+  assert.equal(st.round, 1);
+  assert.equal(st.rounds.length, 1);
+  assert.equal(st.rounds[0].mix.b.retreat, cfg.beatsPerRound);
+  st.a.stamina = st.a.staminaMax - 1;
+  const r = doCorner(st, "a", ["coach", "rest"]);
+  assert.equal(st.a.stamina, st.a.staminaMax);
+  assert.ok(["ours", "theirs", "close"].includes(r.intel.feel));
+  const habit = r.intel.facts.find((f) => f.k === "habit");
+  assert.deepEqual([habit.what, habit.n, habit.of], ["retreat", cfg.beatsPerRound, cfg.beatsPerRound]);
+});
+
+test("probing leaves a true fact about the opponent at the end of the round", () => {
+  const st = fresh(12);
+  setPlan(st, "a", "probe", null);
+  for (let i = 0; i < cfg.beatsPerRound; i++) playBeat(st, { move: "guard" }, { move: "guard" });
+  const r = doCorner(st, "a", ["coach"]);
+  const f = r.intel.facts.find((x) => x.k === "weak" || x.k === "range");
+  assert.ok(f, "probe should scout something");
+  if (f.k === "weak") {
+    const avg = (key) => Object.values(data.fighters).filter((x) => x && x.chin).reduce((t, x) => t + x[key], 0) / 2;
+    assert.ok(data.fighters.poirier[f.what] / avg(f.what) < 1, "the fact must be a real weakness of the opponent");
+  }
+  const r2 = doCorner(fresh(12), "a", ["coach"]);
+  assert.equal(r2.intel, null, "no round yet: nothing to report");
+});
+
+test("whole bouts with plans and corners keep every invariant", () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const { st } = fight("holloway", "poirier", seed);
+    assert.ok(st.over);
+    assert.equal(st.rounds.length, st.over.cards ? cfg.rounds : st.rounds.length);
+  }
 });

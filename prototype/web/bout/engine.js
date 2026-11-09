@@ -34,6 +34,8 @@ export function prepare(data) {
 }
 export const cardIds = (data) => Object.keys(data.cards).filter((k) => !k.startsWith("_"));
 
+const newRhist = () => ({ card: 0, feint: 0, advance: 0, retreat: 0, sidestep: 0, guard: 0, stepIn: 0, stepOut: 0, head: 0, body: 0, leg: 0 });
+
 function newFighter(data, id) {
   const f = data.fighters[id];
   const c = data.config;
@@ -52,6 +54,7 @@ function newFighter(data, id) {
     trap: null, // { id, left }：埋著的預判牌（對手只知道有，不知道是什麼）
     landedLast: false, // 上一手有打實 → 連段牌變強
     hist: { advance: 0, retreat: 0, sidestep: 0, guard: 0, card: 0, feint: 0, stepIn: 0, stepOut: 0 },
+    rhist: newRhist(), // 這一回合的習慣（回合結束時存進 rounds，教練從這裡看）
     tagHist: {},
     dealt: 0,
     kdTaken: 0,
@@ -75,6 +78,7 @@ export function createBout(data, idA, idB, seed = 1) {
     events: [],
     nextOpen: { a: 0, b: 0 },
     lastActs: null,
+    plan: { a: { plan: "steady", target: null }, b: { plan: "steady", target: null } }, // 這回合的暗選計畫
   };
   for (const s of SIDES) refill(st, s);
   return st;
@@ -87,6 +91,47 @@ export const heldCard = (st, s) => st[s].hand.find((h) => h.charged)?.id || null
 /** Bonus to clean hits a fighter gets at distance d (their favourite range). */
 export const rangeBonus = (st, s, d) => st.data.fighters[st[s].id].rangeBonus?.[d] || 0;
 
+/** Does a card satisfy a plan's `when` clause? Only properties, never names. */
+function matches(card, when) {
+  if (when.kind && card.kind !== when.kind) return false;
+  if (when.tag && !card.tags.includes(when.tag)) return false;
+  if (when.region && card.region !== when.region) return false;
+  if (when.heavy && !card.heavy) return false;
+  if (when.counter && !card.counter) return false;
+  if (when.near && !(card.kind === "strike" && Math.min(...card.range) >= 2)) return false;
+  return true;
+}
+/** How much this side's plan and target change how often a card is drawn. */
+function planDraw(st, s, card) {
+  const c = st.data.config;
+  const pl = st.plan[s];
+  let m = 1;
+  for (const r of c.plans[pl.plan].draw || []) if (matches(card, r.when)) m *= r.mul;
+  if (pl.target && card.kind === "strike" && card.region === pl.target) m *= c.target[pl.target].drawMul;
+  return m;
+}
+/** How hurt is part `part` of fighter s, as a share of "this part is in real trouble" (1 = limping / dangerous / drained). */
+export function partRatio(st, s, part) {
+  const c = st.data.config;
+  if (part === "head") return headRatio(st, s);
+  if (part === "leg") return st[s].leg / c.leg.limp;
+  return st[s].body / ((c.stamina.max - c.stamina.min) / c.body.maxLoss);
+}
+/** How much of the target bonus is live: small against a fresh part, full against one that is already hurt. */
+export function targetScale(st, s, part) {
+  const k = st.data.config.target._scale;
+  return Math.min(k.cap, k.base + k.perRatio * partRatio(st, other(s), part));
+}
+/** Damage multiplier from the plan and the target part (own strikes only). */
+export function planDmg(st, s, card) {
+  const c = st.data.config;
+  const pl = st.plan[s];
+  let m = c.plans[pl.plan].dmgMul ?? 1;
+  if (pl.target && card.region === pl.target) m *= 1 + (c.target[pl.target].dmgMul - 1) * targetScale(st, s, pl.target);
+  return m;
+}
+const foeRetreat = (st, s) => st.data.config.plans[st.plan[other(s)].plan].foeRetreatCost || 0;
+
 function drawId(st, s) {
   const f = st.data.fighters[st[s].id];
   const dng = danger(st, s);
@@ -98,7 +143,7 @@ function drawId(st, s) {
     if (copies(id) >= st.data.config.handCopies) continue;
     const near = card.range.some((d) => Math.abs(d - st.dist) <= 1);
     const fits = near ? st.data.config.drawRangeBias : 1;
-    const k = w * fits * (card.rarity === "sig" && dng ? st.data.config.head.sigDangerBoost : 1);
+    const k = w * fits * planDraw(st, s, card) * (card.rarity === "sig" && dng ? st.data.config.head.sigDangerBoost : 1);
     ws.push([id, k]);
     total += k;
   }
@@ -114,9 +159,9 @@ function refill(st, s) {
 export function moveCost(st, s, id) {
   const mv = st.data.config.moves[id];
   const extra = limping(st, s) && mv.dist !== 0 ? st.data.config.leg.moveCost : 0;
-  return mv.cost + extra;
+  return mv.cost + extra + (mv.dist < 0 ? foeRetreat(st, s) : 0);
 }
-export const stepCost = (st, s, step) => (step ? st.data.config.step.cost + (limping(st, s) ? st.data.config.leg.moveCost : 0) : 0);
+export const stepCost = (st, s, step) => (step ? st.data.config.step.cost + (limping(st, s) ? st.data.config.leg.moveCost : 0) + (step < 0 ? foeRetreat(st, s) : 0) : 0);
 export const stepOk = (st, s, step) => st.dist + step >= 0 && st.dist + step <= 3 && stepCost(st, s, step) <= st[s].stamina;
 
 /**
@@ -166,6 +211,8 @@ export function odds(st, s, card, { boost = false, opp = null, d = st.dist } = {
   const why = [];
   const rb = rangeBonus(st, s, d);
   if (rb) { clean += rb; why.push("range"); }
+  const aim = st.plan[s].target;
+  if (aim && card.region === aim) { clean += c.target[aim].clean * targetScale(st, s, aim); why.push("target"); }
   if (op.open > 0) { clean += h.openBonus; why.push("open"); }
   if (comboLive(st, s, card)) { clean += c.combo.hitBonus; why.push("combo"); }
   if (tired) { clean -= c.stamina.lowPenalty; why.push("tired"); }
@@ -185,7 +232,7 @@ export function odds(st, s, card, { boost = false, opp = null, d = st.dist } = {
 
 export function dmgMul(st, s, card, charged, boost) {
   const c = st.data.config;
-  return (charged ? c.charge.dmgMul : 1) * (comboLive(st, s, card) ? c.combo.dmgMul : 1) * (boost ? c.boost.dmgMul : 1);
+  return (charged ? c.charge.dmgMul : 1) * (comboLive(st, s, card) ? c.combo.dmgMul : 1) * (boost ? c.boost.dmgMul : 1) * planDmg(st, s, card);
 }
 
 function validate(st, s, ch) {
@@ -231,6 +278,7 @@ function applyDamage(st, s, card, dmg, e, canKO) {
   const me = st[s];
   const t = other(s);
   const tg = st[t];
+  dmg *= c.plans[st.plan[t].plan].takenMul ?? 1;
   me.landed++;
   me.dealt += dmg * c.damageWeight[card.region];
   e.dmg = Math.round(dmg * 10) / 10;
@@ -273,6 +321,7 @@ export function playBeat(st, ca, cb) {
       me.stamina -= moveCost(st, s, x.move);
       acts[s] = { kind: "move", id: x.move, step: 0, holdId, trapCard };
       me.hist[x.move]++;
+      me.rhist[x.move]++;
     } else {
       const h = me.hand[x.card];
       const card = st.data.cards[h.id];
@@ -280,10 +329,11 @@ export function playBeat(st, ca, cb) {
       me.stamina -= card.cost + (x.boost ? c.boost.cost : 0) + stepCost(st, s, step);
       acts[s] = { kind: card.kind, card, step, boost: !!x.boost, charged: h.charged, holdId, trapCard };
       me.hist[card.kind === "strike" ? "card" : card.kind]++;
-      if (step > 0) me.hist.stepIn++;
-      if (step < 0) me.hist.stepOut++;
+      me.rhist[card.kind === "strike" ? "card" : card.kind]++;
+      if (step > 0) { me.hist.stepIn++; me.rhist.stepIn++; }
+      if (step < 0) { me.hist.stepOut++; me.rhist.stepOut++; }
       for (const tg of card.tags) me.tagHist[tg] = (me.tagHist[tg] || 0) + 1;
-      if (card.kind === "strike") me.thrown++;
+      if (card.kind === "strike") { me.thrown++; me.rhist[card.region]++; }
     }
     acts[s].trapSet = !!trapCard;
   }
@@ -442,8 +492,10 @@ function endBeat(st) {
     const me = st[s];
     const f = st.data.fighters[me.id];
     const a = acts?.[s];
-    const mvRegen = a?.kind === "move" ? c.moves[a.id].regen || 0 : 0;
-    me.stamina = Math.min(me.staminaMax, me.stamina + c.stamina.regen * f.cardio + mvRegen);
+    const pl = c.plans[st.plan[s].plan];
+    const mvDef = a?.kind === "move" ? c.moves[a.id] : null;
+    const mvRegen = mvDef ? (mvDef.regen || 0) + (mvDef.guard ? pl.guardRegen || 0 : 0) : 0;
+    me.stamina = Math.min(me.staminaMax, me.stamina + c.stamina.regen * f.cardio * (pl.regenMul ?? 1) + mvRegen);
     me.open = st.nextOpen[s];
     if (me.trap && !a?.trapSet && --me.trap.left <= 0) me.trap = null;
     const kept = [];
@@ -466,6 +518,9 @@ function endRound(st) {
     dealt: { a: st.a.dealt, b: st.b.dealt },
     kd: { a: st.a.kdTaken, b: st.b.kdTaken },
     landed: { a: st.a.landed, b: st.b.landed },
+    mix: { a: { ...st.a.rhist }, b: { ...st.b.rhist } },
+    plan: { a: st.plan.a.plan, b: st.plan.b.plan },
+    aim: { a: st.plan.a.target, b: st.plan.b.target },
   };
   st.rounds.push(entry);
   st.events.push({ t: "roundEnd", ...entry });
@@ -475,6 +530,7 @@ function endRound(st) {
     me.kdTaken = 0;
     me.landed = 0;
     me.thrown = 0;
+    me.rhist = newRhist();
     me.open = 0;
     me.trap = null;
     me.landedLast = false;
@@ -515,6 +571,97 @@ function decide(st) {
 function finish(st, winner, method, cards = null) {
   st.over = { winner, method, round: st.round + 1, beat: st.beat, cards };
   st.events.push({ t: "end", ...st.over });
+}
+
+// ---------- between rounds: plan and corner ----------
+export const PLANS = (data) => Object.keys(data.config.plans).filter((k) => !k.startsWith("_"));
+export const TARGETS = (data) => Object.keys(data.config.target).filter((k) => !k.startsWith("_"));
+
+/** Choose this round's plan (and the part to attack). The hand is dealt again with the new draw weights. */
+export function setPlan(st, s, plan, target = null) {
+  if (!PLANS(st.data).includes(plan)) throw new Error(`unknown plan ${plan}`);
+  if (target != null && !TARGETS(st.data).includes(target)) throw new Error(`unknown target ${target}`);
+  if (st.beat !== 0) throw new Error("plans are chosen before the round starts");
+  st.plan[s] = { plan, target };
+  st[s].hand = [];
+  refill(st, s);
+}
+
+/** Parts the cornerman can work on, worst first: [{ part, ratio }]. */
+export function injuries(st, s) {
+  const c = st.data.config;
+  const k = c.corner;
+  const parts = [
+    { part: "head", ratio: partRatio(st, s, "head"), at: k.doctorHead },
+    { part: "leg", ratio: partRatio(st, s, "leg"), at: k.doctorLeg },
+    { part: "body", ratio: partRatio(st, s, "body"), at: k.doctorBody },
+  ];
+  return parts.filter((p) => p.ratio >= p.at).sort((x, y) => y.ratio - x.ratio);
+}
+
+/** What the corner can offer right now. */
+export const cornerOptions = (st, s) => ({ coach: true, rest: true, doctor: injuries(st, s).length > 0 });
+
+/** True facts about the opponent's profile, found by probing (cardio / chin below the field, else his favourite range). */
+function scoutFact(st, s) {
+  const o = st[other(s)];
+  const f = st.data.fighters[o.id];
+  const all = Object.values(st.data.fighters).filter((x) => x && typeof x === "object" && x.chin);
+  const avg = (key) => all.reduce((a, x) => a + x[key], 0) / all.length;
+  const weak = [["chin", f.chin / avg("chin")], ["cardio", f.cardio / avg("cardio")]].sort((x, y) => x[1] - y[1])[0];
+  if (weak[1] < 0.97) return { k: "weak", what: weak[0], ratio: weak[1] };
+  const rb = f.rangeBonus || {};
+  const fav = Object.keys(rb).sort((x, y) => rb[y] - rb[x])[0];
+  return { k: "range", dist: fav == null ? null : Number(fav) };
+}
+
+/**
+ * The coach's report after a round. Everything is true except the "feel" of the round,
+ * which is a noisy read (real corners judge a round wrongly too) and says nothing about numbers.
+ */
+function coachIntel(st, s) {
+  const c = st.data.config;
+  const last = st.rounds[st.rounds.length - 1];
+  if (!last) return null;
+  const o = other(s);
+  const mix = last.mix[o];
+  const facts = [];
+  const strikes = mix.head + mix.body + mix.leg;
+  if (strikes >= 3) facts.push({ k: "aim", head: mix.head / strikes, body: mix.body / strikes, leg: mix.leg / strikes, n: strikes });
+  const habits = ["advance", "retreat", "sidestep", "guard", "feint"].map((x) => [x, mix[x]]).sort((x, y) => y[1] - x[1]);
+  if (habits[0][1] >= 3) facts.push({ k: "habit", what: habits[0][0], n: habits[0][1], of: c.beatsPerRound });
+  if (last.plan[s] === "probe") facts.push(scoutFact(st, s));
+  const mine = last.dealt[s], his = last.dealt[o];
+  const diff = (mine - his) / Math.max(1, mine + his) + (rand(st) - 0.5) * 2 * c.corner.feelNoise;
+  const feel = diff > c.corner.feelEdge ? "ours" : diff < -c.corner.feelEdge ? "theirs" : "close";
+  return { feel, facts };
+}
+
+/**
+ * Between rounds: pick at most two of coach / doctor / rest (doctor only if something is hurt).
+ * Returns what happened: { picks, rested, healed: part|null, intel: {feel, facts}|null }.
+ */
+export function doCorner(st, s, picks) {
+  const c = st.data.config;
+  const k = c.corner;
+  const me = st[s];
+  const opt = cornerOptions(st, s);
+  const p = [...new Set(picks)];
+  if (p.length > 2) throw new Error("two at most");
+  for (const x of p) if (!opt[x]) throw new Error(`corner: ${x} is not available`);
+  const out = { picks: p, rested: false, healed: null, intel: null };
+  if (p.includes("rest")) {
+    me.stamina = Math.min(me.staminaMax, me.stamina + k.restRecover);
+    out.rested = true;
+  }
+  if (p.includes("doctor")) {
+    const worst = injuries(st, s)[0].part;
+    me[worst] *= 1 - k.doctorRelief;
+    out.healed = worst;
+    me.staminaMax = Math.max(c.stamina.min, c.stamina.max - me.body * c.body.maxLoss);
+  }
+  if (p.includes("coach")) out.intel = coachIntel(st, s);
+  return out;
 }
 
 export const clock = (st) => (st.data.config.beatsPerRound - st.beat) * st.data.config.secondsPerBeat;

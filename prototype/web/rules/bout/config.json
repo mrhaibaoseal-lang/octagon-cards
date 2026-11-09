@@ -128,5 +128,30 @@
  "drawRangeBias": 1.6,
  "step": {
   "cost": 0
+ },
+ "plans": {
+  "_doc": "回合前暗選的計畫（兩邊同時決定，翻開時才知道）。draw 改這回合的抽牌權重（when 條件都符合才乘 mul）；dmgMul 自己出拳腳的傷害倍率；takenMul 你受到的傷害倍率；regenMul 每手體力回復倍率；guardRegen 架擋多回的體力；foeRetreatCost 對手每次後退（含退一步）多花的體力；scout 回合結束多看清對手一個真實弱點。target 是主攻部位：該部位的牌抽得多、打實率和傷害有加成。",
+  "steady": { "label": "穩打", "text": "沒有特別偏向，照手牌打" },
+  "probe": { "label": "試探", "text": "輸出低、體力回得很快、多抽假動作；回合結束多看清他一個真實弱點", "dmgMul": 0.8, "regenMul": 1.35, "scout": true, "draw": [{ "when": { "kind": "feint" }, "mul": 1.8 }] },
+  "pressure": { "label": "壓迫", "text": "近距離的牌變多，他每次後退多花 1 體力；你的體力回得慢", "regenMul": 0.7, "foeRetreatCost": 1, "draw": [{ "when": { "near": true }, "mul": 1.5 }] },
+  "counter": { "label": "守反", "text": "預判、迎擊牌變多，架擋多回 1 體力，受到的傷害 -5%；自己出手較輕", "dmgMul": 0.9, "takenMul": 0.95, "guardRegen": 1, "draw": [{ "when": { "kind": "trap" }, "mul": 1.5 }, { "when": { "counter": true }, "mul": 1.4 }] },
+  "burst": { "label": "爆發", "text": "重拳多、打實更重；體力回得很慢，累了就會崩", "dmgMul": 1.25, "regenMul": 0.5, "draw": [{ "when": { "heavy": true }, "mul": 1.8 }] }
+ },
+ "target": {
+  "_doc": "主攻部位加成：drawMul 該部位的牌抽得多；clean 打實率加成；dmgMul 傷害倍率（身、腿的傷害權重低，所以倍率較大）。加成大小看對手那個部位已經累積多少傷：scale = base + perRatio × 傷勢比例（上限 cap）。完好的部位只有小加成，已經受傷的部位才是真正的弱點（對方腳弱就打腳）。",
+  "_scale": { "base": 0.35, "perRatio": 1.1, "cap": 1.5 },
+  "head": { "label": "頭", "drawMul": 1.2, "clean": 0.03, "dmgMul": 1.05 },
+  "body": { "label": "身", "drawMul": 1.7, "clean": 0.08, "dmgMul": 1.45 },
+  "leg": { "label": "腿", "drawMul": 1.7, "clean": 0.1, "dmgMul": 2.2 }
+ },
+ "corner": {
+  "_doc": "回合之間三選二：聽教練（情報，不保證對）、找醫生（只在受傷時能選）、休息。沒受傷自動聽教練＋休息。",
+  "restRecover": 2,
+  "doctorRelief": 0.3,
+  "doctorHead": 0.35,
+  "doctorLeg": 0.45,
+  "doctorBody": 0.45,
+  "feelNoise": 0.35,
+  "feelEdge": 0.18
  }
 }

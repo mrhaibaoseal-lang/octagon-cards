@@ -1,6 +1,6 @@
 // Opponent for the card bout. It sees what the player sees: the table, its own hand, the player's held card,
 // and whether the player has a trap set (not which). It learns the player's habits over the fight.
-import { actions, odds, dmgMul, other, danger, headRatio, limping, heldCard, chaseOdds, stepOk, stepCost, rangeBonus } from "./engine.js";
+import { actions, odds, dmgMul, other, danger, headRatio, limping, heldCard, chaseOdds, stepOk, stepCost, rangeBonus, cornerOptions, injuries, partRatio, PLANS, TARGETS } from "./engine.js";
 
 const MOVES = ["advance", "retreat", "sidestep", "guard"];
 const KINDS = ["card", "feint", ...MOVES];
@@ -162,7 +162,65 @@ export function createAI(data, side, rng) {
     const prof = data.fighters[st[side].id].ai;
     return st[side].stamina >= data.config.chase.cost && chaseOdds(st, other(side)) + prof.aggression * 0.2 >= 0.55;
   };
-  return { think, chase };
+  // Between rounds the computer uses what a player could use: the table (damage dots and stamina are visible),
+  // its own fighter's habits, and the coach's report (a noisy "feel" and true observations) when it asked for one.
+  const corner = (st) => {
+    const me = st[side];
+    const opts = cornerOptions(st, side);
+    const stam = me.stamina / me.staminaMax;
+    const picks = [];
+    if (opts.doctor && injuries(st, side)[0].ratio >= 0.6) picks.push("doctor");
+    picks.push(stam < 0.55 ? "rest" : "coach");
+    picks.push(stam < 0.55 ? "coach" : "rest");
+    return [...new Set(picks)].slice(0, 2);
+  };
+  const plan = (st, info) => {
+    const me = st[side];
+    const oside = other(side);
+    const opp = st[oside];
+    const prof = data.fighters[me.id].ai;
+    const cfg = data.config;
+    const stamR = me.stamina / me.staminaMax;
+    const oppStam = opp.stamina / opp.staminaMax;
+    const myHead = headRatio(st, side);
+    const oppHead = headRatio(st, oside);
+    const feel = info?.intel?.feel || "close";
+    const last = st.rounds[st.rounds.length - 1];
+    const seen = last?.mix[oside];
+    const oppFighter = data.fighters[opp.id];
+    const lastRound = st.round === cfg.rounds - 1;
+    // steady unless something clear says otherwise
+    const behind = feel === "theirs";
+    const score = {
+      steady: 0.75,
+      probe: 0.3 + (st.round === 0 ? 0.25 : 0) + (stamR < 0.4 ? 0.9 : 0),
+      pressure: 0.3 + prof.aggression * 0.3 + (oppStam < 0.45 ? 0.6 : 0) + (seen && seen.retreat + seen.stepOut >= 4 ? 0.3 : 0) - (stamR < 0.5 ? 0.8 : 0),
+      counter: 0.1 + prof.caution * 0.3 + (myHead >= 0.45 ? 0.7 : 0) + (feel === "ours" ? 0.15 : 0) + (seen && seen.card + seen.stepIn >= 14 ? 0.2 : 0),
+      burst: 0.2 + (oppHead >= 0.5 ? 0.9 : 0) + (behind && lastRound ? 0.6 : 0) - (stamR < 0.6 ? 0.8 : 0) - (myHead >= 0.5 ? 0.4 : 0),
+    };
+    let best = "steady", bv = -1;
+    for (const [k, v] of Object.entries(score)) {
+      const x = v * (1 + (rng() - 0.5) * 2 * prof.noise);
+      if (x > bv) { bv = x; best = k; }
+    }
+    // aim where the opponent is already hurt: the bonus is small against a fresh part, big against a damaged one
+    const dw = cfg.damageWeight;
+    const ts = cfg.target._scale;
+    let target = null, tv = 0;
+    for (const part of TARGETS(data)) {
+      const r = partRatio(st, oside, part);
+      const sc = Math.min(ts.cap, ts.base + ts.perRatio * r);
+      let v = dw[part] * (1 + (cfg.target[part].dmgMul - 1) * sc) + cfg.target[part].clean * sc * 2;
+      if (part === "head") v += Math.max(0, r - 0.4) * 0.8; // closer to a knockout
+      if (part === "leg" && r > 0.4 && r < 1) v += 0.35 * r; // about to limp
+      if (part === "body" && r > 0.3) v += 0.3 * r * oppStam;
+      if (part === "body") v += prof.body * 0.15;
+      v *= 1 + (rng() - 0.5) * prof.noise;
+      if (v > tv) { tv = v; target = part; }
+    }
+    return { plan: best, target };
+  };
+  return { think, chase, corner, plan };
 }
 
 /** A bot that picks any legal action at random — the baseline a real player should beat. */
@@ -182,5 +240,20 @@ export function createMasher(data, side, rng) {
       return choice;
     },
     chase: () => rng() < 0.5,
+    corner: (st) => {
+      const o = cornerOptions(st, side);
+      const all = ["coach", "rest", ...(o.doctor ? ["doctor"] : [])];
+      return all.filter(() => rng() < 0.7).slice(0, 2);
+    },
+    plan: () => {
+      const ps = PLANS(data), ts = [null, ...TARGETS(data)];
+      return { plan: ps[Math.floor(rng() * ps.length)], target: ts[Math.floor(rng() * ts.length)] };
+    },
   };
+}
+
+/** A computer opponent whose plan never changes (for balance runs): same fighting AI, same corner. */
+export function createFixedPlan(data, side, rng, plan, target = null) {
+  const ai = createAI(data, side, rng);
+  return { ...ai, plan: () => ({ plan, target }) };
 }

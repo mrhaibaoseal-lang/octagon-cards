@@ -1,6 +1,6 @@
 // Browser page for the card bout (bout.html): drawing and input. Rules are engine.js, the opponent is ai.js.
 // Layout follows mock.html (844x390). Fighters are placeholder shapes until sprites are wired in.
-import { createBout, playBeat, settleKnockdown, actions, odds, comboLive, heldCard, danger, headRatio, limping, clock, prepare, chaseOdds, stepOk } from "./engine.js";
+import { createBout, playBeat, settleKnockdown, actions, odds, comboLive, heldCard, danger, headRatio, limping, clock, prepare, chaseOdds, stepOk, setPlan, doCorner, cornerOptions, injuries, PLANS, TARGETS } from "./engine.js";
 import { createAI } from "./ai.js";
 
 const load = async (n) => (await fetch(`rules/bout/${n}.json`)).json();
@@ -55,8 +55,9 @@ function newBout() {
   $("#ov").hidden = true;
   render();
   let seen = false;
-  try { seen = localStorage.getItem("bout.help3") === "1"; } catch {}
-  if (!seen) showHelp();
+  try { seen = localStorage.getItem("bout.help4") === "1"; } catch {}
+  if (!seen) showHelp(() => beginRound(null));
+  else beginRound(null);
 }
 
 // ---------- geometry: the gap between the two bodies matches what can reach ----------
@@ -125,6 +126,7 @@ function renderBoards() {
   const mk = (cls, t) => `<div class="mk ${cls}">${t}</div>`;
   const me = st.a, op = st.b;
   let p = "", o = "";
+  if (st.plan.a.plan !== "steady" || st.plan.a.target) p += mk("plan", `📋 ${cfg.plans[st.plan.a.plan].label}${st.plan.a.target ? "·主攻" + cfg.target[st.plan.a.target].label : ""}`);
   if (me.trap) p += mk("trap", `👁 你埋了：${cardOf(me.trap.id).name}（剩 ${me.trap.left} 手）`);
   const mh = heldCard(st, "a");
   if (mh) p += mk("fire", `🔥 你在蓄力：${cardOf(mh).name}`);
@@ -167,6 +169,7 @@ function renderHand() {
         mid = `<div class="pct">${pct(o.land)}<small>%</small></div><div class="cl">打實 ${pct(o.clean)}%</div>`;
         if (o.why.includes("open")) why = '<span class="why">↑破綻</span>';
         else if (o.why.includes("combo")) why = '<span class="why" style="color:var(--combo)">↑連段</span>';
+        else if (o.why.includes("target")) why = '<span class="why">↑主攻</span>';
         else if (o.why.includes("range")) why = '<span class="why">↑你的距離</span>';
         else if (o.why.includes("tired")) why = '<span class="why dn">↓體力</span>';
         else if ((f.skill?.[a.id] || 0) >= 0.04) why = '<span class="why">↑擅長</span>';
@@ -470,7 +473,7 @@ async function afterBeat(ev) {
   render();
   if (st.over) { busy = true; return showEnd(); }
   const re = events.find((e) => e.t === "roundEnd");
-  if (re) { busy = true; return showRoundEnd(re); }
+  if (re) { busy = true; return beginRound(re); }
 }
 
 function chooseChase() {
@@ -495,20 +498,127 @@ function chooseChase() {
   });
 }
 
-function showRoundEnd(re) {
+// ---------- between rounds: summary → (corner) → coach report + plan ----------
+const HABIT = { advance: "前進", retreat: "後退", sidestep: "側移", guard: "架擋", feint: "假動作" };
+const PART = { head: "頭", body: "身", leg: "腿" };
+const FEEL = { ours: "「這回合應該是我們的。」", theirs: "「這回合恐怕被他拿下了。」", close: "「很接近，我看不出來。」" };
+const planName = (p, aim) => cfg.plans[p].label + (aim ? "·主攻" + cfg.target[aim].label : "");
+
+function showSummary(re) {
   const ov = $("#ov");
-  const row = (s) => `<div><b>${s === "a" ? "你" : st.b.short}</b>${re.landed[s]} 次打到 · 傷害 ${Math.round(re.dealt[s])}${re.kd[s] ? ` · 被擊倒 ${re.kd[s]}` : ""}</div>`;
+  const row = (s) => `<div><b>${s === "a" ? "你" : st.b.short}</b>${re.landed[s]} 次打到 · 傷害 ${Math.round(re.dealt[s])}${re.kd[s] ? ` · 被擊倒 ${re.kd[s]}` : ""}<br><small style="color:var(--dim)">計畫：${planName(re.plan[s], re.aim[s])}</small></div>`;
   ov.className = "ov dark";
   ov.innerHTML = `<h1 style="font-size:26px">第 ${re.round} 回合結束</h1>
     <div class="sum">${row("a")}${row("b")}</div>
-    <p>一分鐘休息：體力回復 ${cfg.stamina.roundRecover}。預判、連段在回合結束時清掉。比賽中看不到分數。</p>
-    <button class="btn gold" id="next">開始第 ${re.round + 1} 回合</button>`;
+    <p>比賽中看不到分數。體力回復 ${cfg.stamina.roundRecover}；預判、連段在回合結束時清掉。</p>
+    <button class="btn gold" id="next">進角落</button>`;
   ov.hidden = false;
-  $("#next").onclick = () => {
-    ov.hidden = true;
-    busy = false;
-    render();
+  return new Promise((res) => { $("#next").onclick = res; });
+}
+
+/** Three choices, two picks. Without an injury the doctor is not there and it is coach + rest automatically. */
+async function chooseCorner() {
+  const opt = cornerOptions(st, "a");
+  if (!opt.doctor) return ["coach", "rest"];
+  const hurt = injuries(st, "a").map((i) => PART[i.part]).join("、");
+  const picked = new Set(["doctor", "coach"]);
+  const ov = $("#ov");
+  const tile = (k, name, text) => `<div class="ptile ${picked.has(k) ? "on" : ""}" data-k="${k}"><b>${name}</b><span>${text}</span></div>`;
+  const draw = () => {
+    ov.className = "ov dark";
+    ov.innerHTML = `<div class="rbk"><h2>角落 · 一分鐘，只夠做兩件事</h2>
+      <div class="tiles">${tile("coach", "聽教練", "告訴你他這回合做了什麼、這回合的感覺")}
+      ${tile("doctor", "找醫生", `你的${hurt}有傷：處理最嚴重的一處，傷勢 -${Math.round(cfg.corner.doctorRelief * 100)}%`)}
+      ${tile("rest", "休息", `體力再 +${cfg.corner.restRecover}`)}</div>
+      <button class="btn gold" id="ok" ${picked.size === 2 ? "" : "disabled"}>${picked.size === 2 ? "決定" : "選兩件"}</button></div>`;
   };
+  draw();
+  ov.hidden = false;
+  return new Promise((res) => {
+    ov.onclick = (e) => {
+      const t = e.target.closest(".ptile");
+      if (t) {
+        const k = t.dataset.k;
+        if (picked.has(k)) picked.delete(k);
+        else {
+          if (picked.size >= 2) picked.delete([...picked][0]);
+          picked.add(k);
+        }
+        draw();
+        return;
+      }
+      if (e.target.closest("#ok") && picked.size === 2) {
+        ov.onclick = null;
+        res([...picked]);
+      }
+    };
+  });
+}
+
+function coachHtml(info) {
+  if (!info) return "";
+  const lines = [];
+  if (info.healed) lines.push(`🩺 醫生處理了你的${PART[info.healed]}`);
+  if (info.rested) lines.push(`💤 休息：體力 +${cfg.corner.restRecover}`);
+  if (info.intel) {
+    lines.push(`🗣 教練：<i>${FEEL[info.intel.feel]}</i>`);
+    for (const f of info.intel.facts) {
+      if (f.k === "aim") lines.push(`他這回合出了 ${f.n} 次拳腳：頭 ${pct(f.head)}% · 身 ${pct(f.body)}% · 腿 ${pct(f.leg)}%`);
+      else if (f.k === "habit") lines.push(`他 ${f.of} 手裡有 ${f.n} 手選了「${HABIT[f.what]}」`);
+      else if (f.k === "weak") lines.push(`🔍 試探看出來了：他的${f.what === "chin" ? `下巴比一般人脆（只有平均的 ${pct(f.ratio)}%）` : `體力比一般人差（只有平均的 ${pct(f.ratio)}%）`}`);
+      else if (f.k === "range") lines.push(`🔍 試探看出來了：他最舒服的距離是「${DN[f.dist]}」`);
+    }
+  }
+  return lines.length ? `<div class="coach">${lines.join("<br>")}${info.intel ? "<small>數字都是真的；「感覺」只是教練的判斷，會看錯。</small>" : ""}</div>` : "";
+}
+
+async function choosePlan(info) {
+  const ov = $("#ov");
+  let plan = "steady", target = null;
+  const names = PLANS(data);
+  const draw = () => {
+    ov.className = "ov dark";
+    ov.innerHTML = `<div class="rbk"><h2>第 ${st.round + 1} 回合 · 選計畫（對手同時選，開打才翻開）</h2>
+      ${coachHtml(info)}
+      <div class="tiles">${names.map((k) => `<div class="ptile ${plan === k ? "on" : ""}" data-plan="${k}"><b>${cfg.plans[k].label}</b><span>${cfg.plans[k].text}</span></div>`).join("")}</div>
+      <div class="tgt">主攻部位 ${[null, ...TARGETS(data)].map((t) => `<span class="pill ${target === t ? "on" : ""}" data-t="${t ?? ""}">${t ? cfg.target[t].label : "不指定"}</span>`).join("")}</div>
+      <div class="hint">主攻的部位牌抽得多；對手那裡傷得越重，加成越大（對方腳弱就打腳）。</div>
+      <button class="btn gold" id="go">開始第 ${st.round + 1} 回合</button></div>`;
+    ov.hidden = false;
+  };
+  draw();
+  return new Promise((res) => {
+    ov.onclick = (e) => {
+      const p = e.target.closest("[data-plan]");
+      if (p) { plan = p.dataset.plan; draw(); return; }
+      const t = e.target.closest("[data-t]");
+      if (t) { target = t.dataset.t || null; draw(); return; }
+      if (e.target.closest("#go")) {
+        ov.onclick = null;
+        res({ plan, target });
+      }
+    };
+  });
+}
+
+/** Both sides get their corner (from round 2), then both choose a plan in secret; the computer's is shown only after the round. */
+async function beginRound(re) {
+  busy = true;
+  let info = null;
+  if (re) {
+    await showSummary(re);
+    const picks = await chooseCorner();
+    info = doCorner(st, "a", picks);
+  }
+  const bInfo = re ? doCorner(st, "b", ai.corner(st)) : null;
+  const pb = ai.plan(st, bInfo);
+  const pa = await choosePlan(info);
+  setPlan(st, "a", pa.plan, pa.target);
+  setPlan(st, "b", pb.plan, pb.target);
+  $("#ov").hidden = true;
+  busy = false;
+  resetChoice();
+  render();
 }
 
 function showEnd() {
@@ -524,7 +634,7 @@ function showEnd() {
   $("#again").onclick = newBout;
 }
 
-function showHelp() {
+function showHelp(done) {
   const ov = $("#ov");
   ov.className = "ov dark";
   ov.innerHTML = `<h1 style="font-size:22px">怎麼打</h1>
@@ -536,15 +646,17 @@ function showHelp() {
       <div><b style="background:#1d2e4f;color:#b9d2ff">🎭 假動作</b>不打人。他若架擋或閃，下一手他露破綻。他若出手，你白挨一下。</div>
       <div><b style="background:var(--fire);color:#1a0d00">🔥 留／蓄力</b>沒出的牌每手換新。點「留」保住一張到下一手，它會變重，但對手看得到。</div>
       <div><b style="background:#3a1717;color:#ff9d9a">破綻</b>重拳打空、被騙、被預判都會露破綻：下一手被打實的機會大增。發紅光就是破綻。</div>
+      <div><b style="background:#3a2d0a;color:var(--gold)">📋 計畫</b>每回合開打前選一個計畫和主攻部位，對手也同時選。回合之間在角落聽教練、休息；受傷時還能找醫生（三選二）。</div>
       <div><b style="background:#161c28;color:#fff">距離</b>點牌會出現箭頭：綠色打得到，紅色打不到。每個選手有自己最舒服的距離（↑你的距離）。</div>
     </div>
     <button class="btn gold" id="gotit">開始打</button>`;
   ov.hidden = false;
   $("#gotit").onclick = () => {
     ov.hidden = true;
-    try { localStorage.setItem("bout.help3", "1"); } catch {}
+    try { localStorage.setItem("bout.help4", "1"); } catch {}
+    if (done) done();
   };
 }
 
-window.__bout = { get st() { return st; }, play, newBout, data };
+window.__bout = { get st() { return st; }, play, newBout, data, beginRound };
 newBout();
