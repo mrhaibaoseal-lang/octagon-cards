@@ -69,11 +69,18 @@ export function createAI(data, side, rng) {
     const stam = me.stamina / me.staminaMax;
     const sv = 0.25 + (1 - stam) * 0.6;
     // what the other side is likely to do: role priors, shifted by what they have done so far
-    const prior = role === "top" ? { defend: 0.35, escape: 0.22, sweep: 0.12, sub: 0.1, getup: 0.21 } : { pound: 0.38, advance: 0.18, sub: 0.12, ride: 0.27, release: 0.05 };
+    const prior = role === "top" ? { defend: 0.3, escape: 0.2, sweep: 0.12, sub: 0.1, getup: 0.18, strikeup: 0.1 } : { pound: 0.38, advance: 0.18, sub: 0.12, ride: 0.27, release: 0.05 };
     const n = Object.keys(prior).reduce((x, k) => x + (opp.ghist[k] || 0), 0);
     const w = Math.min(prof.adapt, n / (n + 6));
+    // on the ground both hands are public (by kind of move): only what the other side can actually do this beat counts
+    const avail = new Set(actions(st, other(side)).filter((a) => a.ok).map((a) => (a.kind === "card" ? data.cards[a.id].act : g.moves[a.id].act)));
     const pOpp = {};
-    for (const k of Object.keys(prior)) pOpp[k] = prior[k] * (1 - w) + (n > 0 ? (opp.ghist[k] || 0) / n : prior[k]) * w;
+    let tot = 0;
+    for (const k of Object.keys(prior)) {
+      pOpp[k] = avail.has(k) ? prior[k] * (1 - w) + (n > 0 ? (opp.ghist[k] || 0) / n : prior[k]) * w + 0.02 : 0;
+      tot += pOpp[k];
+    }
+    for (const k of Object.keys(pOpp)) pOpp[k] /= tot || 1;
     const expP = (act, base) => Object.entries(pOpp).reduce((x, [k, pk]) => x + pk * groundOdds(st, side, act, base, k).p, 0);
     let best = null;
     const consider = (v, choice) => {
@@ -87,7 +94,7 @@ export function createAI(data, side, rng) {
       if (a.kind === "card") {
         const card = data.cards[a.id];
         const p = expP(card.act, card.hit);
-        if (card.act === "pound") {
+        if (card.act === "pound" || card.act === "strikeup") {
           const fac = 1 - (pOpp.defend || 0) * (1 - g.moves.defend.dmgMul);
           const dmg = card.dmg * f.power * mine.gnp * g.posDmg[pos] * planDmg(st, side, card) * (a.charged ? data.config.charge.dmgMul : 1);
           v = p * dmg * fac * 1.15 + (danger(st, other(side)) ? p * ((card.ko || 0) + 0.08) * 22 : 0);
@@ -149,7 +156,7 @@ export function createAI(data, side, rng) {
       for (const [m, pm, dd] of scen) {
         const nd = Math.max(0, Math.min(3, st.dist + step + (MOVES.includes(m) ? dd : 0)));
         if (!card.range.includes(nd)) continue;
-        const opp2 = MOVES.includes(m) ? { move: m } : { step: dd, shoot: m === "takedown" };
+        const opp2 = MOVES.includes(m) ? { move: m } : { step: dd, shoot: m === "takedown", strike: m.startsWith("card"), feint: m === "feint" };
         ev += pm * odds(st, side, card, { opp: opp2, d: nd }).exp;
       }
       return ev * card.dmg * f.power * dmgMul(st, side, card, charged, false) * regionValue(st, side, card, prof);
@@ -167,6 +174,7 @@ export function createAI(data, side, rng) {
         const card = data.cards[a.id];
         let v;
         if (card.kind === "strike") {
+          if (me.stunned && step > 0) continue; // rocked: no walking forward into more
           v = strikeEV(card, a.charged, step) * (0.8 + prof.aggression * 0.5) - (card.cost + stepCost(st, side, step)) * sv;
           if (card.heavy) v -= 0.35 * prof.caution * 2;
           v -= trapRisk(card) * 4;
@@ -196,12 +204,13 @@ export function createAI(data, side, rng) {
     for (const a of actions(st, side, 0)) {
       if (a.kind !== "move" || !a.ok) continue;
       let v;
-      if (a.id === "guard") v = pAttack * threat * 0.34 * (0.5 + prof.caution) + cfg.moves.guard.regen * sv + (danger(st, side) ? 1.2 : 0) - 0.2;
+      if (a.id === "guard") v = pAttack * threat * 0.34 * (0.5 + prof.caution) + cfg.moves.guard.regen * sv + (danger(st, side) ? 1.2 : 0) + (me.stunned ? 1.2 : 0) - 0.2;
       else if (a.id === "sidestep") v = pAttack * threat * 0.35 * (0.4 + prof.caution) - a.cost * sv - 0.1;
       else {
         const nd = Math.max(0, Math.min(3, st.dist + cfg.moves[a.id].dist));
         v = 0.6 + rangeBonus(st, side, nd) * 4 - 0.3 * Math.abs(nd - prof.range) - 0.5;
         if (a.id === "retreat" && danger(st, side)) v += 1.0;
+        if (a.id === "retreat" && me.stunned) v += 1.6 * (0.6 + prof.caution);
         if (a.id === "advance" && opp.trap) v -= 0.8;
       }
       consider(v, { move: a.id });
@@ -234,7 +243,8 @@ export function createAI(data, side, rng) {
     choice.hold = hold;
     if (choice.card != null) {
       const card = data.cards[me.hand[choice.card].id];
-      choice.boost = card.kind === "strike" && card.dmg >= 8 && me.stamina >= used + cfg.boost.cost + 2 && (danger(st, other(side)) || rng() < prof.aggression * 0.3);
+      // boost = commit: far likelier to land clean and rock him, but a miss or graze leaves me open
+      choice.boost = card.kind === "strike" && card.dmg >= 5 && me.stamina >= used + cfg.boost.cost + 2 && !me.stunned && (opp.stunned || opp.open > 0 || danger(st, other(side)) || rng() < prof.aggression * 0.35);
     }
     return choice;
   };

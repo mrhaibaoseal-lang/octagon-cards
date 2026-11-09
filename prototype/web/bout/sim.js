@@ -42,7 +42,7 @@ export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = da
   const A = brainA(d, "a", ra);
   const B = brainB(d, "b", rb);
   let beats = 0;
-  const stats = { knockdowns: 0, whiffRange: 0, attacks: 0, hits: 0, plans: {}, groundBeats: 0, tdTried: 0, tdOk: 0, subLocks: 0, groundPounds: 0 };
+  const stats = { knockdowns: 0, whiffRange: 0, attacks: 0, hits: 0, plans: {}, groundBeats: 0, tdTried: 0, tdOk: 0, subLocks: 0, groundPounds: 0, clean: 0, stuns: 0, botTry: 0, botOk: 0 };
   let planned = -1;
   while (!st.over && beats < 400) {
     if (st.beat === 0 && planned !== st.round) {
@@ -53,10 +53,11 @@ export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = da
     if (st.mode === "ground") stats.groundBeats++;
     const ev = playBeat(st, A.think(st), B.think(st));
     for (const e of ev) {
-      if (e.t === "attack") { stats.attacks++; if (e.hit) stats.hits++; if (e.whiff === "range") stats.whiffRange++; }
+      if (e.t === "attack") { stats.attacks++; if (e.hit) stats.hits++; if (e.quality === "clean") stats.clean++; if (e.stun) stats.stuns++; if (e.whiff === "range") stats.whiffRange++; }
       if (e.t === "takedown") { stats.tdTried++; if (e.ok) stats.tdOk++; }
       if (e.t === "gattack" && e.hit) stats.groundPounds++;
       if (e.t === "subLock") stats.subLocks++;
+      if ((e.t === "gtry" || e.t === "gattack") && st.lastActs?.[e.by]?.role === "bottom" && e.p != null) { stats.botTry++; if (e.ok || e.hit) stats.botOk++; }
     }
     if (st.subPending) settleSub(st);
     if (st.pending) {
@@ -74,7 +75,7 @@ export function fight(idA, idB, seed, brainA = createAI, brainB = brainA, d = da
 function summarize(label, results) {
   const n = results.length;
   const wins = { a: 0, b: 0, draw: 0 };
-  let beats = 0, finish = 0, r1 = 0, kd = 0, atk = 0, hit = 0, whiff = 0, gb = 0, tdT = 0, tdO = 0, sl = 0, sub = 0, gtko = 0;
+  let beats = 0, finish = 0, r1 = 0, kd = 0, atk = 0, hit = 0, whiff = 0, gb = 0, tdT = 0, tdO = 0, sl = 0, sub = 0, gtko = 0, cl = 0, stn = 0, bt = 0, bo = 0;
   for (const r of results) {
     const o = r.st.over;
     wins[o.winner ?? "draw"]++;
@@ -84,13 +85,14 @@ function summarize(label, results) {
     if (fin && o.round === 1) r1++;
     kd += r.stats.knockdowns;
     atk += r.stats.attacks; hit += r.stats.hits; whiff += r.stats.whiffRange;
+    cl += r.stats.clean; stn += r.stats.stuns; bt += r.stats.botTry; bo += r.stats.botOk;
     gb += r.stats.groundBeats; tdT += r.stats.tdTried; tdO += r.stats.tdOk; sl += r.stats.subLocks;
     if (o.method.startsWith("降伏")) sub++;
     if (o.method.startsWith("TKO（地面")) gtko++;
   }
   const pct = (x) => `${Math.round((100 * x) / n)}%`;
-  console.log(`${label.padEnd(34)} A ${pct(wins.a)}  B ${pct(wins.b)}  平 ${pct(wins.draw)} | 平均 ${(beats / n).toFixed(1)} 手 | 終結 ${pct(finish)}（R1 ${pct(r1)}）判定 ${pct(n - finish)} | 倒地 ${(kd / n).toFixed(2)}/場 | 命中 ${Math.round((100 * hit) / atk)}% 距離落空 ${Math.round((100 * whiff) / atk)}%`);
-  if (gb || tdT) console.log(`${"".padEnd(34)} 地面：佔 ${Math.round((100 * gb) / beats)}% 手 | 摔 ${(tdT / n).toFixed(1)} 次試／${(tdO / n).toFixed(1)} 次成功 | 鎖技 ${(sl / n).toFixed(2)}/場 | 降伏結束 ${pct(sub)} 地面TKO ${pct(gtko)}`);
+  console.log(`${label.padEnd(34)} A ${pct(wins.a)}  B ${pct(wins.b)}  平 ${pct(wins.draw)} | 平均 ${(beats / n).toFixed(1)} 手 | 終結 ${pct(finish)}（R1 ${pct(r1)}）判定 ${pct(n - finish)} | 倒地 ${(kd / n).toFixed(2)}/場 | 命中 ${Math.round((100 * hit) / atk)}% 打實佔命中 ${Math.round((100 * cl) / Math.max(1, hit))}% 打晃 ${(stn / n).toFixed(1)}/場 距離落空 ${Math.round((100 * whiff) / atk)}%`);
+  if (gb || tdT) console.log(`${"".padEnd(34)} 地面：佔 ${Math.round((100 * gb) / beats)}% 手 | 摔 ${(tdT / n).toFixed(1)} 次試／${(tdO / n).toFixed(1)} 次成功 | 鎖技 ${(sl / n).toFixed(2)}/場 | 降伏結束 ${pct(sub)} 地面TKO ${pct(gtko)} | 下位出手成功 ${Math.round((100 * bo) / Math.max(1, bt))}%`);
   return { wins, n, beats };
 }
 

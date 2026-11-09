@@ -1,6 +1,6 @@
 // Browser page for the card bout (bout.html): drawing and input. Rules are engine.js, the opponent is ai.js.
 // Layout follows mock.html (844x390). Fighters are placeholder shapes until sprites are wired in.
-import { createBout, playBeat, settleKnockdown, actions, odds, comboLive, heldCard, danger, headRatio, limping, clock, prepare, chaseOdds, stepOk, setPlan, doCorner, cornerOptions, injuries, PLANS, TARGETS, tdOdds, sprawlOdds, groundCardOdds, groundRole, subInfo, subRound, autoQuality } from "./engine.js";
+import { createBout, playBeat, settleKnockdown, actions, odds, groundOdds, comboLive, heldCard, danger, headRatio, limping, clock, prepare, chaseOdds, stepOk, setPlan, doCorner, cornerOptions, injuries, PLANS, TARGETS, tdOdds, sprawlOdds, groundCardOdds, groundRole, subInfo, subRound, autoQuality } from "./engine.js";
 import { createAI } from "./ai.js";
 
 const load = async (n) => (await fetch(`rules/bout/${n}.json`)).json();
@@ -11,7 +11,9 @@ const IDS = Object.keys(data.fighters).filter((k) => !k.startsWith("_"));
 const ME = IDS.includes(params.get("me")) ? params.get("me") : "holloway";
 const pickFoe = (want) => (IDS.includes(want) && want !== ME ? want : IDS.includes("makhachev") && ME !== "makhachev" ? "makhachev" : IDS.find((k) => k !== ME));
 let FOE = pickFoe(params.get("foe"));
-const GACT = { pound: "重擊", advance: "升位", sub: "🔒 鎖技", sweep: "反轉", escape: "脫逃" };
+const GACT = { pound: "重擊", strikeup: "下位打擊", advance: "升位", sub: "🔒 鎖技", sweep: "反轉", escape: "脫逃" };
+// what each ground act is called when you are reading the other side's hand
+const GREAD = { pound: "砸拳", strikeup: "下位打擊", advance: "過腿", sub: "鎖技", sweep: "掃翻", escape: "脫逃", getup: "起身", ride: "壓住", release: "放人", defend: "護住" };
 const POS = cfg.ground.posNames;
 const gName = (id) => data.cards[id]?.name || cfg.ground.moves[id]?.label || id;
 const REGION = { head: "頭", body: "身", leg: "腿" };
@@ -60,7 +62,7 @@ function newBout(foe) {
   $("#ov").hidden = true;
   render();
   let seen = false;
-  try { seen = localStorage.getItem("bout.help5") === "1"; } catch {}
+  try { seen = localStorage.getItem("bout.help6") === "1"; } catch {}
   if (!seen) showHelp(() => beginRound(null));
   else beginRound(null);
 }
@@ -120,13 +122,15 @@ function describeCard(c, charged) {
   if (c.kind === "ground") {
     const o = groundCardOdds(st, "a", c.id);
     const what = { pound: "打頭", advance: c.to === 1 ? "升到壓制" : "升到背後", sweep: "翻到他上面", escape: "往下脫出一階", sub: "鎖上就進入降伏小遊戲" }[c.act];
-    return `<em>${c.name}</em> · ${what} · 成功 ${pct(o.p)}% · 要位置：${c.pos.map((p) => POS[p]).join("／")}${c.act === "pound" ? " · 護住時只有一半傷害" : ""}${charged ? " · 🔥 蓄力" : ""}`;
+    return `<em>${c.name}</em> · ${what || "從下面打他的頭"} · 成功 ${pct(o.p)}%（${readLine(c.act, c.hit)}）${c.act === "pound" ? " · 他護住時只有一半傷害、被擋掉你露破綻" : ""}${charged ? " · 🔥 蓄力" : ""}`;
   }
   if (c.kind === "trap") return `<em>${c.name}</em> · 👁 預判：點「埋」蓋起來（不佔這一手），等 ${c.trap.beats} 手：${c.text}，一定打實${c.trap.cancel ? "、擋掉他那一招" : ""}，他還會露破綻`;
   if (c.kind === "feint") return `<em>${c.name}</em> · 🎭 假動作：${c.text}。他若出手，你會白挨一下`;
   const d = Math.max(0, Math.min(3, st.dist + step));
   const o = odds(st, "a", c, { d });
-  const bits = [`<em>${c.name}</em>`, `打${REGION[c.region]}`, `可打到：${rangeText(c)}`, `碰到 ${pct(o.land)}% · 打實 ${pct(o.clean)}%`];
+  const ob = odds(st, "a", c, { d, boost: true });
+  const bits = [`<em>${c.name}</em>`, `打${REGION[c.region]}`, `可打到：${rangeText(c)}`, `碰到 ${pct(o.land)}% · 打實 ${pct(o.clean)}%`, `按住加注 ⚡+${cfg.boost.cost}：打實 ${pct(ob.clean)}%、更容易打晃，沒打實就露破綻`];
+  if (st.a.stunned) bits.push("💫 你被打晃：出手變差");
   if (c.combo) bits.push(comboLive(st, "a", c) ? "⛓ 連段發動" : "⛓ 連段：上一手打實時更強");
   if (c.counter) bits.push("他往前時打實 +30%");
   if (c.breaks) bits.push("他抱腿時打實 +30%、摔不進來");
@@ -134,6 +138,27 @@ function describeCard(c, charged) {
   if (c.heavy) bits.push("打空露破綻");
   if (charged) bits.push("🔥 蓄力");
   return bits.join(" · ");
+}
+
+/** What the other side can do this beat on the ground (their hand is public by kind of move). */
+function foeGroundActs() {
+  const out = {};
+  for (const a of actions(st, "b")) {
+    if (!a.ok) continue;
+    const act = a.kind === "card" ? cardOf(a.id).act : cfg.ground.moves[a.id].act;
+    out[act] = (out[act] || 0) + 1;
+  }
+  return out;
+}
+/** For a ground act of mine: the odds against each thing he can do now, best first. */
+function readOdds(act, base) {
+  return Object.keys(foeGroundActs())
+    .filter((k) => k !== "release")
+    .map((k) => ({ k, p: groundOdds(st, "a", act, base, k).p }))
+    .sort((x, y) => y.p - x.p);
+}
+function readLine(act, base) {
+  return readOdds(act, base).map((r) => `他${GREAD[r.k]} ${pct(r.p)}%`).join("、");
 }
 
 // ---------- drawing ----------
@@ -148,6 +173,7 @@ function renderSide(s, k) {
   $("#stam" + k).children[0].style.width = (f.stamina / cfg.stamina.max) * 100 + "%";
   $("#stam" + k).children[1].style.width = (1 - f.staminaMax / cfg.stamina.max) * 100 + "%";
   const bd = [];
+  if (f.stunned) bd.push("💫晃");
   if (danger(st, s)) bd.push("暈");
   if (f.stamina / f.staminaMax < cfg.stamina.low) bd.push("喘");
   if (limping(st, s)) bd.push("跛");
@@ -155,7 +181,7 @@ function renderSide(s, k) {
   const el = $(k === "p" ? "#fp" : "#fo");
   el.classList.toggle("open", f.open > 0);
   el.classList.toggle("hurtleg", limping(st, s));
-  el.classList.toggle("dizzy", danger(st, s));
+  el.classList.toggle("dizzy", danger(st, s) || f.stunned);
 }
 function renderBoards() {
   const mk = (cls, t) => `<div class="mk ${cls}">${t}</div>`;
@@ -166,16 +192,20 @@ function renderBoards() {
     p += mk("grd", st.ground.top === "a" ? "⬆ 你在上位" : "⬇ 你在下位");
     o += mk("grd", st.ground.top === "b" ? "⬆ 他在上位" : "⬇ 他在下位");
     if (st.ground.stall >= 2) p += mk("open", `⏱ ${st.ground.stall} 手沒進展，裁判快叫起`);
+    const fa = foeGroundActs();
+    o += mk("plan", "他能做：" + Object.entries(fa).filter(([k]) => k !== "release").map(([k, n]) => GREAD[k] + (n > 1 ? `×${n}` : "")).join("、"));
   }
   if (me.trap) p += mk("trap", `👁 你埋了：${cardOf(me.trap.id).name}（剩 ${me.trap.left} 手）`);
   const mh = heldCard(st, "a");
   if (mh) p += mk("fire", `🔥 你在蓄力：${cardOf(mh).name}`);
   if (me.landedLast) p += mk("combo", "⛓ 連段準備好");
+  if (me.stunned) p += mk("open", "💫 你被打晃了！");
   if (me.open) p += mk("open", "你露出破綻");
   if (op.trap) o += mk("trap", "👁 他埋了一張預判（看不到）");
   const oh = heldCard(st, "b");
   if (oh) o += mk("fire", `🔥 他在蓄力：${cardOf(oh).name}`);
   if (op.landedLast) o += mk("combo", "⛓ 他可以接連段");
+  if (op.stunned) o += mk("open", "💫 他被打晃了！");
   if (op.open) o += mk("open", "他露出破綻！");
   $("#boardp").innerHTML = p;
   $("#boardo").innerHTML = o;
@@ -206,8 +236,10 @@ function renderHand() {
       let mid, why = "";
       if (c.kind === "strike") {
         const o = odds(st, "a", c, { d });
-        mid = `<div class="pct">${pct(o.land)}<small>%</small></div><div class="cl">打實 ${pct(o.clean)}%</div>`;
-        if (o.why.includes("open")) why = '<span class="why">↑破綻</span>';
+        const ob = odds(st, "a", c, { d, boost: true });
+        mid = `<div class="pct">${pct(o.land)}<small>%</small></div><div class="cl">打實 ${pct(o.clean)}% · 加注 ${pct(ob.clean)}%</div>`;
+        if (o.why.includes("stunned")) why = '<span class="why dn">↓被打晃</span>';
+        else if (o.why.includes("open")) why = '<span class="why">↑破綻</span>';
         else if (o.why.includes("combo")) why = '<span class="why" style="color:var(--combo)">↑連段</span>';
         else if (o.why.includes("target")) why = '<span class="why">↑主攻</span>';
         else if (o.why.includes("range")) why = '<span class="why">↑你的距離</span>';
@@ -221,7 +253,12 @@ function renderHand() {
         mid = `<div class="pct">${pct(sprawlOdds(st, "a", c))}<small>%</small></div><div class="cl">他抱腿時擋下</div>`;
       } else if (c.kind === "ground") {
         const o = groundCardOdds(st, "a", a.id);
-        mid = `<div class="pct">${pct(o.p)}<small>%</small></div><div class="cl">${c.text}</div>`;
+        const rs = readOdds(c.act, c.hit);
+        const best = rs[0], worst = rs[rs.length - 1];
+        const spread = best && best.p - worst.p >= 0.08;
+        mid = spread
+          ? `<div class="pct">${pct(best.p)}<small>%</small></div><div class="cl">他${GREAD[best.k]}時｜最差 ${pct(worst.p)}%</div>`
+          : `<div class="pct">${pct(o.p)}<small>%</small></div><div class="cl">${c.text}</div>`;
         if (o.why.includes("open")) why = '<span class="why">↑破綻</span>';
         else if (o.why.includes("tired")) why = '<span class="why dn">↓體力</span>';
       } else mid = `<div class="big">${c.kind === "trap" ? "👁" : "🎭"}</div><div class="tx">${c.text}</div>`;
@@ -242,7 +279,9 @@ function renderHand() {
       if (gl) {
         const mv = cfg.ground.moves[a.id];
         const o = mv.hit != null ? groundCardOdds(st, "a", a.id) : null;
-        return `<div class="act ${a.ok ? "" : "off"}" data-move="${a.id}" data-ok="${a.ok ? 1 : 0}">${mv.label}${o ? ` ${pct(o.p)}%` : ""}<small>${a.cost ? `⚡${a.cost} ` : ""}${mv.text}</small></div>`;
+        const rs = o ? readOdds(mv.act, mv.hit) : [];
+        const txt = rs.length ? `他${GREAD[rs[0].k]}時｜最差 ${pct(rs[rs.length - 1].p)}%` : mv.text;
+        return `<div class="act ${a.ok ? "" : "off"}" data-move="${a.id}" data-ok="${a.ok ? 1 : 0}">${mv.label}${rs.length ? ` ${pct(rs[0].p)}%` : ""}<small>${a.cost ? `⚡${a.cost} ` : ""}${txt}</small></div>`;
       }
       return `<div class="act ${a.ok ? "" : "off"}" data-move="${a.id}" data-ok="${a.ok ? 1 : 0}">${cfg.moves[a.id].label}<small>${a.cost ? `⚡${a.cost} ` : ""}${sub[a.id] || ""}</small></div>`;
     })
@@ -267,14 +306,16 @@ function groundTip() {
   const p = st.ground.pos;
   const open = st.b.open ? "他露出破綻，這手更容易成功。" : "";
   const stall = st.ground.stall >= 2 ? "⏱ 幾手沒進展，裁判快叫起。" : "";
-  if (top) return `<span class="tipicon">⬆</span>${open}${stall}${["護腿裡：先「過腿」到壓制，砸拳只有 75% 力道", "壓制中：砸拳肘擊、鎖手臂，或抓背到背後", "背後：裸絞最容易鎖上，也可以繼續砸拳"][p]}`;
-  return `<span class="tipicon">⬇</span>${open}${stall}${["你在護腿：掃翻、三角鎖、斷頭台，或起身；護住能減半傷害", "被壓制：護住保命，或脫逃一階；起身很難", "被抓背：護住防裸絞，脫逃回壓制"][p]}`;
+  if (top) return `<span class="tipicon">⬆</span>${open}${stall}讀他（右上寫著他能做什麼）：他護住 → 過腿、鎖技容易；他想脫逃／起身 → 砸拳打得到；他想掃翻或鎖你 → 別砸拳，「壓住」最穩`;
+  return `<span class="tipicon">⬇</span>${open}${stall}讀他（右上寫著他能做什麼）：他砸拳 → 鎖技、掃翻、下位肘擊容易；他過腿 → 脫逃、起身容易；他壓住 → 什麼都難，護住回氣${p === 0 ? "" : "；被壓制時先脫逃回護腿"}`;
 }
 function tip() {
   if (st.mode === "ground") return groundTip();
   const me = st.a, op = st.b;
   const playable = (s) => actions(st, "a", s).some((a) => a.kind === "card" && a.ok && !a.side);
   const oh = heldCard(st, "b");
+  if (me.stunned) return '<span class="tipicon">💫</span>你被打晃了：出手變差、再被打實頭部很容易倒。後退或架擋保命，或賭一記迎擊（他衝上來時迎擊打實大增）';
+  if (op.stunned) return '<span class="tipicon">💫</span>他被打晃了！他露破綻、這手 KO 機會大增：按住重拳加注追擊。但他可能後退或迎擊你';
   if (op.open) return '<span class="tipicon">🎯</span>他露出破綻：這一手你打實的機會 +20%，重拳的好時機';
   if (me.landedLast && me.hand.some((h) => cardOf(h.id).combo)) return '<span class="tipicon">⛓</span>上一手打實了：發亮的連段牌現在更準更重';
   if (oh && cardOf(oh).kind === "strike") return `<span class="tipicon">🔥</span>他在蓄力【${cardOf(oh).name}】：可以架擋、後退躲開，或「埋」一張預判等他`;
@@ -477,7 +518,8 @@ async function animate(ev) {
       const t = e.by === "a" ? "b" : "a";
       banner("👁 預判成功！", "var(--trap)");
       spark(t); shake(t); floatText(t, `-${e.dmg}`);
-      setCap(`${nameOf(e.by)}的<em>${cardOf(e.id).name}</em>觸發了${e.cancel ? "：擋掉那一招並反擊" : "：迎面一擊"}，${e.by === "a" ? "他" : "你"}露出破綻`);
+      if (e.stun) $(t === "a" ? "#fp" : "#fo").classList.add("dizzy");
+      setCap(`${nameOf(e.by)}的<em>${cardOf(e.id).name}</em>觸發了${e.cancel ? "：擋掉那一招並反擊" : "：迎面一擊"}，${e.by === "a" ? "他" : "你"}${e.stun ? "被打晃了！" : "露出破綻"}`);
       await sleep(1200);
     } else if (e.t === "trapSet") {
       setCap(e.by === "a" ? `你埋下了<em>${cardOf(st.a.trap?.id || rv.a.id)?.name || "預判"}</em>，從下一手開始生效` : `${st.b.short} 埋了一張預判牌（你看不到是什麼）`);
@@ -501,9 +543,10 @@ async function animate(ev) {
         if (clean && e.why?.includes("combo")) banner("⛓ 連段！", "var(--combo)");
         else if (clean && e.charged) banner("🔥 蓄力一擊", "var(--fire)");
         else if (clean && e.why?.includes("counter")) banner("迎擊！", "#9fc0ff");
-        setCap(`${nameOf(e.by)} <em>${name}</em> ${clean ? "打實" : "擦到"}${e.by === "a" ? "他" : "你"}的${REGION[e.region]}`);
+        if (e.stun) { banner("💫 打晃了！", "var(--gold)"); $(t === "a" ? "#fp" : "#fo").classList.add("dizzy"); }
+        setCap(`${nameOf(e.by)} <em>${name}</em> ${clean ? "打實" : "擦到"}${e.by === "a" ? "他" : "你"}的${REGION[e.region]}${e.stun ? `，<b>${e.by === "a" ? "他被打晃了！" : "你被打晃了！"}</b>` : ""}${e.openSelf ? " · 加注沒打實，出手過猛露出破綻" : ""}`);
       } else {
-        setCap(`${nameOf(e.by)} <em>${name}</em> ${e.whiff === "range" ? "距離不夠，落空" : "被躲開"}${e.openSelf ? " · 露出破綻" : ""}`);
+        setCap(`${nameOf(e.by)} <em>${name}</em> ${e.whiff === "range" ? "距離不夠，落空" : "被躲開"}${e.openSelf ? " · 出手過猛，露出破綻" : ""}`);
       }
       await sleep(780);
     } else if (e.t === "takedown") {
@@ -537,7 +580,7 @@ async function animate(ev) {
       if (e.hit) {
         spark(t); shake(t); floatText(t, `-${e.dmg}`);
         setCap(`${nameOf(e.by)} <em>${name}</em> 打中${e.by === "a" ? "他" : "你"}的頭`);
-      } else setCap(`${nameOf(e.by)} <em>${name}</em> 沒打到`);
+      } else setCap(`${nameOf(e.by)} <em>${name}</em> ${e.blocked ? `被護住擋掉，${e.by === "a" ? "你" : "他"}露出破綻` : "沒打到"}`);
       await sleep(750);
     } else if (e.t === "gtry") {
       if (e.act === "release") setCap(`${nameOf(e.by)}放對手起來`);
@@ -865,7 +908,9 @@ function showHelp(done) {
   ov.className = "ov dark";
   ov.innerHTML = `<h1 style="font-size:22px">怎麼打</h1>
     <div class="legend">
-      <div><b style="background:#26324b;color:#fff">出拳腳</b>大數字＝會碰到的機率（大多都會碰到）。下面「打實」＝碰到後打結實的機率，沒打實就只是擦到。</div>
+      <div><b style="background:#26324b;color:#fff">出拳腳</b>大數字＝會碰到的機率。下面「打實」＝碰到後打結實的機率，沒打實就只是擦到。兩人同時出手（互換）時都更容易打實；他架擋時大多只擦到。</div>
+      <div><b style="background:#4a3a0a;color:var(--gold)">加注</b>按住牌出：多 1 體力，打實機會大增、更重、更容易把人打晃。沒打實就是出手過猛，下一手你露破綻。</div>
+      <div><b style="background:#4a2a0a;color:#ffd27a">💫 打晃</b>頭被打實可能被打晃：下一手出手變差、露破綻，再被打實頭部很容易倒。被打晃就選：後退、架擋保命，或賭一記迎擊。</div>
       <div><b style="background:#2a3a55;color:#fff">步法</b>選手腳下選「進一步／退一步」，再出牌：這一步和出手一起做，灰色的牌會亮起來。只有「後退」整手躲開，才能讓對方打空。</div>
       <div><b style="background:var(--combo);color:#fff">⛓ 連段</b>上一手打實，這張就發亮：更準、更重。刺拳打實後接直拳、鉤拳。</div>
       <div><b style="background:#0f3f3a;color:#8ff3e6">👁 預判</b>點「埋」蓋下去，不佔這一手（你照樣出手）。他做出牌上的動作就觸發：一定打實、有些能擋掉他那招，他還會露破綻。</div>
@@ -873,14 +918,14 @@ function showHelp(done) {
       <div><b style="background:var(--fire);color:#1a0d00">🔥 留／蓄力</b>沒出的牌每手換新。點「留」保住一張到下一手，它會變重，但對手看得到。</div>
       <div><b style="background:#3a1717;color:#ff9d9a">破綻</b>重拳打空、被騙、被預判都會露破綻：下一手被打實的機會大增。發紅光就是破綻。</div>
       <div><b style="background:#3a2d0a;color:var(--gold)">📋 計畫</b>每回合開打前選一個計畫和主攻部位，對手也同時選。回合之間在角落聽教練、休息；受傷時還能找醫生（三選二）。</div>
-      <div><b style="background:#1f4a3a;color:#9ff0c8">🤼 地面</b>抱腿、抱摔成功就進地面（也可能被壓趴反制）。上位：過腿→壓制→背後，砸拳或鎖技；下位：護住、脫逃、掃翻、起身。鎖技成功就進「降伏小遊戲」：看準時機按。幾手沒進展，裁判叫起。</div>
+      <div><b style="background:#1f4a3a;color:#9ff0c8">🤼 地面</b>抱腿、抱摔成功就進地面（也可能被壓趴反制）。雙方手上能做什麼是公開的，靠「讀他」：他砸拳時你鎖技、掃翻容易；他過腿時你脫逃、起身容易；他壓住時什麼都難。牌上寫著對上他各種動作的成功率。鎖技成功就進「降伏小遊戲」。幾手沒進展，裁判叫起。</div>
       <div><b style="background:#161c28;color:#fff">距離</b>點牌會出現箭頭：綠色打得到，紅色打不到。每個選手有自己最舒服的距離（↑你的距離）。</div>
     </div>
     <button class="btn gold" id="gotit">開始打</button>`;
   ov.hidden = false;
   $("#gotit").onclick = () => {
     ov.hidden = true;
-    try { localStorage.setItem("bout.help5", "1"); } catch {}
+    try { localStorage.setItem("bout.help6", "1"); } catch {}
     if (done) done();
   };
 }

@@ -33,12 +33,28 @@
   "cleanMin": 0.05,
   "cleanMax": 0.95,
   "openBonus": 0.2,
-  "counterBonus": 0.3
+  "counterBonus": 0.3,
+  "_trade": "0.6：對手這手的動作影響你打實的機會。trade＝兩邊同時出拳腳（互換時都門戶大開）；vsFeint＝他在做假動作沒防守；walkIn＝他往前走進你的拳。",
+  "trade": 0.15,
+  "vsFeint": 0.1,
+  "walkIn": 0.08
  },
  "boost": {
+  "_doc": "加注（按住牌）：多花體力，打實機會大增、傷害更重、更容易把人打晃；但只要沒打實（擦到或落空）就是出手過猛，下一手露破綻。",
   "cost": 1,
-  "dmgMul": 1.35,
-  "hitBonus": 0.05
+  "dmgMul": 1.2,
+  "hitBonus": 0.25,
+  "failOpen": 1
+ },
+ "stun": {
+  "_doc": "被打晃（0.6）：打實頭部有機會把人打晃，機率＝scale × 傷害 ÷ 下巴 ×（1＋頭部傷勢比例），加注再 × boostMul，上限 max。被打晃的人下一手：露破綻、自己出手 clean／miss 變差、立刻掉 stamina 體力，而且這一手再被打實頭部時 KO 機率 × koMul。所以被打到要選：退後、架擋保命，或賭一記迎擊。",
+  "scale": 2.5,
+  "max": 0.8,
+  "boostMul": 1.4,
+  "clean": -0.15,
+  "miss": 0.08,
+  "stamina": 1,
+  "koMul": 1.6
  },
  "moves": {
   "advance": {
@@ -184,8 +200,11 @@
   "koMul": 1.0,
   "subPos": [-0.05, 0, 0.1],
   "getupPos": [0, -0.1, -0.22],
+  "blockOpen": 1,
+  "_blockOpen": "上位砸拳被護住擋掉，下一手上位露破綻（下位這手讀對了的獎勵）。",
   "skill": {
    "pound": { "me": "top", "foe": "bottom" },
+   "strikeup": { "me": "bottom", "foe": "top" },
    "advance": { "me": "top", "foe": "escape" },
    "sub": { "me": "sub", "foe": "escape" },
    "sweep": { "me": "bottom", "foe": "top" },
@@ -198,17 +217,19 @@
    "defend": { "label": "護住", "role": "bottom", "act": "defend", "cost": 0, "regen": 1, "dmgMul": 0.5, "text": "擋住拳肘、回體力" },
    "getup": { "label": "起身", "role": "bottom", "act": "getup", "cost": 1, "hit": 0.34, "regen": 0, "text": "想站起來，失敗被壓回去" }
   },
+  "_vs": "0.6 改成互相剋制（讀心）：每格是「這一列的動作」對上「對手這手做的事」的成功率修正。下位：他砸拳時手伸出來 → 鎖技、掃翻、下位打擊容易；他過腿時有空間 → 脫逃、起身容易；他壓住時什麼都難。上位：他護住時 → 過腿、鎖技容易；他想脫逃／起身時 → 砸拳打得到；他想掃翻／鎖你時 → 過腿反而容易。",
   "vs": {
    "top": {
-    "pound": { "defend": -0.15, "escape": -0.05, "sweep": -0.05, "getup": 0.1, "sub": -0.05 },
-    "advance": { "defend": -0.03, "escape": -0.2, "sweep": -0.2, "getup": -0.1, "sub": -0.05 },
-    "sub": { "defend": -0.08, "escape": -0.15, "sweep": -0.1, "getup": -0.05, "sub": -0.1 }
+    "pound": { "defend": -0.22, "escape": 0.1, "sweep": 0.05, "getup": 0.15, "sub": -0.05, "strikeup": 0 },
+    "advance": { "defend": 0.18, "escape": -0.25, "sweep": 0.1, "getup": -0.12, "sub": 0.12, "strikeup": 0.08 },
+    "sub": { "defend": 0.12, "escape": -0.2, "sweep": -0.1, "getup": 0.15, "sub": -0.1, "strikeup": 0.05 }
    },
    "bottom": {
-    "sweep": { "ride": -0.3, "advance": -0.15, "sub": -0.05 },
-    "escape": { "ride": -0.3, "pound": 0.05, "advance": -0.15, "sub": -0.1 },
-    "getup": { "ride": -0.3, "pound": -0.05, "advance": -0.15, "sub": -0.15 },
-    "sub": { "ride": -0.2, "pound": 0.05, "advance": -0.1, "sub": -0.1 }
+    "sweep": { "pound": 0.22, "advance": -0.15, "sub": 0.1, "ride": -0.25 },
+    "escape": { "pound": 0.05, "advance": 0.15, "sub": 0.15, "ride": -0.25 },
+    "getup": { "pound": 0.08, "advance": 0.08, "sub": 0.05, "ride": -0.3 },
+    "sub": { "pound": 0.25, "advance": -0.1, "sub": -0.05, "ride": -0.15 },
+    "strikeup": { "pound": 0.12, "advance": 0, "sub": 0, "ride": -0.1 }
    }
   },
   "sub": {

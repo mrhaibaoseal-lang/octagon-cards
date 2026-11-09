@@ -50,11 +50,12 @@ function newFighter(data, id) {
     leg: 0,
     knockdowns: 0,
     open: 0, // 破綻：這一手別人打你更容易打實
+    stunned: false, // 被打晃（0.6）：這一手出手變差、再被打實頭部更容易被 KO
     hand: [], // [{ id, charged }]；charged＝上一手蓄力留下來的（對手看得到）
     trap: null, // { id, left }：埋著的預判牌（對手只知道有，不知道是什麼）
     landedLast: false, // 上一手有打實 → 連段牌變強
     hist: { advance: 0, retreat: 0, sidestep: 0, guard: 0, card: 0, feint: 0, takedown: 0, sprawl: 0, stepIn: 0, stepOut: 0 },
-    ghist: { pound: 0, advance: 0, sub: 0, sweep: 0, escape: 0, getup: 0, ride: 0, release: 0, defend: 0 }, // 地面習慣（AI 看得到）
+    ghist: { pound: 0, strikeup: 0, advance: 0, sub: 0, sweep: 0, escape: 0, getup: 0, ride: 0, release: 0, defend: 0 }, // 地面習慣（AI 看得到）
     rhist: newRhist(), // 這一回合的習慣（回合結束時存進 rounds，教練從這裡看）
     tagHist: {},
     dealt: 0,
@@ -82,6 +83,7 @@ export function createBout(data, idA, idB, seed = 1) {
     rounds: [],
     events: [],
     nextOpen: { a: 0, b: 0 },
+    nextStun: { a: false, b: false },
     lastActs: null,
     plan: { a: { plan: "steady", target: null }, b: { plan: "steady", target: null } }, // 這回合的暗選計畫
   };
@@ -248,9 +250,13 @@ export function odds(st, s, card, { boost = false, opp = null, d = st.dist } = {
   if (op.open > 0) { clean += h.openBonus; why.push("open"); }
   if (comboLive(st, s, card)) { clean += c.combo.hitBonus; why.push("combo"); }
   if (tired) { clean -= c.stamina.lowPenalty; why.push("tired"); }
+  if (me.stunned) { clean += c.stun.clean; miss += c.stun.miss; why.push("stunned"); }
   if (boost) clean += c.boost.hitBonus;
   if (opp) {
     const advancing = opp.move === "advance" || opp.step > 0;
+    if (opp.strike) { clean += h.trade; why.push("trade"); }
+    if (opp.feint) clean += h.vsFeint;
+    if (advancing) clean += h.walkIn;
     if (card.counter === "advance" && advancing) { clean += h.counterBonus; why.push("counter"); }
     if (card.breaks && opp.shoot) { clean += h.counterBonus; why.push("counter"); }
     const mv = opp.move ? c.moves[opp.move] : null;
@@ -320,7 +326,7 @@ function applyDamage(st, s, card, dmg, e, canKO, koMul = 1) {
     if (!canKO) return false;
     const ratio = headRatio(st, t);
     const heavy = card.heavy ? 1 : c.head.koLight;
-    const pk = clamp(((card.ko || 0) * (1 + ratio) + Math.max(0, ratio - c.head.koDanger) * c.head.koScale * heavy) * koMul, 0, c.head.koCap);
+    const pk = clamp(((card.ko || 0) * (1 + ratio) + Math.max(0, ratio - c.head.koDanger) * c.head.koScale * heavy) * koMul * (tg.stunned ? c.stun.koMul : 1), 0, c.head.koCap);
     e.koP = Math.round(pk * 1000) / 1000;
     return rand(st) < pk;
   }
@@ -329,6 +335,19 @@ function applyDamage(st, s, card, dmg, e, canKO, koMul = 1) {
     tg.stamina = Math.max(0, tg.stamina - dmg * c.body.drain);
   } else tg.leg += dmg;
   return false;
+}
+
+/** Chance a clean head shot of `dmg` rocks fighter t (more likely the more hurt he already is, and for a boosted shot). */
+export function stunOdds(st, t, dmg, boost = false) {
+  const k = st.data.config.stun;
+  return clamp((k.scale * dmg) / st.data.fighters[st[t].id].chin * (1 + headRatio(st, t)) * (boost ? k.boostMul : 1), 0, k.max);
+}
+function rollStun(st, t, dmg, boost, e, nextOpen, nextStun) {
+  if (rand(st) >= stunOdds(st, t, dmg, boost)) return;
+  nextOpen[t] = Math.max(nextOpen[t], 1);
+  nextStun[t] = true;
+  st[t].stamina = Math.max(0, st[t].stamina - st.data.config.stun.stamina);
+  e.stun = true;
 }
 
 /**
@@ -378,6 +397,7 @@ export function playBeat(st, ca, cb) {
   ev.push({ t: "reveal", a: describe(acts.a), b: describe(acts.b) });
 
   const nextOpen = { a: 0, b: 0 };
+  const nextStun = { a: false, b: false };
   const cancelled = { a: false, b: false };
   const kd = {};
   // traps set on earlier beats fire first: always a clean hit, may cancel the strike, leaves the victim open
@@ -391,7 +411,9 @@ export function playBeat(st, ca, cb) {
     const e = { t: "trap", by: s, id: trap.id, region: trap.region, cancel: !!trap.trap.cancel && vs.kind === "strike" };
     if (e.cancel) cancelled[other(s)] = true;
     nextOpen[other(s)] = Math.max(nextOpen[other(s)], trap.trap.open || 0);
-    if (applyDamage(st, s, trap, trap.trap.dmg * st.data.fighters[me.id].power, e, true)) kd[s] = other(s);
+    const tdmg = trap.trap.dmg * st.data.fighters[me.id].power;
+    if (applyDamage(st, s, trap, tdmg, e, true)) kd[s] = other(s);
+    else if (trap.region === "head") rollStun(st, other(s), tdmg, false, e, nextOpen, nextStun);
     ev.push(e);
   }
   // traps set this beat go down face-down (they work from the next beat)
@@ -435,7 +457,7 @@ export function playBeat(st, ca, cb) {
     // each fighter steps into his own strike: the opponent's card-step does not carry him out of range,
     // only a full basic move (retreat / advance) does
     const at = clamp(before + a.step + (vs.kind === "move" ? c.moves[vs.id].dist : 0), 0, 3);
-    const o = odds(st, s, a.card, { boost: a.boost, opp: vs.kind === "move" ? { move: vs.id } : { step: vs.step, shoot: vs.kind === "takedown" }, d: at });
+    const o = odds(st, s, a.card, { boost: a.boost, opp: vs.kind === "move" ? { move: vs.id } : { step: vs.step, shoot: vs.kind === "takedown", strike: vs.kind === "strike", feint: vs.kind === "feint" }, d: at });
     const inRange = a.card.range.includes(at);
     const landed = inRange && rand(st) < o.land;
     const clean = landed && rand(st) < o.clean;
@@ -450,9 +472,12 @@ export function playBeat(st, ca, cb) {
       const gm = r.guardMv?.dmgMul ? r.guardMv.dmgMul[r.card.region] : 1;
       const dmg = r.card.dmg * st.data.fighters[st[s].id].power * r.mul * gm * (r.clean ? 1 : c.hit.grazeMul);
       if (applyDamage(st, s, r.card, dmg, e, r.clean)) kd[s] = other(s);
+      else if (r.clean && r.card.region === "head") rollStun(st, other(s), dmg, r.boost, e, nextOpen, nextStun);
       if (r.clean && r.card.push) push += r.card.push;
-    } else if (r.card.heavy) {
-      nextOpen[s] = 1;
+    }
+    // a heavy shot that misses, or a boosted one that is not clean, over-commits: open next beat
+    if ((!r.hit && r.card.heavy) || (r.boost && !r.clean)) {
+      nextOpen[s] = Math.max(nextOpen[s], r.boost ? c.boost.failOpen : 1);
       e.openSelf = true;
     }
     ev.push(e);
@@ -520,6 +545,7 @@ export function playBeat(st, ca, cb) {
     ev.push({ t: "knockdown", by, down: kd[by] });
   }
   st.nextOpen = nextOpen;
+  st.nextStun = nextStun;
   if (!st.pending) endBeat(st);
   return ev;
 }
@@ -577,6 +603,7 @@ function endBeat(st) {
     const mvRegen = mvDef ? (mvDef.regen || 0) + (mvDef.guard ? pl.guardRegen || 0 : 0) : 0;
     me.stamina = Math.min(me.staminaMax, me.stamina + c.stamina.regen * f.cardio * (pl.regenMul ?? 1) + mvRegen);
     me.open = st.nextOpen[s];
+    me.stunned = !!st.nextStun?.[s];
     if (me.trap && !a?.trapSet && --me.trap.left <= 0) me.trap = null;
     const kept = [];
     if (a?.holdId && !st.switched) {
@@ -589,6 +616,7 @@ function endBeat(st) {
   }
   st.switched = false;
   st.nextOpen = { a: 0, b: 0 };
+  st.nextStun = { a: false, b: false };
   st.beat++;
   if (st.beat >= c.beatsPerRound) endRound(st);
 }
@@ -614,6 +642,7 @@ function endRound(st) {
     me.thrown = 0;
     me.rhist = newRhist();
     me.open = 0;
+    me.stunned = false;
     me.trap = null;
     me.landedLast = false;
     me.stamina = Math.min(me.staminaMax, me.stamina + c.stamina.roundRecover);
@@ -733,7 +762,8 @@ export function groundActions(st, s) {
   return out;
 }
 
-const ATTEMPT = ["pound", "advance", "sub", "sweep", "escape", "getup"];
+const ATTEMPT = ["pound", "strikeup", "advance", "sub", "sweep", "escape", "getup"];
+const GSTRIKE = ["pound", "strikeup"];
 /** Chance that ground action `act` (base = the card's or move's own number) works for s. oppAct = what the other side does, if known. */
 export function groundOdds(st, s, act, base, oppAct = null) {
   const g = st.data.config.ground;
@@ -826,7 +856,7 @@ function playGround(st, ca, cb) {
   // ground strikes land one by one; a stoppage ends it
   for (const s of SIDES) {
     const a = acts[s];
-    if (a.act !== "pound") continue;
+    if (!GSTRIKE.includes(a.act)) continue;
     const e = { t: "gattack", by: s, id: a.id, p: p[s], hit: hit[s], region: a.card.region, pos };
     if (hit[s]) {
       const f = st.data.fighters[st[s].id];
@@ -839,7 +869,11 @@ function playGround(st, ca, cb) {
         finish(st, s, "TKO（地面重擊）");
         return ev;
       }
-    } else ev.push(e);
+    } else {
+      // a pound the bottom man covered against leaves the top man open: the bottom read it right
+      if (a.act === "pound" && acts[other(s)].act === "defend") { nextOpen[s] = Math.max(nextOpen[s], g.blockOpen); e.blocked = true; }
+      ev.push(e);
+    }
   }
 
   // locks that got in, and position changes
@@ -848,7 +882,7 @@ function playGround(st, ca, cb) {
   const tries = {};
   for (const s of SIDES) {
     const a = acts[s];
-    if (a.act === "pound" || !ATTEMPT.includes(a.act)) continue;
+    if (GSTRIKE.includes(a.act) || !ATTEMPT.includes(a.act)) continue;
     tries[s] = { t: "gtry", by: s, act: a.act, id: a.id, p: p[s], ok: !!hit[s] };
     ev.push(tries[s]);
   }

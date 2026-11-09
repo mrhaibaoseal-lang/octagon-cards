@@ -540,9 +540,22 @@
   ],
   "act": "sub",
   "cost": 1,
-  "hit": 0.3,
+  "hit": 0.34,
   "power": -0.05,
   "tags": [],
   "text": "抱頭勒脖子"
+ },
+ "g_upelbow": {
+  "name": "下位肘擊",
+  "kind": "ground",
+  "role": "bottom",
+  "pos": [0, 1],
+  "act": "strikeup",
+  "region": "head",
+  "cost": 1,
+  "hit": 0.5,
+  "dmg": 4,
+  "tags": [],
+  "text": "從下面肘他的臉"
  }
 }

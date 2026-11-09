@@ -1,7 +1,7 @@
 // node --test prototype/web/bout/test.js — rules of the card bout engine.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createBout, playBeat, settleKnockdown, actions, odds, dmgMul, heldCard, cardIds, setPlan, planDmg, moveCost, stepCost, targetScale, partRatio, injuries, cornerOptions, doCorner, PLANS, TARGETS } from "./engine.js";
+import { createBout, playBeat, settleKnockdown, actions, odds, dmgMul, heldCard, cardIds, stunOdds, groundOdds, setPlan, planDmg, moveCost, stepCost, targetScale, partRatio, injuries, cornerOptions, doCorner, PLANS, TARGETS } from "./engine.js";
 import { data, fight } from "./sim.js";
 import { createMasher } from "./ai.js";
 
@@ -101,8 +101,8 @@ test("combo, opening and counter raise the clean chance by their configured bonu
   st.b.open = 0;
   const up = data.cards.upper;
   const u0 = odds(st, "a", up, { d: 2 }).clean;
-  assert.ok(near(odds(st, "a", up, { d: 2, opp: { step: 1 } }).clean, u0 + cfg.hit.counterBonus));
-  assert.ok(near(odds(st, "a", up, { d: 2, opp: { move: "advance" } }).clean, u0 + cfg.hit.counterBonus));
+  assert.ok(near(odds(st, "a", up, { d: 2, opp: { step: 1 } }).clean, u0 + cfg.hit.counterBonus + cfg.hit.walkIn));
+  assert.ok(near(odds(st, "a", up, { d: 2, opp: { move: "advance" } }).clean, u0 + cfg.hit.counterBonus + cfg.hit.walkIn));
 });
 
 test("a fighter's favourite range raises clean hits", () => {
@@ -377,4 +377,62 @@ test("ground: thinking-computer bouts with a wrestler keep every invariant and e
 
 test("ground: a masher-vs-masher bout with a wrestler never breaks an invariant", () => {
   for (let seed = 1; seed <= 40; seed++) fight("makhachev", "poirier", seed, createMasher, createMasher);
+});
+
+test("trading: when both throw, each side's clean chance rises by hit.trade; a boost adds boost.hitBonus", () => {
+  const st = fresh();
+  st.dist = 2;
+  const cross = data.cards.cross;
+  const base = odds(st, "a", cross, { d: 2, opp: { step: 0 } }).clean;
+  assert.ok(near(odds(st, "a", cross, { d: 2, opp: { step: 0, strike: true } }).clean, base + cfg.hit.trade));
+  assert.ok(near(odds(st, "a", cross, { d: 2, boost: true, opp: { step: 0 } }).clean, base + cfg.boost.hitBonus));
+});
+
+test("a boosted strike that is not clean leaves the thrower open next beat", () => {
+  let seen = 0;
+  for (let seed = 1; seed <= 200 && seen < 5; seed++) {
+    const st = at(2, ["cross", "jab", "jab", "jab"], JABS, seed);
+    st.b.hand = [{ id: "jab", charged: false }];
+    const ev = playBeat(st, { card: 0, boost: true }, { move: "guard" });
+    const e = ev.find((x) => x.t === "attack" && x.by === "a");
+    if (st.pending || st.over) continue;
+    if (e.quality !== "clean") { assert.ok(st.a.open > 0, `seed ${seed}`); seen++; }
+  }
+  assert.ok(seen > 0);
+});
+
+test("stun: bigger and boosted head shots rock more often, a hurt chin more still; a rocked fighter is open and throws worse", () => {
+  const st = fresh();
+  assert.ok(stunOdds(st, "b", 8) > stunOdds(st, "b", 3));
+  assert.ok(stunOdds(st, "b", 8, true) > stunOdds(st, "b", 8));
+  const fresh8 = stunOdds(st, "b", 8);
+  st.b.head = data.fighters.poirier.chin * 0.5;
+  assert.ok(stunOdds(st, "b", 8) > fresh8);
+  let rocked = null;
+  for (let seed = 1; seed <= 300 && !rocked; seed++) {
+    const s2 = at(2, ["hook", "jab", "jab", "jab"], ["fakejab", "jab", "jab", "jab"], seed);
+    const ev = playBeat(s2, { card: 0, boost: true }, { card: 0 });
+    if (ev.find((x) => x.t === "attack" && x.by === "a" && x.stun) && !s2.pending && !s2.over) rocked = s2;
+  }
+  assert.ok(rocked, "a boosted hook rocks someone in 300 tries");
+  assert.equal(rocked.b.stunned, true);
+  assert.ok(rocked.b.open > 0);
+  const c = data.cards.jab;
+  const was = rocked.b.stunned;
+  const o1 = odds(rocked, "b", c, { d: 2 });
+  rocked.b.stunned = false;
+  const o0 = odds(rocked, "b", c, { d: 2 });
+  rocked.b.stunned = was;
+  assert.ok(near(o1.clean, Math.max(cfg.hit.cleanMin, o0.clean + cfg.stun.clean)));
+});
+
+test("ground: reads matter — a sweep is much likelier against a pound than against a ride", () => {
+  const st = fresh();
+  st.mode = "ground";
+  st.ground = { top: "b", pos: 0, stall: 0 };
+  const base = data.cards.g_sweep.hit;
+  const vsPound = groundOdds(st, "a", "sweep", base, "pound").p;
+  const vsRide = groundOdds(st, "a", "sweep", base, "ride").p;
+  assert.ok(vsPound - vsRide >= 0.4, `${vsPound} vs ${vsRide}`);
+  assert.ok(vsPound >= 0.5, "a right read from the bottom is better than a coin flip");
 });
