@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Octagon Cards — 畫面模型</title>
+<style>
+:root{
+  --bg:#0b0e13; --panel:#151a23; --line:#262d3b; --text:#eef1f6; --dim:#8b95a7;
+  --blue:#4c8dff; --red:#f0524f; --gold:#f5c542; --green:#3ecf8e; --amber:#f59e0b;
+  --head:#f0524f; --body:#f59e0b; --leg:#4c8dff; --grap:#3ecf8e;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#05070a;color:var(--text);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;overflow:hidden}
+#tabs{position:fixed;top:0;left:0;right:0;height:34px;display:flex;gap:6px;align-items:center;padding:0 10px;background:#0c1017;border-bottom:1px solid var(--line);z-index:10;overflow-x:auto}
+#tabs button{background:#1a2030;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+#tabs button.on{color:#fff;border-color:var(--blue);background:#1d2a45}
+#tabs span{color:var(--dim);font-size:12px;margin-left:auto;white-space:nowrap}
+#wrap{position:absolute;top:34px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center}
+#frame{position:relative;width:844px;height:390px;flex:none;background:var(--bg);overflow:hidden;border-radius:6px;transform-origin:center center;box-shadow:0 0 0 1px var(--line)}
+[hidden]{display:none!important}
+
+/* 上方資訊列 */
+#top{position:absolute;left:0;right:0;top:0;height:40px;display:flex;align-items:center;padding:0 12px;background:linear-gradient(#10151e,#0e1219);border-bottom:1px solid var(--line);z-index:3}
+.side{display:flex;align-items:center;gap:8px;flex:1}
+.side.r{flex-direction:row-reverse;text-align:right}
+.nm{font-weight:700;font-size:15px;line-height:1}
+.nm small{display:block;color:var(--dim);font-weight:400;font-size:11px;margin-top:3px}
+.doll{position:relative;width:20px;height:30px;flex:none;transform:scale(1.15)}
+.doll i{position:absolute;background:#3a4558;border-radius:3px}
+.doll .h{left:5px;top:0;width:10px;height:10px;border-radius:50%}
+.doll .b{left:3px;top:11px;width:14px;height:10px}
+.doll .l{left:4px;top:22px;width:12px;height:8px}
+.doll i.w1{background:var(--amber)} .doll i.w2{background:var(--head);box-shadow:0 0 6px var(--head)}
+.stam{width:110px;height:8px;background:#222a38;border-radius:4px;overflow:hidden}
+.stam b{display:block;height:100%;background:linear-gradient(90deg,#d99a00,var(--gold))}
+.clock{width:120px;text-align:center;font-weight:800;font-size:20px;letter-spacing:1px}
+.clock small{display:block;font-size:11px;color:var(--dim);font-weight:500;letter-spacing:0}
+.stbadges{display:flex;gap:4px;margin-top:3px}
+.badge{font-size:10px;padding:1px 5px;border-radius:8px;background:#2a1d1d;color:#ff8d8a;border:1px solid #5a2b2b}
+
+/* 舞台 */
+#stage{position:absolute;left:0;right:0;top:40px;height:196px;background:radial-gradient(120% 90% at 50% 100%,#262f42 0%,#151a25 55%,#0e1118 100%);overflow:hidden}
+#stage::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(60deg,transparent 0 16px,rgba(120,140,170,.07) 16px 17px),repeating-linear-gradient(-60deg,transparent 0 16px,rgba(120,140,170,.07) 16px 17px);opacity:.9}
+#floor{position:absolute;left:-40px;right:-40px;bottom:-30px;height:62px;background:radial-gradient(ellipse at 50% 0,#303b52,#1b2230 70%);border-top:1px solid #3a4560}
+#stage.ground #floor{height:80px}
+.fighter{position:absolute;bottom:26px;width:56px;height:140px;transition:left .5s cubic-bezier(.3,.7,.3,1)}
+.fighter i{position:absolute;display:block}
+.fighter .hd{left:16px;top:0;width:26px;height:28px;border-radius:50%;background:var(--skin)}
+.fighter .tr{left:10px;top:28px;width:38px;height:52px;border-radius:10px 10px 6px 6px;background:var(--shirt,var(--skin))}
+.fighter .sh{left:10px;top:70px;width:38px;height:22px;border-radius:4px;background:var(--trunk)}
+.fighter .lg{top:90px;width:16px;height:48px;border-radius:6px;background:var(--skin)}
+.fighter .lg.a{left:10px} .fighter .lg.b{left:32px}
+.fighter .ar{top:32px;width:12px;height:42px;border-radius:6px;background:var(--skin);transform-origin:50% 8px}
+.fighter .ar.a{left:-2px;transform:rotate(18deg)} .fighter .ar.b{left:48px;transform:rotate(-18deg)}
+.fighter.p{--skin:#d9a57a;--trunk:#2c5fd1;left:250px}
+.fighter.o{--skin:#b57e57;--trunk:#c93c3a;left:540px;transform:scaleX(-1)}
+.fighter.hurtleg .lg.b{background:#b34747;box-shadow:0 0 8px #e24b4b}
+.fighter.open{filter:drop-shadow(0 0 10px rgba(255,70,70,.9))}
+.fighter.hit{animation:shake .35s}
+.fighter.dizzy .hd::after{content:"★ ★";position:absolute;left:-8px;top:-14px;font-size:11px;color:var(--gold);letter-spacing:2px;transform:scaleX(-1)}
+@keyframes shake{25%{transform:translateX(-6px)}60%{transform:translateX(5px)}}
+.fighter.o.hit{animation:shakeo .35s}
+@keyframes shakeo{0%,100%{transform:scaleX(-1)}25%{transform:scaleX(-1) translateX(-6px)}60%{transform:scaleX(-1) translateX(5px)}}
+.spark{position:absolute;bottom:92px;font-size:34px;color:var(--gold);text-shadow:0 0 14px #ffb300;animation:pop .5s ease-out}
+@keyframes pop{0%{transform:scale(.2);opacity:0}60%{transform:scale(1.3);opacity:1}100%{transform:scale(1)}}
+.oppcards{position:absolute;right:10px;top:8px;display:flex;gap:4px;align-items:flex-end}
+.oppcards .bk{width:20px;height:28px;border-radius:3px;background:repeating-linear-gradient(45deg,#2a3246 0 3px,#1f2638 3px 6px);border:1px solid #3b4660}
+.oppcards .fc{width:44px;height:36px;border-radius:5px;background:var(--panel);border:1px solid var(--gold);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 0 10px rgba(245,197,66,.35)}
+.oppcards .fc small{font-size:9px;color:var(--gold);font-weight:500}
+.oppnote{position:absolute;right:10px;top:50px;font-size:11px;color:var(--dim)}
+#cap{position:absolute;left:0;right:0;top:236px;height:26px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;background:#0d1118;border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--text)}
+#cap em{font-style:normal;color:var(--gold);margin:0 4px}
+#cap.dim{color:var(--dim);font-weight:500;font-size:13px}
+
+/* 下方操作區 */
+#bot{position:absolute;left:0;right:0;top:262px;bottom:0;padding:8px 12px;display:flex;gap:8px;background:#0b0e13}
+.hand{display:flex;gap:6px;flex:1}
+.card{position:relative;flex:1;min-width:0;height:112px;border-radius:10px;background:linear-gradient(#1b2231,#141a26);border:1px solid #2c3548;padding:7px 8px 6px;display:flex;flex-direction:column;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.card::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;border-radius:10px 10px 0 0;background:var(--c,#556)}
+.card.head{--c:var(--head)} .card.body{--c:var(--body)} .card.leg{--c:var(--leg)} .card.grap{--c:var(--grap)}
+.card .n{font-size:16px;font-weight:800;margin-top:3px}
+.card .pct{font-size:30px;font-weight:900;line-height:1.05;margin-top:2px}
+.card .pct small{font-size:14px;font-weight:700}
+.card .ft{margin-top:auto;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--dim)}
+.card .cost{color:var(--gold);font-weight:700}
+.card .why{font-size:11px;font-weight:700;color:var(--green)}
+.card .why.dn{color:#ff8d8a}
+.card .ko{position:absolute;right:6px;top:10px;font-size:10px;font-weight:800;color:#fff;background:var(--red);border-radius:4px;padding:1px 4px}
+.card.off{opacity:.38;filter:grayscale(1);cursor:default}
+.card.off .note{position:absolute;left:0;right:0;bottom:24px;text-align:center;font-size:11px;color:#fff;background:#000a;padding:1px 0}
+.card.sig{border-color:var(--gold);background:linear-gradient(#2a2410,#1a1608);box-shadow:0 0 14px rgba(245,197,66,.35) inset,0 0 10px rgba(245,197,66,.25)}
+.card.sig .n{color:var(--gold)}
+.card.sel{transform:translateY(-10px);border-color:#fff;box-shadow:0 8px 20px rgba(0,0,0,.6)}
+.card.sel::after{content:"再點一次出牌 · 按住加注";position:absolute;left:-6px;right:-6px;top:-22px;text-align:center;font-size:11px;color:#fff;background:#222b3d;border-radius:5px;padding:2px 0}
+.acts{width:206px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;flex:none}
+.act{border-radius:10px;background:#192030;border:1px solid #2c3548;color:var(--text);font-size:15px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;height:auto}
+.act small{font-size:10px;color:var(--dim);font-weight:400;margin-top:2px}
+.act:active,.card:active{filter:brightness(1.3)}
+.swap{position:absolute;left:12px;top:-30px}
+.btn{background:#1d2a45;color:#fff;border:1px solid var(--blue);border-radius:9px;font-size:14px;font-weight:700;padding:8px 14px;cursor:pointer}
+.btn.red{background:#3a1717;border-color:var(--red)}
+.btn.gold{background:#3a2d0a;border-color:var(--gold);color:var(--gold)}
+
+/* 翻牌結算 */
+.reveal{display:flex;align-items:center;justify-content:center;gap:26px;flex:1}
+.rc{width:150px;min-height:104px;border-radius:12px;background:linear-gradient(#1b2231,#141a26);border:2px solid var(--c);padding:8px 10px;text-align:center;animation:flip .5s ease-out}
+@keyframes flip{from{transform:translateY(12px) scale(.9);opacity:.2}to{transform:none;opacity:1}}
+.rc small{display:block;color:var(--dim);font-size:11px}
+.rc b{display:block;font-size:20px;margin-top:2px}
+.rc .pct{font-size:26px;font-weight:900}
+.vs{font-size:18px;font-weight:900;color:var(--dim)}
+.res{font-size:12px;font-weight:700;margin-top:2px}
+.res.hit{color:var(--green)} .res.miss{color:#9aa4b7}
+
+/* 全螢幕覆蓋 */
+.ov{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(70% 70% at 50% 50%,rgba(20,0,0,.35),rgba(10,0,0,.88));text-align:center}
+.ov h1{font-size:34px;font-weight:900;letter-spacing:2px;color:#fff;text-shadow:0 0 18px var(--red)}
+.ov p{color:var(--dim);font-size:13px;max-width:520px}
+.choices{display:flex;gap:16px}
+.bigc{width:230px;padding:14px 12px;border-radius:14px;background:#181d29;border:2px solid #3a4560;cursor:pointer}
+.bigc b{display:block;font-size:22px}
+.bigc span{display:block;margin-top:6px;font-size:12px;color:var(--dim);line-height:1.5}
+.bigc.go{border-color:var(--red);box-shadow:0 0 18px rgba(240,82,79,.4)}
+.bigc.go b{color:#ff8d8a}
+
+/* QTE */
+.qte{position:absolute;left:0;right:0;top:262px;bottom:0;z-index:5;background:#0b0e13;display:flex;align-items:center;justify-content:center;gap:40px;padding:0 30px}
+.qte h1{font-size:24px;font-weight:900;color:#fff;text-shadow:0 0 14px var(--red)}
+.qte p{color:var(--dim);font-size:12px;margin:2px 0 10px}
+.qtxt{width:520px}
+.tug{position:relative;width:520px;height:26px;border-radius:13px;background:#1b2231;border:1px solid #33405a;overflow:hidden}
+.tug .me{position:absolute;left:0;top:0;bottom:0;width:58%;background:linear-gradient(90deg,#2a62d6,var(--blue));transition:width .3s}
+.tug .mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:#fff6}
+.ring{position:relative;width:84px;height:84px;flex:none;border-radius:50%;border:4px solid var(--gold);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:var(--gold);cursor:pointer;animation:pulse 0.9s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,197,66,.6)}50%{box-shadow:0 0 0 14px rgba(245,197,66,0)}}
+.ring::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid #fff5;animation:shrink 0.9s linear infinite}
+@keyframes shrink{from{transform:scale(1.5);opacity:.9}to{transform:scale(1);opacity:0}}
+.fighter.lie{width:150px;height:46px;bottom:30px;transform:none}
+.lie .hd{left:0;top:6px;width:26px;height:28px}
+.lie .tr{left:22px;top:4px;width:56px;height:32px;border-radius:8px}
+.lie .lg{left:74px;top:8px;width:60px;height:16px}
+.lie .lg.b{top:24px}
+
+/* 角落 */
+#corner{position:absolute;inset:0;z-index:4;background:linear-gradient(#10151e,#0b0e13);padding:20px 24px;display:flex;flex-direction:column;gap:12px}
+#corner h2,#plan h2{font-size:15px;color:var(--dim);font-weight:600}
+.coachrow{display:flex;gap:16px;align-items:flex-start}
+.avatar{width:84px;height:84px;border-radius:50%;background:radial-gradient(#3b4b6a,#1d2536);display:flex;align-items:center;justify-content:center;font-size:34px;border:2px solid #3a4560;flex:none}
+.bubble{position:relative;background:#1a2132;border:1px solid #33405a;border-radius:14px;padding:12px 16px;font-size:18px;line-height:1.5;max-width:560px}
+.bubble small{display:block;color:var(--dim);font-size:11px;margin-top:6px}
+.choice3{display:flex;gap:12px;margin-top:4px}
+.ch{flex:1;border-radius:14px;background:#171d2a;border:2px solid #2f3a52;padding:12px;cursor:pointer;min-height:110px}
+.ch b{font-size:20px;display:block}
+.ch span{display:block;margin-top:6px;font-size:12px;color:var(--dim);line-height:1.5}
+.ch.on{border-color:var(--blue);background:#182441}
+.ch.dis{opacity:.4;cursor:default}
+.pickinfo{font-size:13px;color:var(--dim)}
+#plan{position:absolute;inset:0;z-index:4;background:linear-gradient(#10151e,#0b0e13);padding:16px 22px;display:flex;flex-direction:column;gap:10px}
+.plans{display:flex;gap:8px}
+.pl{flex:1;border-radius:12px;background:#171d2a;border:2px solid #2f3a52;padding:10px 8px;cursor:pointer;text-align:center}
+.pl b{font-size:20px;display:block}
+.pl span{display:block;margin-top:6px;font-size:11px;color:var(--dim);line-height:1.5}
+.pl.on{border-color:var(--gold);background:#2a2410}
+.tgts{display:flex;gap:8px;align-items:center}
+.tg{padding:7px 18px;border-radius:20px;background:#171d2a;border:2px solid #2f3a52;font-weight:700;cursor:pointer}
+.tg.on{border-color:var(--red);background:#2a1414}
+.hintline{font-size:13px;color:var(--gold)}
+.row{display:flex;align-items:center;justify-content:space-between}
+</style>
+</head>
+<body>
+<div id="tabs"></div>
+<div id="wrap"><div id="frame" data-screen="cards">
+
+  <div id="top">
+    <div class="side">
+      <div class="doll" id="dollP"><i class="h"></i><i class="b"></i><i class="l"></i></div>
+      <div><div class="nm">Holloway<small>你 · 打擊型</small></div></div>
+      <div><div class="stam"><b style="width:72%"></b></div></div>
+    </div>
+    <div class="clock">R2 · 3:25<small>第 5 手 / 12</small></div>
+    <div class="side r">
+      <div class="doll" id="dollO"><i class="h w1"></i><i class="b"></i><i class="l w1"></i></div>
+      <div><div class="nm">Poirier<small>電腦 · 反擊型</small></div></div>
+      <div><div class="stam"><b style="width:46%"></b></div></div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div id="floor"></div>
+    <div class="oppcards" data-show="cards resolve">
+      <div class="bk"></div><div class="bk"></div><div class="bk"></div><div class="bk"></div>
+      <div class="fc"><small>新抽</small>抱腿</div>
+    </div>
+    <div class="fighter p" id="fp"><i class="ar a"></i><i class="lg a"></i><i class="lg b"></i><i class="tr"></i><i class="sh"></i><i class="hd"></i><i class="ar b"></i></div>
+    <div class="fighter o" id="fo"><i class="ar a"></i><i class="lg a"></i><i class="lg b"></i><i class="tr"></i><i class="sh"></i><i class="hd"></i><i class="ar b"></i></div>
+  </div>
+
+  <div id="cap" class="dim"></div>
+
+  <div id="bot">
+    <!-- 出牌 -->
+    <div class="hand" data-show="cards">
+      <div class="card head" data-play="刺拳"><div class="n">刺拳</div><div class="pct">55<small>%</small></div><div class="ft"><span class="why">↑ 迎擊</span><span class="cost">⚡1</span></div></div>
+      <div class="card head" data-play="連打"><div class="n">連打</div><div class="pct">42<small>%</small></div><div class="ft"><span class="why dn">↓ 距離</span><span class="cost">⚡2</span></div></div>
+      <div class="card leg" data-play="低踢"><div class="n">低踢</div><div class="pct">61<small>%</small></div><div class="ft"><span class="why">↑ 他跛</span><span class="cost">⚡1</span></div></div>
+      <div class="card head off"><div class="n">上勾拳</div><div class="pct">70<small>%</small></div><div class="note">需要「近」距離</div><div class="ft"><span></span><span class="cost">⚡2</span></div></div>
+      <div class="card head sig" data-play="旋踢"><span class="ko">KO</span><div class="n">旋踢★</div><div class="pct">38<small>%</small></div><div class="ft"><span class="why">↑ 他有破綻</span><span class="cost">⚡3</span></div></div>
+    </div>
+    <div class="acts" data-show="cards">
+      <div class="act" data-play="前進">前進<small>靠近一格</small></div>
+      <div class="act" data-play="後退">後退<small>拉開一格</small></div>
+      <div class="act" data-play="側移">側移<small>⚡1 脫離籠邊</small></div>
+      <div class="act" data-play="架擋">架擋<small>回一點體力</small></div>
+    </div>
+    <button class="btn swap" data-show="cards" style="top:-28px;left:12px;padding:3px 9px;font-size:11px;border-color:#3a4560;background:#161c28;color:var(--dim)">換一張 ⚡1 · 剩 2 次</button>
+
+    <!-- 翻牌 -->
+    <div class="reveal" data-show="resolve">
+      <div class="rc" style="--c:var(--leg)"><small>你</small><b>低踢</b><div class="pct">61%</div><div class="res hit">命中</div></div>
+      <div class="vs">VS</div>
+      <div class="rc" style="--c:#556"><small>Poirier</small><b>前進</b><div class="pct" style="font-size:18px;margin-top:8px">—</div><div class="res miss">距離：中 → 近</div></div>
+    </div>
+  </div>
+
+  <!-- 倒地決定 -->
+  <div class="ov" data-show="down">
+    <h1>Poirier 倒地！</h1>
+    <p>他搖搖欲墜。是現在撲上去，還是穩住？</p>
+    <div class="choices">
+      <div class="bigc go"><b>追擊</b><span>撲上去地面重擊，可能直接 TKO<br>體力暴掉 · 失敗會被反鎖</span></div>
+      <div class="bigc"><b>穩住</b><span>讓他站起來<br>保留體力 · 他有時間恢復</span></div>
+    </div>
+  </div>
+
+  <!-- QTE -->
+  <div class="qte" data-show="qte">
+    <div class="qtxt">
+      <h1>降伏！掙脫它</h1>
+      <p>跟著圈圈點 · 對手是柔術型，窗口比你小</p>
+      <div class="tug"><div class="me"></div><div class="mid"></div></div>
+    </div>
+    <div class="ring">點！</div>
+  </div>
+
+  <!-- 角落 -->
+  <div id="corner" data-show="corner">
+    <div class="row"><h2>第 2 回合結束 · 角落 · 一分鐘</h2><div class="pickinfo">選 2 件事 · 已選 2</div></div>
+    <div class="coachrow">
+      <div class="avatar">🧔</div>
+      <div class="bubble">「他一直躲你的左手，下回合踢他的腿。你這回合我覺得還不差。」<small>教練的話不保證正確</small></div>
+    </div>
+    <div class="choice3">
+      <div class="ch on"><b>聽教練</b><span>得到一條情報<br>（可能看錯）</span></div>
+      <div class="ch dis"><b>找醫生</b><span>沒有受傷<br>不需要</span></div>
+      <div class="ch on"><b>休息</b><span>體力回復 +20%</span></div>
+    </div>
+    <div style="margin-top:auto;text-align:right"><button class="btn" data-go="plan">下一步：選計畫 ›</button></div>
+  </div>
+
+  <!-- 回合計畫 -->
+  <div id="plan" data-show="plan">
+    <div class="row"><h2>第 3 回合 · 計畫（暗選）</h2><div class="hintline">教練：他的左腿不太行</div></div>
+    <div class="plans">
+      <div class="pl"><b>試探</b><span>輸出低<br>體力回得快<br>看出一個弱點</span></div>
+      <div class="pl on"><b>壓迫</b><span>前進牌變多<br>逼他到籠邊<br>你掉體力快</span></div>
+      <div class="pl"><b>守反</b><span>迎擊、閃身牌變多<br>等他出手</span></div>
+      <div class="pl"><b>抓摔</b><span>抱腿、纏抱牌變多</span></div>
+      <div class="pl"><b>爆發</b><span>重牌變多<br>體力大量消耗</span></div>
+    </div>
+    <div class="tgts"><span style="color:var(--dim);font-size:13px">主攻部位</span><div class="tg">頭</div><div class="tg">身</div><div class="tg on">腿</div></div>
+    <div style="margin-top:auto;text-align:right"><button class="btn gold" data-go="cards">開始第 3 回合</button></div>
+  </div>
+
+</div></div>
+
+<script>
+const SCREENS = {
+  cards:  {name:'① 出牌',  cap:'<span>你的回合 · 選一張牌或一個動作</span>', dim:true,  stage:'far'},
+  resolve:{name:'② 翻牌結算', cap:'Holloway <em>低踢</em> 命中 Poirier 的左腿', stage:'near', hit:true},
+  down:   {name:'③ 倒地決定', cap:'重擊命中頭部', stage:'near', hit:true, dizzy:true},
+  qte:    {name:'④ 地面 QTE', cap:'Oliveira <em>三角鎖</em> 鎖住你的手臂', stage:'ground'},
+  corner: {name:'⑤ 角落', cap:'', stage:'far', hideBot:true},
+  plan:   {name:'⑥ 回合計畫', cap:'', stage:'far', hideBot:true}
+};
+const $ = s => document.querySelector(s), frame = $('#frame');
+const tabs = $('#tabs');
+Object.entries(SCREENS).forEach(([k,v])=>{const b=document.createElement('button');b.textContent=v.name;b.dataset.k=k;b.onclick=()=>go(k);tabs.appendChild(b)});
+tabs.insertAdjacentHTML('beforeend','<span>畫面模型：只看清不清楚，沒有規則。可以點牌、點按鈕</span>');
+
+function go(k){
+  const s = SCREENS[k]; frame.dataset.screen = k;
+  tabs.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
+  document.querySelectorAll('[data-show]').forEach(el=>el.hidden = !el.dataset.show.split(' ').includes(k));
+  const cap=$('#cap'); cap.innerHTML=s.cap; cap.className = s.dim?'dim':''; cap.style.display = (k==='corner'||k==='plan')?'none':'flex';
+  $('#top').style.display = (k==='corner'||k==='plan')?'none':'flex';
+  $('#stage').style.display = (k==='corner'||k==='plan')?'none':'block';
+  $('#bot').style.display = (k==='corner'||k==='plan')?'none':'flex';
+  $('#bot').querySelectorAll('.card').forEach(c=>c.classList.remove('sel'));
+  const fp=$('#fp'), fo=$('#fo'), st=$('#stage');
+  st.classList.toggle('ground', s.stage==='ground');
+  fp.className='fighter p'; fo.className='fighter o';
+  document.querySelectorAll('.spark').forEach(e=>e.remove());
+  if(s.stage==='far'){fp.style.left='230px';fo.style.left='560px'}
+  if(s.stage==='near'){fp.style.left='320px';fo.style.left='470px'}
+  if(s.stage==='ground'){fp.classList.add('lie');fo.classList.add('lie');fp.style.left='250px';fo.style.left='420px'}
+  if(k==='cards'){fo.classList.add('open','hurtleg')}
+  if(s.hit){fo.classList.add('hit','hurtleg'); const sp=document.createElement('div');sp.className='spark';sp.textContent=k==='down'?'💥':'✦';sp.style.left=(k==='down'?'470px':'455px');st.appendChild(sp)}
+  if(s.dizzy){fo.classList.add('dizzy')}
+  if(k==='qte'){fo.classList.remove('hurtleg')}
+  $('#dollO').children[0].className = (k==='down')?'h w2':'h w1';
+}
+document.querySelectorAll('[data-play]').forEach(el=>{
+  el.addEventListener('click',()=>{
+    if(el.classList.contains('card')){
+      if(!el.classList.contains('sel')){document.querySelectorAll('.card').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');return}
+    }
+    go('resolve');
+  })
+});
+document.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.go)));
+document.querySelectorAll('.pl').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('.pl').forEach(x=>x.classList.remove('on'));el.classList.add('on')}));
+document.querySelectorAll('.tg').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('.tg').forEach(x=>x.classList.remove('on'));el.classList.add('on')}));
+document.querySelectorAll('.bigc').forEach(el=>el.addEventListener('click',()=>go('cards')));
+document.querySelector('.ring').addEventListener('click',()=>{const m=document.querySelector('.tug .me');m.style.width=Math.min(96,parseFloat(m.style.width||58)+10)+'%'});
+document.querySelector('.resolve-next');
+document.querySelector('.reveal').addEventListener('click',()=>go('cards'));
+
+function fit(){const w=innerWidth,h=innerHeight-34;const s=Math.min(w/844,h/390);frame.style.transform='scale('+s+')'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search).get('s');go(SCREENS[q]?q:'cards');
+</script>
+</body>
+</html>
