@@ -13,7 +13,7 @@ const FOE = IDS.find((k) => k !== ME);
 const REGION = { head: "頭", body: "身", leg: "腿" };
 const DN = cfg.dist.names;
 const $ = (s) => document.querySelector(s);
-const sleep = (ms) => new Promise((r) => setTimeout(r, window.__fast ? 4 : ms)); // __fast is for automated play-tests only
+const sleep = (ms) => new Promise((r) => setTimeout(r, params.has("fast") ? 4 : ms)); // ?fast=1 in the address is for automated play-tests only; a leftover global must never skip the animations again
 const YOURS = "你的回合 · 選步法（可不選）→ 點兩次出牌 · 按住牌＝加注 ·「留」蓄力 ·「埋」預判";
 
 // ---------- skeleton ----------
