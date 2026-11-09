@@ -9,6 +9,8 @@
     "test:deck": "node --test deck/test.js",
     "sim:deck": "node deck/sim.js",
     "test:bout": "node --test bout/test.js",
-    "sim:bout": "node bout/sim.js"
+    "sim:bout": "node bout/sim.js",
+    "test:v2": "node --test v2/test.js",
+    "sim:v2": "node v2/sim.js"
   }
 }

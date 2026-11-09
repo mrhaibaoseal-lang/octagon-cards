@@ -38,3 +38,9 @@ uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.p
 - 開 `http://localhost:5173/deck.html`（`.claude/launch.json` 的 `prototype`）。規格見 `docs/GAME_DESIGN.md`。
 - 規則與數值：`rules/deck/*.json`；引擎 `deck/engine.js`、出牌 AI `deck/ai.js`、模擬 `deck/sim.js`、逐手印出一場 `deck/trace.js`。
 - 檢查：`npm run test:deck`、`npm run sim:deck`（可加場數）。舊玩法的 `index.html` 與 `engine.js` 暫時保留，不再更新。
+
+## V2 解題式交鋒（2026-11-10，試玩中）
+- 開 `http://localhost:5173/v2.html`（可加 `?a=holloway&b=makhachev&seed=3`）。規則摘要在 `docs/GAME_DESIGN.md` 最上面的 V2 一節，提案全文在 `docs/REDESIGN_V2.md`。
+- 檔案：`v2/engine.js`（規則）、`v2/ai.js`（對手計畫 AI 與模擬用的回應機器人）、`v2/ui.js`、`v2/v2.css`、`rules/v2/{config,cards,fighters}.json`。
+- 驗證：`node --test prototype/web/v2/test.js`、`node prototype/web/v2/sim.js [每格場數]`。
+

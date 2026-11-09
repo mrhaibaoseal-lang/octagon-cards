@@ -1,0 +1,39 @@
+{
+ "_doc": "V2 選手。deck 起始牌組；gas 體力；chin 下巴（暈眩到這個數就被打晃）；power 傷害倍率；wrestle 抱摔加成；tdDef 防摔；escape 起身加成；readRate 看穿速度倍率；skill 個別牌的打實加成；trait 風格被動（type：thirdClean 一段內第 n 次打實額外加暈眩／bigTank 氣用完不扣體力／topDrain 在上位時對手每段多扣體力）。ai（當對手時的真實傾向）：aggression 打擊、grapple 抱摔、caution 防守反擊、move 移動的權重；body／legs 打身體與腿相對打頭的偏好；adapt 依你的習慣選防守的程度；throttle 催油門的機率；gnp 地面打擊相對壓制的偏好；habits 習慣（when 條件成立時，cat 那類計畫的權重 ×mul）。",
+ "poirier": {
+  "name": "Dustin Poirier", "short": "Poirier", "style": "拳擊壓迫",
+  "gas": 20, "chin": 30, "power": 1, "wrestle": 0, "tdDef": 0.1, "escape": 0.05, "readRate": 1,
+  "skill": { "hook": 0.05, "bodyhook": 0.05 },
+  "trait": { "type": "thirdClean", "n": 3, "stun": 4, "text": "連擊：一段內第 3 次打實，額外 +4 暈眩" },
+  "deck": ["jab", "jab", "jab", "cross", "cross", "hook", "hook", "upper", "bodyhook", "bodyhook", "lowkick", "calfkick", "feint", "slip", "sprawl", "wallwalk"],
+  "ai": { "aggression": 1, "grapple": 0, "caution": 0.35, "move": 0.08, "body": 0.8, "legs": 0.5, "adapt": 0.5, "throttle": 0.25, "gnp": 1,
+   "habits": [
+    { "when": "aHurtBody", "cat": "strike", "mul": 1.5, "text": "你身體受傷後，他更愛進攻" },
+    { "when": "behind", "cat": "counter", "mul": 0.4, "text": "落後時幾乎不防守" }
+   ] }
+ },
+ "holloway": {
+  "name": "Max Holloway", "short": "Holloway", "style": "高頻打擊",
+  "gas": 24, "chin": 36, "power": 0.9, "wrestle": 0, "tdDef": 0.15, "escape": 0.1, "readRate": 1.25,
+  "skill": { "jab": 0.05, "flurry": 0.08 },
+  "trait": { "type": "bigTank", "text": "無底油箱：氣用完也不扣體力" },
+  "deck": ["jab", "jab", "jab", "cross", "cross", "flurry", "flurry", "bodyhook", "bodyhook", "bodykick", "teep", "lowkick", "feint", "slip", "sprawl", "wallwalk"],
+  "ai": { "aggression": 1, "grapple": 0, "caution": 0.25, "move": 0.1, "body": 1, "legs": 0.5, "adapt": 0.6, "throttle": 0.35, "gnp": 1,
+   "habits": [
+    { "when": "lateRound", "cat": "strike", "mul": 1.8, "text": "回合後半越打越多" },
+    { "when": "aTired", "cat": "strike", "mul": 1.5, "text": "你沒體力時他會加壓" }
+   ] }
+ },
+ "makhachev": {
+  "name": "Islam Makhachev", "short": "Makhachev", "style": "摔角壓制",
+  "gas": 22, "chin": 32, "power": 1, "wrestle": 0.2, "tdDef": 0.3, "escape": 0.2, "readRate": 1,
+  "skill": {},
+  "trait": { "type": "topDrain", "gas": 1, "text": "重壓：他在上位時，對手每段多扣 1 體力" },
+  "deck": ["jab", "jab", "cross", "cross", "bodykick", "lowkick", "fakeshot", "takedown", "takedown", "takedown", "clinch", "knee", "gelbow", "pass", "check", "slip"],
+  "ai": { "aggression": 0.6, "grapple": 1.1, "caution": 0.3, "move": 0.08, "body": 0.7, "legs": 0.6, "adapt": 0.5, "throttle": 0.2, "gnp": 0.8,
+   "habits": [
+    { "when": "aCage", "cat": "takedown", "mul": 2, "text": "你背貼籠邊時，他幾乎一定摔" },
+    { "when": "aHurtLegs", "cat": "takedown", "mul": 1.5, "text": "你腿受傷後，他更常摔" }
+   ] }
+ }
+}
