@@ -1,0 +1,42 @@
+{
+ "_doc": "戰場式玩法的選手。chin 下巴、gas 體力、power 傷害倍率、wrestle 抱摔加成、tdDef 防摔。bonus 風格被動：對符合 match 條件（type／region／kind）的技能加 dmg 或 acc 或 p。start 當玩家時的起始技能列。builds 當對手時每回合的技能列（公開的，格式 id:等級）。",
+ "poirier": {
+  "name": "Dustin Poirier",
+  "short": "Poirier",
+  "style": "拳擊壓迫",
+  "chin": 62,
+  "gas": 6,
+  "power": 1,
+  "wrestle": 0,
+  "tdDef": 0.1,
+  "bonus": {"match":{"type":"punch"},"dmg":1,"text":"所有拳 +1 傷害"},
+  "start": ["jab:1","cross:1"],
+  "builds": [["jab:1","cross:1","bodyhook:1"],["jab:1","cross:1","bodyhook:1","slip:1"],["jab:1","cross:2","hook:1","slip:1","bodyhook:1"],["jab:2","cross:2","hook:2","slip:1","bodyhook:1"],["jab:2","cross:2","hook:2","slip:2","uppercut:1"]]
+ },
+ "holloway": {
+  "name": "Max Holloway",
+  "short": "Holloway",
+  "style": "高頻打擊",
+  "chin": 66,
+  "gas": 8,
+  "power": 1,
+  "wrestle": 0,
+  "tdDef": 0.15,
+  "bonus": {"match":{"kind":"strike"},"acc":0.08,"text":"所有打擊打實率 +8%"},
+  "start": ["jab:1","cross:1"],
+  "builds": [["jab:1","cross:1","bodyhook:1"],["jab:1","cross:1","bodyhook:1","lowkick:1"],["jab:2","cross:1","flurry:1","bodyhook:1","check:1"],["jab:2","cross:2","flurry:1","bodykick:1","check:1"],["jab:2","cross:2","flurry:2","bodykick:1","secondwind:1"]]
+ },
+ "makhachev": {
+  "name": "Islam Makhachev",
+  "short": "Makhachev",
+  "style": "摔角壓制",
+  "chin": 64,
+  "gas": 7,
+  "power": 1,
+  "wrestle": 0.15,
+  "tdDef": 0.3,
+  "bonus": {"match":{"kind":"takedown"},"p":0.15,"text":"抱摔成功率 +15%"},
+  "start": ["jab:1","cross:1"],
+  "builds": [["jab:1","cross:1","lowkick:1"],["jab:1","shot:1","gnp:1","lowkick:1"],["jab:1","shot:1","gnp:1","cross:1","check:1"],["jab:1","shot:2","gnp:2","cross:1","check:1"],["jab:2","shot:2","gnp:2","cross:2","sprawl:1"]]
+ }
+}

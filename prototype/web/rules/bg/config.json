@@ -1,0 +1,18 @@
+{
+ "_doc": "戰場式玩法（bg.html）。一場 rounds 回合，每回合 exchanges 段；每段雙方的技能列由左到右輪流發動（slots 格）。gold：每回合商店的金幣＝base＋perRound×(回合−1)，上一回合贏了再 +win。shop：offers 一次擺幾張、cost 技能價格、sell 賣價、reroll 重抽價、tierCost 升到第 2／3 級商店的價格、maxLevel 技能最高等級（買到同一張就升級）、specialChance 出現特殊選項的機率。levelMul 各等級的數值倍率。hit：graze 沒打實的傷害倍率、setup 起手技打到後下一招的打實加成、rocked 被打晃的人出手打實率、min／max 上下限。gasRegen 每段回多少體力；stunDecay 每段結束頭傷自己恢復多少（沒被打晃時）；fizzleRegen 沒氣放不出技能時回多少。rock：hp 被打晃後再吃多少傷害就 TKO、after 撐過回合後頭傷回到下巴的幾成、chinLoss 下巴永久減少。ko.stunScale 頭傷越滿 KO 機率越高的倍率。rest：回合間頭傷恢復、體力回滿。score：perDmg 每點傷害的分數、graze 沒打實的倍率、takedown 抱摔成功、block 防守成功、big 一回合差多少算 10-8。react 時機條：heavy 對手一招總傷害達到多少會出現（每回合一次，而且你沒有防守擋得住）、good 按到好時那一招的傷害倍率（而且不算打實）、counter 完美時反擊傷害、zone 好區與完美區寬度、speed 游標每秒幾趟、sweeps 幾趟沒按算失敗。",
+ "rounds": 5,
+ "exchanges": 3,
+ "slots": 5,
+ "gold": { "base": 6, "perRound": 1, "win": 1 },
+ "shop": { "offers": 4, "cost": 3, "sell": 1, "reroll": 1, "tierCost": [0, 4, 6], "maxLevel": 3, "specialChance": 0.6 },
+ "levelMul": [1, 1.5, 2],
+ "hit": { "graze": 0.4, "setup": 0.2, "rocked": -0.3, "min": 0.05, "max": 0.95 },
+ "gasRegen": 2,
+ "stunDecay": 3,
+ "fizzleRegen": 1,
+ "rock": { "hp": 22, "after": 0.5, "chinLoss": 3 },
+ "ko": { "stunScale": 1.5 },
+ "rest": { "stun": 8 },
+ "score": { "perDmg": 0.25, "graze": 0.5, "takedown": 3, "block": 1, "big": 10 },
+ "react": { "heavy": 9, "good": 0.2, "counter": 6, "zone": { "good": 0.34, "perfect": 0.1 }, "speed": 0.85, "sweeps": 3 }
+}
