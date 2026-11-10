@@ -25,7 +25,7 @@ test("same seed, same bout; every bout ends by KO or decision", () => {
 });
 
 test("every card has a school, a tier the shop can reach, and only known keywords and effects", () => {
-  const kws = ["guard", "slip", "flurry", "sweep", "sub"], whens = ["play", "buy", "start", "hit", "break", "win"];
+  const kws = ["guard", "slip", "flurry", "sweep", "sub", "takedown", "sprawl", "getup", "ground", "combo", "reach"], whens = ["play", "buy", "start", "hit", "break", "win"];
   for (const d of Object.values(data.skills)) {
     assert.ok(["punch", "kick", "grap", "def"].includes(d.school), d.id);
     assert.ok(d.tier >= 1 && d.tier <= data.config.shop.maxTier, d.id);
@@ -118,7 +118,7 @@ test("clash: cards trade blows until one side is gone; the winner's survivors hi
   assert.equal(st.b.lostLast, true, "the loser gets the extra gold next turn");
 });
 
-test("clash keywords: guard is hit first, slip soaks one hit, submission breaks whatever it damages", () => {
+test("clash keywords: guard is hit first, slip soaks one hit, submission breaks whatever it damages on the ground only", () => {
   let st = fresh();
   put(st, "a", ["cross"]); put(st, "b", ["jab", "highguard", "jab"]);
   E.startClash(st);
@@ -132,8 +132,107 @@ test("clash keywords: guard is hit first, slip soaks one hit, submission breaks 
   st = fresh();
   put(st, "a", ["rnc"]); put(st, "b", ["champheart"]);
   st.b.board[0].kw = { guard: true };
-  run(st);
+  E.startClash(st);
+  E.step(st);
+  assert.equal(evs(st, "sub").length, 0, "standing: no submission");
+  st = fresh();
+  put(st, "a", ["rnc"]); put(st, "b", ["champheart"]);
+  st.b.board[0].kw = { guard: true };
+  E.startClash(st);
+  st.c.ground = { top: "a", left: 99 };
+  for (let i = 0; i < 3 && st.phase === "clash"; i++) E.step(st);
   assert.equal(evs(st, "sub").length, 1);
+});
+
+const G = data.config.ground;
+const wall = (st) => { st.b.board[0].kw.guard = true; }; // make b's first card the one that gets hit
+
+test("ground: a takedown that lands puts the clash on the ground; kicks cannot strike, the bottom hits softer, ground cards on top hit harder; then they are stood up", () => {
+  const st = fresh();
+  put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "highkick"]);
+  E.startClash(st);
+  assert.equal(E.upcoming(st).s, "a", "the side with more cards goes first");
+  E.step(st);
+  const g = evs(st, "ground")[0];
+  assert.ok(g && g.s === "a" && st.c.ground.top === "a");
+  const [, elbows] = st.c.a, [iron, kick] = st.c.b;
+  assert.equal(E.power(st, kick), Math.ceil(kick.atk * G.schoolMul.kick));
+  assert.equal(E.power(st, kick), 0, "a kick cannot be thrown from the ground");
+  assert.equal(E.power(st, iron), Math.ceil(iron.atk * G.bottomMul));
+  assert.equal(E.power(st, elbows), Math.ceil(elbows.atk * G.topMul));
+  const at = st.log.indexOf(g);
+  for (let i = 0; i < 40 && st.phase === "clash" && st.c.ground; i++) E.step(st);
+  const up = st.log.findIndex((e, i) => i > at && e.t === "standup");
+  if (up >= 0) assert.ok(st.log.slice(at, up).filter((e) => e.t === "attack").length <= G.attacks);
+  else assert.equal(st.phase, "shop", "or the clash ended down there");
+});
+
+test("ground: a sprawl stops takedowns while it stands; a get-up card stands its side back up; a takedown from underneath reverses", () => {
+  let st = fresh();
+  put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "sprawl"]);
+  E.startClash(st); E.step(st);
+  assert.equal(evs(st, "stuffed").length, 1);
+  assert.equal(evs(st, "ground").length, 0);
+  assert.equal(st.c.ground, null);
+
+  st = fresh();
+  put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "shrimp"]);
+  E.startClash(st);
+  for (let i = 0; i < 6 && !evs(st, "standup").length; i++) E.step(st);
+  const up = evs(st, "standup")[0];
+  assert.ok(up && up.s === "b" && up.uid === st.c.b[1].uid, "the get-up card did it on its turn");
+
+  st = fresh("poirier", "makhachev");
+  put(st, "a", ["doubleleg", "highguard", "highguard"]); put(st, "b", ["doubleleg"]); wall(st);
+  E.startClash(st);
+  for (let i = 0; i < 8 && !evs(st, "reverse").length && st.phase === "clash"; i++) E.step(st);
+  assert.equal(evs(st, "ground")[0].s, "a");
+  assert.equal(evs(st, "reverse")[0].s, "b");
+  assert.equal(st.c.ground.top, "b");
+});
+
+test("ground: a kick that lands on a takedown card gets caught", () => {
+  const st = fresh("poirier", "makhachev");
+  put(st, "a", ["lowkick", "highguard", "highguard"]); put(st, "b", ["doubleleg"]); wall(st);
+  E.startClash(st); E.step(st);
+  assert.ok(G.catch.includes(data.skills.lowkick.school));
+  assert.equal(evs(st, "ground")[0].s, "b", "the kicker ends up underneath");
+});
+
+test("combo cards hit harder in a row; a long-range strike is not hit back", () => {
+  let st = fresh("poirier", "makhachev");
+  put(st, "a", ["cross", "cross", "cross"]); put(st, "b", ["ironwall", "ironwall"]);
+  E.startClash(st);
+  const base = st.c.a[0].atk;
+  for (let i = 0; i < 3; i++) E.step(st);
+  const mine = evs(st, "attack").filter((e) => e.s === "a");
+  assert.deepEqual(mine.map((e) => e.combo), [0, data.config.combo.atk]);
+  const hit = st.log[st.log.indexOf(mine[1]) + 1];
+  assert.equal(hit.dmg, base + data.config.combo.atk);
+
+  st = fresh();
+  put(st, "a", ["highkick", "highguard", "highguard"]); put(st, "b", ["ironwall"]);
+  E.startClash(st);
+  const hp = st.c.a[0].hp;
+  E.step(st);
+  assert.equal(st.c.a[0].hp, hp, "the wall could not hit back");
+});
+
+test("a lasting weaken stays on the real card for the rest of the round, then it recovers", () => {
+  const st = fresh("poirier", "makhachev");
+  put(st, "a", ["lowkick", "highguard", "highguard"]); put(st, "b", ["ironwall"]);
+  const base = st.b.board[0].atk;
+  run(st);
+  const worn = st.b.board[0].worn;
+  assert.ok(worn >= 1);
+  assert.equal(st.b.board[0].atk, base - worn);
+  E.startClash(st);
+  assert.equal(st.c.b[0].atk, base - worn, "the next clash starts with the worn-down card");
+  let n = 0; while (st.phase === "clash" && n++ < 500) E.step(st);
+  run(st);
+  assert.equal(st.phase, "corner");
+  assert.equal(st.b.board[0].atk, base);
+  assert.equal(st.b.board[0].worn, undefined);
 });
 
 test("clash effects do not leak into the shop: a start-of-clash buff is gone afterwards", () => {

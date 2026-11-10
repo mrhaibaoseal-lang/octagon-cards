@@ -1,5 +1,5 @@
 {
- "_doc": "戰場式玩法（bg.html）第二版：一對一，雙方各逛自己的商店。rounds 回合 × clashes 段，每段之前逛一次商店。slots 技能列格數。hp 選手耐久。gold：start 第一段的金幣、perTurn 每段多幾金、cap 上限、loser 上一段打輸的人多幾金。shop：cost 買牌、sell 賣價、reroll 重抽、offers 各級商店一次擺幾張、tierCost 升到下一級的原價（每過一段便宜 tierDrop）、maxTier 最高級、discover 三連後幾選一。golden 金卡的數值倍率。damage：打贏的一方對輸家選手造成的耐久傷害＝剩下的牌的等級加總＋商店等級，caps 是各回合的上限。score.big 一回合贏幾段以上算 10-8。corner 回合之間三選一：heal 回耐久、gold 下一段多金幣、discover 從目前商店等級三選一張牌。react 時機條：每段一次，出現在場上攻擊最高的那張牌第一次出手時；對手的牌：good／perfect 是你受到的傷害倍率；你的牌：goodHit／perfectHit 是你造成的傷害倍率；zone 好區與完美區寬度、speed 游標每秒幾趟、sweeps 幾趟沒按算失敗。maxAttacks 一段最多幾次出手（保險）。",
+ "_doc": "戰場式玩法（bg.html）第二版：一對一，雙方各逛自己的商店。rounds 回合 × clashes 段，每段之前逛一次商店。slots 技能列格數。hp 選手耐久。gold：start 第一段的金幣、perTurn 每段多幾金、cap 上限、loser 上一段打輸的人多幾金。shop：cost 買牌、sell 賣價、reroll 重抽、offers 各級商店一次擺幾張、tierCost 升到下一級的原價（每過一段便宜 tierDrop）、maxTier 最高級、discover 三連後幾選一。golden 金卡的數值倍率。damage：打贏的一方對輸家選手造成的耐久傷害＝剩下的牌的等級加總＋商店等級，caps 是各回合的上限。score.big 一回合贏幾段以上算 10-8。corner 回合之間三選一：heal 回耐久、gold 下一段多金幣、discover 從目前商店等級三選一張牌。react 時機條：每段一次，出現在場上攻擊最高的那張牌第一次出手時；對手的牌：good／perfect 是你受到的傷害倍率；你的牌：goodHit／perfectHit 是你造成的傷害倍率；zone 好區與完美區寬度、speed 游標每秒幾趟、sweeps 幾趟沒按算失敗。maxAttacks 一段最多幾次出手（保險）。ground 地面：抱摔打中後這一段轉入地面，attacks 次出手後裁判拉起來；schoolMul 各流派在地面的攻擊倍率（0＝出不了手）；bottomMul 下位的牌的攻擊倍率（有「地面技」的不受影響）；topMul 上位的「地面技」攻擊倍率；catch 哪些流派的牌打在抱摔牌上會被接住、送出一次抱摔。combo 連段：每連一張 +atk 攻擊，最多算 max 張。",
  "rounds": 5,
  "clashes": 3,
  "slots": 6,
@@ -15,5 +15,7 @@
   "discover": { "name": "教練教一招", "text": "從目前等級的牌三選一，免費" }
  },
  "react": { "good": 0.25, "perfect": 0, "goodHit": 1.75, "perfectHit": 2.5, "zone": { "good": 0.34, "perfect": 0.1 }, "speed": 0.85, "sweeps": 3 },
+ "ground": { "attacks": 4, "schoolMul": { "kick": 0 }, "bottomMul": 0.7, "topMul": 1.5, "catch": ["kick"] },
+ "combo": { "atk": 1, "max": 3 },
  "maxAttacks": 120
 }

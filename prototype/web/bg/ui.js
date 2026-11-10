@@ -8,8 +8,18 @@ const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.sta
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const SCHOOL = { punch: "拳", kick: "踢", grap: "摔", def: "防" };
-const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏" };
-const KW_TEXT = { guard: "對手必須先打這張", slip: "躲掉打向它的第一下", flurry: "一次出手打兩下", sweep: "同時打到目標左右兩張", sub: "打到誰就直接破解誰" };
+const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏", takedown: "抱摔", sprawl: "防摔", getup: "起身", ground: "地面技", combo: "連段", reach: "長距離" };
+const pct = (m) => (m > 1 ? `+${Math.round((m - 1) * 100)}%` : `−${Math.round((1 - m) * 100)}%`);
+const KW_TEXT = {
+  guard: () => "對手必須先打這張", slip: () => "躲掉打向它的第一下", flurry: () => "一次出手打兩下", sweep: () => "同時打到目標左右兩張",
+  sub: () => "只在地面有效：打到誰就直接破解誰",
+  takedown: (c) => `打中就把這一段帶到地面，你在上位（${c.ground.attacks} 次出手後站起來）。已經被壓在下面時：翻到上位`,
+  sprawl: () => "只要這張還在場上，對手的抱摔都不成功",
+  getup: () => "被壓在下面時，輪到它出手就站回來",
+  ground: (c) => `在上位時攻擊 ${pct(c.ground.topMul)}；在下位也不減弱`,
+  combo: (c) => `前一張出手的也是連段牌：這一下 +${c.combo.atk} 攻擊，可累積到 +${c.combo.atk * c.combo.max}`,
+  reach: () => "這張出手時不會被反擊",
+};
 const WHEN = { start: "開場", hit: "命中", play: "上場", buy: "成長", break: "破解時", win: "獲勝" };
 // Clash playback pace. 1 is the original tempo; the default is the slow one so each exchange can be read.
 const SPEEDS = [0.45, 0.9, 1.8], SPEED_NAME = ["慢", "普通", "快"];
@@ -48,9 +58,12 @@ async function loadArt(ids) {
   }));
 }
 /** Put side s in a pose; with ms it goes back to idle afterwards. */
+let ground = null;
+const basePose = (s) => (!ground ? "idle" : ground.top === s ? "shoot" : "down");
 function pose(s, name, ms) {
   const n = $("#f" + s);
   if (!n) return;
+  if (name === "idle") name = basePose(s);
   clearTimeout(poseT[s]);
   const set = art[st[s].id] || {}, p = set[name] || set.idle;
   n.dataset.pose = name;
@@ -64,8 +77,9 @@ function act(s, kind, school) {
   if (kind === "down") return pose(s, "down");
   if (speed === 0) return;
   const move = (frames, ms) => n.firstChild.animate(frames, { duration: ms / speed, easing: "ease-out" });
-  if (kind === "attack") { pose(s, POSE_OF[school] || "punch", 380); move([{ transform: "translateX(-6px)" }, { transform: "translateX(30px)", offset: 0.4 }, { transform: "translateX(30px)", offset: 0.75 }, { transform: "none" }], 380); }
-  else if (kind === "hit") { pose(s, "hit", 320); move([{ transform: "none", filter: "brightness(2.2)" }, { transform: "translateX(-14px)", filter: "brightness(1)", offset: 0.35 }, { transform: "none" }], 320); }
+  const under = ground && ground.top !== s; // the one underneath stays down: only a nudge and a flash
+  if (kind === "attack") { if (!under) pose(s, ground ? "punch" : POSE_OF[school] || "punch", 380); move([{ transform: "translateX(-6px)" }, { transform: "translateX(30px)", offset: 0.4 }, { transform: "translateX(30px)", offset: 0.75 }, { transform: "none" }], 380); }
+  else if (kind === "hit") { if (!under) pose(s, "hit", 320); move([{ transform: "none", filter: "brightness(2.2)" }, { transform: "translateX(-14px)", filter: "brightness(1)", offset: 0.35 }, { transform: "none" }], 320); }
   else if (kind === "slip") move([{ transform: "none" }, { transform: "translateX(-20px) rotate(-10deg)", offset: 0.4 }, { transform: "none" }], 340);
 }
 function fighterPos(s) { return { x: s === "a" ? 366 : 478, y: 116 + 70 }; }
@@ -74,15 +88,15 @@ function fighterPos(s) { return { x: s === "a" ? 366 : 478, y: 116 + 70 }; }
 /** One card. c = a board card / clash unit / { id } for a shop offer. o: small, cls, attr, note */
 function card(c, o = {}) {
   const d = data.skills[c.id], m = c.gold ? data.config.golden : 1;
-  const atk = c.atk ?? d.atk, hp = c.hp ?? d.hp, kw = c.kw ? Object.keys(c.kw) : d.kw;
+  const atk = c.pow ?? c.atk ?? d.atk, hp = c.hp ?? d.hp, kw = c.kw ? Object.keys(c.kw) : d.kw, off = c.pow === 0 && c.atk > 0;
   const up = (v, base) => (v > base * m ? "up" : v < base * m ? "down" : "");
   const when = [...new Set(d.fx.map((f) => WHEN[f.when]).filter(Boolean))].map((w) => `<em class="fx">${w}</em>`).join("");
-  const stun = c.stun ? "<em class='bad'>被壓制</em>" : "";
-  return `<div class="sk ${d.school} ${c.gold ? "gold" : ""} ${o.small ? "s" : ""} ${c.dead ? "dead" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
+  const stun = (c.stun ? "<em class='bad'>被壓制</em>" : "") + (off ? "<em class='bad'>地面出不了手</em>" : "") + (c.worn ? `<em class="bad">腿傷 −${c.worn}</em>` : "");
+  return `<div class="sk ${d.school} ${c.gold ? "gold" : ""} ${o.small ? "s" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
     <i class="g">${SCHOOL[d.school]}</i><b class="nm">${esc(d.name)}</b><span class="tier">${"●".repeat(d.tier)}</span>
     ${kw.length || when || stun ? `<div class="kws">${kw.map((k) => `<em>${KW[k]}</em>`).join("")}${when}${stun}</div>` : ""}
     ${o.small || !o.note ? "" : `<small>${esc(o.note)}</small>`}
-    <span class="atk ${up(atk, d.atk)}">${atk}</span><span class="hp ${up(hp, d.hp)}">${Math.max(0, hp)}</span></div>`;
+    <span class="atk ${up(atk + (c.worn || 0), d.atk)} ${c.worn || (c.pow != null && c.pow < c.atk) ? "down" : ""}">${atk}</span><span class="hp ${up(hp, d.hp)}">${Math.max(0, hp)}</span></div>`;
 }
 
 // ---------- card details: mouse over a card, or press and hold on touch ----------
@@ -94,7 +108,8 @@ function showTip(node) {
   tipEl.className = d.school;
   tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級${gold ? "・金卡" : ""}</span>
     <div class="st"><i class="atk">${node.dataset.atk}</i>攻擊<i class="hp">${node.dataset.hp}</i>耐力</div>
-    ${d.fx.length ? `<p>${esc(d.text)}</p>` : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${KW_TEXT[k]}</p>`).join("")}
+    ${d.fx.length ? `<p>${esc(d.text)}</p>` : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${KW_TEXT[k](data.config)}</p>`).join("")}
+    ${node.dataset.worn ? `<p class="dim">腿傷：攻擊 −${node.dataset.worn}，這回合結束才恢復。</p>` : ""}
     ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
     ${gold ? `<p class="dim">金卡：數值與效果的數字都加倍。</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
   if (tipEl.parentNode !== frame) frame.appendChild(tipEl);
@@ -139,7 +154,7 @@ function pickScreen() {
   const btn = (s, id) => { const f = data.fighters[id]; return `<button data-s="${s}" data-id="${id}" class="${choice[s] === id ? "on" : ""}"><b>${esc(f.name)}</b><small>${esc(f.style)}｜${esc(f.power.text)}</small></button>`; };
   frame.innerHTML = `<div class="bgart"></div><div class="over solid"><div class="box">
     <h2>Octagon Cards</h2>
-    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方的牌<b>由左到右輪流出手</b>互打；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
+    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方的牌<b>由左到右輪流出手</b>互打；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。<b>抱摔</b>打中會把這一段帶到地面：踢出不了手、被壓在下面的打得比較輕。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
     <h3>你的選手</h3><div class="pick you">${ids.map((id) => btn("a", id)).join("")}</div>
     <h3>對手</h3><div class="pick foe">${ids.map((id) => btn("b", id)).join("")}</div>
     <button class="go" id="go">進商店</button></div></div>`;
@@ -219,6 +234,13 @@ function rows(v) {
   const row = (s) => v[s].map((u) => (u && !u.dead ? card(u, { attr: `data-uid="${u.uid}"` }) : empty({}, u ? "被破解" : ""))).join("");
   $("#rowB").innerHTML = row("b");
   $("#rowA").innerHTML = row("a");
+  setGround(v.ground);
+}
+function setGround(g) {
+  const was = ground, b = $("#gnd");
+  ground = g || null;
+  if (b) { b.className = ground ? (ground.top === "a" ? "good" : "bad") : ""; b.textContent = ground ? `地面・${ground.top === "a" ? "你在上位" : "你被壓在下面"}・再 ${ground.left} 下站起來` : ""; }
+  if ((was && was.top) !== (ground && ground.top)) for (const s of ["a", "b"]) if ($("#f" + s)?.dataset.pose !== "down" || was) pose(s, "idle");
 }
 const el = (uid) => $(`[data-uid="${uid}"]`);
 function pos(node) { const r = node.getBoundingClientRect(), f = frame.getBoundingClientRect(), k = scale(); return { x: (r.left - f.left + r.width / 2) / k, y: (r.top - f.top + r.height / 2) / k }; }
@@ -258,13 +280,18 @@ async function showEvent(e, prev) {
         await a.animate([{ transform: "none" }, { transform: `translate(${(pt.x - pa.x) * 0.12}px,${(pt.y - pa.y) * 0.14}px) scale(1.1)`, filter: "brightness(1.5)" }, { transform: "none" }], { duration: 320 / speed, easing: "ease-in-out" }).finished;
         a.style.zIndex = "";
       }
-      say(`${nameOf(prev, e.from)} → ${nameOf(prev, e.to)}`, e.s === "a" ? "good" : "bad", e.s === "a" ? "你出手" : "他出手");
+      say(`${nameOf(prev, e.from)} → ${nameOf(prev, e.to)}`, e.s === "a" ? "good" : "bad", (e.s === "a" ? "你出手" : "他出手") + (e.combo ? `・連段 +${e.combo}` : ""));
+      if (e.combo && a) float(pos(a), `連段 +${e.combo}`, "buff");
       return 0;
     }
     case "dmg": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "hit"); float(p, `−${e.dmg}`, "dmg"); const m = el(e.uid); if (m) m.classList.add("shake"); return 280; }
     case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "slip"); float(p, "閃開！", "buff"); return 300; }
     case "sub": float(el(e.uid) && pos(el(e.uid)), "降伏！", "dmg"); return 280;
-    case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "攻擊下降", "dmg"); return 240;
+    case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), e.lasting ? "腿傷：攻擊下降" : "攻擊下降", "dmg"); return 240;
+    case "ground": rows(e.view); act(e.s, "attack", "grap"); float(el(e.uid) && pos(el(e.uid)), "抱摔成功", "buff"); say(e.s === "a" ? "帶到地面！你在上位" : "被帶到地面！你在下面", e.s === "a" ? "good" : "bad", "地面上：踢出不了手，下面的人打得比較輕，降伏生效"); return 1100;
+    case "reverse": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "翻身", "buff"); say(e.s === "a" ? "翻身！換你在上位" : "被翻過去了！", e.s === "a" ? "good" : "bad"); return 900;
+    case "stuffed": float(el(e.uid) && pos(el(e.uid)), "防摔！", "buff"); say(e.s === "a" ? "你擋下了抱摔" : "他擋下了抱摔", e.s === "a" ? "good" : "bad", "防摔牌還在場上，抱摔就不會成功"); return 700;
+    case "standup": rows(e.view); if (e.uid) float(el(e.uid) && pos(el(e.uid)), "起身", "buff"); say(e.uid ? (e.s === "a" ? "你站回來了" : "他站回來了") : "站起來了", "", e.uid ? "" : "回到站立"); return 800;
     case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 240;
     case "stunned": float(el(e.uid) && pos(el(e.uid)), "出不了手", "dmg"); rows(e.view); return 300;
     case "break": { const n = el(e.uid), p = n && pos(n); float(p, "破解", "break"); rows(e.view); return 280; }
@@ -316,8 +343,9 @@ function qte(p) {
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
-    <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
+    <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
     <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
+  ground = null;
   pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
   const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);

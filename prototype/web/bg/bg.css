@@ -174,3 +174,9 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #tip .st .atk{background:#b26a00} #tip .st .hp{background:#a52c25;margin-left:6px}
 #tip p{color:#dfe5f0;margin-top:2px} #tip p.dim{color:var(--dim)} #tip p.note{color:var(--gold);font-weight:700}
 #tip em{font-style:normal;font-weight:700;font-size:10.5px;padding:0 5px;margin-right:5px;border-radius:7px;background:color-mix(in srgb,var(--c) 30%,#0b0e13);border:1px solid color-mix(in srgb,var(--c) 70%,#000)}
+
+/* 地面狀態 */
+#gnd{position:absolute;left:0;right:0;top:27px;text-align:center;font-size:11.5px;font-weight:700;line-height:18px;z-index:3}
+#gnd:empty{display:none}
+#gnd.good{color:#7df0c0} #gnd.bad{color:#ff8780}
+.sk.off{filter:saturate(.25) brightness(.65)}

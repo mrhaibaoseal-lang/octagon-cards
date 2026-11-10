@@ -28,13 +28,24 @@ for (const [name, shop] of Object.entries(shoppers)) {
 console.log("\n二、時機條（smart 逛法）");
 const tm = {};
 for (const g of ["miss", "good", "perfect"]) { let w = 0; for (const [a, b] of pairs) w += cell(a, b, shoppers.smart, () => g).w / pairs.length; tm[g] = w; console.log(`${{ miss: "全部失敗", good: "全部按到好", perfect: "全部完美" }[g]}　${pc(w)}`); }
-console.log("\n三、檢查");
+// Style against style: no fighter powers, both sides shop with the same AI and differ only in the school they favour.
+console.log("\n三、流派對打（不帶選手技能，雙方同一個 AI，只差偏好的流派；每組 " + N * 2 + " 場）");
+const SCH = ["punch", "kick", "grap"], NAME = { punch: "拳", kick: "腿", grap: "摔" }, sdata = loadData(), style = {};
+sdata.fighters = Object.fromEntries(SCH.map((k) => [k, { name: k, short: k, style: k, power: { text: "", fx: [] }, ai: { prefer: k, skill: 1, bias: 5 } }]));
+for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
+  let w = 0;
+  for (let i = 0; i < N * 2; i++) { const st = runGame(sdata, i % 2 ? x : y, i % 2 ? y : x, 300 + i * 7919, shoppers.smart), o = st.over; if (o && o.winner && st[o.winner].id === x) w += 1 / (N * 2); }
+  style[x + y] = w;
+  console.log(`${NAME[x]} 對 ${NAME[y]}　${pc(w)}`);
+}
+console.log("\n四、檢查");
 const checks = [
   ["認真逛（smart）對上對手 AI 的勝率在 50%～75%", avg.smart >= 0.5 && avg.smart <= 0.75],
   ["亂買（random）比 smart 低至少 15 個百分點：買什麼有差", avg.smart - avg.random >= 0.15],
   ["完全不買（none）勝率 < 5%", avg.none < 0.05],
   ["前兩回合就被 KO 的比例 < 5%：不會一開始就倒", extra.smart.early < 0.05 && extra.random.early < 0.05],
   ["平均打超過 10 段：商店用得到", extra.smart.turns >= 10],
+  ["三種流派互打都在 35%～65%：沒有哪一種穩贏", Object.values(style).every((w) => w >= 0.35 && w <= 0.65)],
   ["時機條按到好比全失敗高 2～15 個百分點：有用但不是主角", tm.good - tm.miss >= 0.02 && tm.good - tm.miss <= 0.15],
 ];
 let bad = 0;

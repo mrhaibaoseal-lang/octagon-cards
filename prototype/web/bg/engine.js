@@ -2,6 +2,8 @@
 // A bout is rounds x clashes turns. Each turn both sides shop (their own shop), then the two boards clash:
 // cards (attack / stamina) take turns hitting each other, left to right; the side left standing damages the
 // other FIGHTER's hp. hp 0 = KO; otherwise the rounds are scored 10-9 by clashes won.
+// A takedown puts the clash on the ground for a while (who is on top, which cards can strike and how hard changes);
+// combo cards hit harder in a row; lasting weakens stay on the real card until the round ends.
 // All numbers and card properties come from rules/bg/*.json; the engine never compares card ids.
 
 export const other = (s) => (s === "a" ? "b" : "a");
@@ -118,7 +120,7 @@ function enter(st, s, id) {
   const idx = B.map((c, i) => (c && c.id === id && !c.gold ? i : -1)).filter((i) => i >= 0);
   if (idx.length >= 3) {
     const d = st.data.skills[id], g = make(st, id, true);
-    for (const i of idx.slice(0, 3)) { g.atk += B[i].atk - d.atk; g.hp += B[i].hp - d.hp; Object.assign(g.kw, B[i].kw); B[i] = null; }
+    for (const i of idx.slice(0, 3)) { g.atk += B[i].atk - d.atk; g.hp += B[i].hp - d.hp; if (B[i].worn) g.worn = (g.worn || 0) + B[i].worn; Object.assign(g.kw, B[i].kw); B[i] = null; }
     B[idx[0]] = g;
     reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1));
     ev(st, "triple", { s, id });
@@ -169,8 +171,11 @@ export function tierUp(st, s) {
 }
 
 // ---------- log ----------
-const unitView = (u) => (u ? { uid: u.uid, id: u.id, gold: u.gold, atk: u.atk, hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
-const view = (st) => (st.c ? { a: st.c.a.map(unitView), b: st.c.b.map(unitView) } : null);
+const view = (st) => {
+  if (!st.c) return null;
+  const unitView = (u) => (u ? { uid: u.uid, id: u.id, gold: u.gold, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
+  return { a: st.c.a.map(unitView), b: st.c.b.map(unitView), ground: st.c.ground ? { ...st.c.ground } : null };
+};
 function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, view: view(st) }; st.log.push(e); return e; }
 
 // ---------- clash ----------
@@ -178,7 +183,7 @@ export function startClash(st) {
   if (st.phase !== "shop" || st.a.discover || st.b.discover) return false;
   st.phase = "clash";
   let uid = 0;
-  const c = (st.c = { n: 0, turn: null, pending: null, ace: null, reacted: false, a: [], b: [] });
+  const c = (st.c = { n: 0, turn: null, pending: null, ace: null, reacted: false, ground: null, chain: { a: 0, b: 0 }, a: [], b: [] });
   for (const s of SIDES) {
     st[s].shown = st[s].board.map((x) => (x ? { ...x, kw: { ...x.kw } } : null));
     c[s] = st[s].board.map((x, slot) => (x ? { ...x, kw: { ...x.kw }, uid: ++uid, slot, side: s, acted: false, stun: false, swings: 0 } : null));
@@ -212,7 +217,7 @@ function harm(st, t, dmg, from) {
   if (dmg <= 0 || t.hp <= 0) return 0;
   if (t.kw.slip) { delete t.kw.slip; ev(st, "slip", { uid: t.uid }); return 0; }
   t.hp -= dmg;
-  if (from && from.kw.sub && t.hp > 0) { t.hp = 0; ev(st, "sub", { uid: t.uid, from: from.uid }); }
+  if (from && from.kw.sub && st.c.ground && t.hp > 0) { t.hp = 0; ev(st, "sub", { uid: t.uid, from: from.uid }); }
   return dmg;
 }
 function reap(st) {
@@ -228,7 +233,26 @@ function reap(st) {
     if (!any) break;
   }
 }
-const canHit = (u) => u && u.hp > 0 && u.atk > 0;
+/** A unit's attack right now. On the ground some schools cannot strike, the side underneath hits softer, and ground cards on top hit harder. */
+export function power(st, u) {
+  const g = st.c?.ground, G = st.cfg.ground;
+  if (!u) return 0;
+  if (!g) return u.atk;
+  let m = G.schoolMul[defOf(st, u).school] ?? 1;
+  if (u.kw.ground) { if (g.top === u.side) m *= G.topMul; } else if (g.top !== u.side) m *= G.bottomMul;
+  return Math.ceil(u.atk * m);
+}
+/** u landed a takedown: a sprawl on the other side stops it once; on the ground it reverses who is on top. */
+function takedown(st, u) {
+  const c = st.c, s = u.side;
+  if (c.ground) { if (c.ground.top !== s) { c.ground.top = s; ev(st, "reverse", { s, uid: u.uid }); } return; }
+  const stop = alive(c[other(s)]).find((x) => x.kw.sprawl);
+  if (stop) { ev(st, "stuffed", { s: other(s), uid: stop.uid, from: u.uid }); return; }
+  c.ground = { top: s, left: st.cfg.ground.attacks };
+  ev(st, "ground", { s, uid: u.uid });
+}
+function standUp(st, s = null, uid = null) { st.c.ground = null; ev(st, "standup", { s, uid }); }
+const canHit = (st, u) => u && u.hp > 0 && power(st, u) > 0;
 /** The next attack, decided once (attacker and target): { s, u, t } or null when the clash is over or stuck. */
 export function upcoming(st) {
   const c = st.c;
@@ -237,14 +261,16 @@ export function upcoming(st) {
   if (!alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
   for (let tries = 0; tries < 2; tries++) {
     const s = c.turn, mine = c[s];
-    if (mine.some(canHit)) {
-      let u = mine.find((x) => canHit(x) && !x.acted);
-      if (!u) { for (const x of mine) if (x) x.acted = false; u = mine.find(canHit); }
+    if (mine.some((x) => canHit(st, x))) {
+      let u = mine.find((x) => canHit(st, x) && !x.acted);
+      if (!u) { for (const x of mine) if (x) x.acted = false; u = mine.find((x) => canHit(st, x)); }
       const foes = alive(c[other(s)]), guards = foes.filter((x) => x.kw.guard);
       return (c.pending = { s, u, t: pickOne(st, guards.length ? guards : foes) });
     }
     c.turn = other(s); // nobody on this side can attack: the other side goes
+    if (c.ground && --c.ground.left <= 0) { standUp(st); return upcoming(st); } // a turn spent stuck underneath still runs the clock
   }
+  if (c.ground) { standUp(st); return upcoming(st); } // nobody can strike down here: back to the feet
   return null;
 }
 /** Is the next attack the one the timing bar is for? (the ace's first swing, once a clash) */
@@ -254,19 +280,31 @@ export function needsReact(st) {
   return p;
 }
 function swing(st, u, t, mul) {
-  const c = st.c, o = other(u.side);
+  const c = st.c, s = u.side, o = other(s), G = st.cfg.ground;
   u.swings++;
-  ev(st, "attack", { s: u.side, from: u.uid, to: t.uid, mul });
-  const got = harm(st, t, Math.round(u.atk * mul), u);
+  // combo cards hit harder for every combo card this side threw just before
+  let combo = 0;
+  if (u.kw.combo) { combo = Math.min(c.chain[s], st.cfg.combo.max) * st.cfg.combo.atk * mulOf(st, u); c.chain[s]++; } else c.chain[s] = 0;
+  const hit = Math.round((power(st, u) + combo) * mul);
+  ev(st, "attack", { s, from: u.uid, to: t.uid, mul, combo });
+  const got = harm(st, t, hit, u);
   if (got) ev(st, "dmg", { uid: t.uid, dmg: got });
-  const back = harm(st, u, t.atk, t);
+  const back = u.kw.reach ? 0 : harm(st, u, power(st, t), t); // a long-range strike is not hit back
   if (back) ev(st, "dmg", { uid: u.uid, dmg: back });
-  if (u.kw.sweep) for (const n of [c[o][t.slot - 1], c[o][t.slot + 1]]) if (n && n.hp > 0) { const d = harm(st, n, Math.round(u.atk * mul), u); if (d) ev(st, "dmg", { uid: n.uid, dmg: d }); }
+  if (u.kw.sweep) for (const n of [c[o][t.slot - 1], c[o][t.slot + 1]]) if (n && n.hp > 0) { const d = harm(st, n, hit, u); if (d) ev(st, "dmg", { uid: n.uid, dmg: d }); }
   if (got && t.hp > 0) for (const fx of defOf(st, u).fx) if (fx.when === "hit") {
     const m = mulOf(st, u);
-    if (fx.do === "weaken") { t.atk = Math.max(0, t.atk - fx.atk * m); ev(st, "weaken", { uid: t.uid }); }
+    if (fx.do === "weaken") {
+      const n = Math.min(t.atk, fx.atk * m), real = st[o].board[t.slot];
+      t.atk -= n;
+      // a lasting weaken also wears the real card down until the round ends
+      if (fx.lasting && real && real.id === t.id && real.gold === t.gold) { const k = Math.min(n, real.atk); real.atk -= k; real.worn = (real.worn || 0) + k; }
+      ev(st, "weaken", { uid: t.uid, lasting: !!fx.lasting });
+    }
     if (fx.do === "stun") { t.stun = true; ev(st, "stun", { uid: t.uid }); }
   }
+  if (got && u.kw.takedown) takedown(st, u);
+  else if (got && t.hp > 0 && t.kw.takedown && !c.ground && G.catch.includes(defOf(st, u).school)) takedown(st, t); // he caught the kick
   reap(st);
 }
 /** Resolve the next attack. grade (perfect | good | miss) applies when needsReact() said so. */
@@ -279,7 +317,9 @@ export function step(st, grade = null) {
   const { s, u } = p, R = st.cfg.react;
   u.acted = true;
   c.turn = other(s);
-  if (u.stun) { u.stun = false; ev(st, "stunned", { uid: u.uid }); return true; }
+  if (u.stun) { u.stun = false; c.chain[s] = 0; ev(st, "stunned", { uid: u.uid }); return true; }
+  const down = !!c.ground;
+  if (down && c.ground.top !== s && u.kw.getup) standUp(st, s, u.uid);
   let mul = 1;
   if (u.uid === c.ace && u.swings === 0) {
     c.reacted = true;
@@ -290,6 +330,7 @@ export function step(st, grade = null) {
   }
   swing(st, u, p.t, mul);
   if (u.kw.flurry && u.hp > 0) { const foes = alive(c[other(s)]), g = foes.filter((x) => x.kw.guard); if (foes.length) swing(st, u, pickOne(st, g.length ? g : foes), 1); }
+  if (down && c.ground && --c.ground.left <= 0) standUp(st); // the referee stands them up
   return true;
 }
 
@@ -322,6 +363,7 @@ function endRound(st) {
   const cfg = st.cfg, { a, b } = st.wins, big = Math.abs(a - b) >= cfg.score.big;
   const card = a > b ? { a: 10, b: big ? 8 : 9 } : b > a ? { a: big ? 8 : 9, b: 10 } : { a: 10, b: 10 };
   card.wins = { a, b };
+  for (const s of SIDES) for (const x of st[s].board) if (x && x.worn) { x.atk += x.worn; delete x.worn; } // the minute's rest: worn-down cards recover
   st.rounds.push(card);
   st.wins = { a: 0, b: 0 };
   ev(st, "roundend", { card });

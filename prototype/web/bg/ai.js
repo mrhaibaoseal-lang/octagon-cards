@@ -1,28 +1,45 @@
 // The shopping AI. Side b always uses it (with the fighter's `ai` block); the simulation also uses it for side a.
 import * as E from "./engine.js";
 
-const KW = { guard: 1.5, slip: 2.5, sweep: 2.5, sub: 6 };
-function cardWorth(st, c, d) {
+const KW = { guard: 1.5, slip: 2.5, sweep: 2.5 };
+export const W = { base: 3, stuck: 1 };
+const has = (list, k) => list.filter((c) => c && c.kw[k]).length;
+/** What a keyword is worth to side s: ground tools need a takedown, takedown defence needs a wrestler across the cage, combos need company. */
+function kwWorth(st, s, c, k) {
+  const B = st[s].board, foe = st[s === "a" ? "b" : "a"].shown, G = st.cfg.ground;
+  if (k === "flurry") return c.atk;
+  if (k === "reach") return 1.5 + c.atk / 2;
+  if (k === "combo") return 1 + Math.min(3, has(B, "combo"));
+  if (k === "takedown") return 2 + 1.5 * (has(B, "ground") + has(B, "sub"));
+  if (k === "ground") return has(B, "takedown") ? 4 : 1;
+  if (k === "sub") return has(B, "takedown") ? 6 : 1;
+  if (k === "sprawl" || k === "getup") {
+    const stuck = B.filter((x) => x && (G.schoolMul[E.defOf(st, x).school] ?? 1) === 0).length; // my cards that are useless on the ground
+    return has(foe, "takedown") && !has(B, k) ? W.base + W.stuck * stuck : 0.5;
+  }
+  return KW[k] || 0;
+}
+function cardWorth(st, c, d, s) {
   let v = c.atk + c.hp + (c.gold ? 2 : 0);
-  for (const k of Object.keys(c.kw)) v += k === "flurry" ? c.atk : KW[k] || 0;
+  for (const k of Object.keys(c.kw)) v += kwWorth(st, s, c, k);
   return v + d.fx.filter((x) => x.when !== "play").length * 2;
 }
 /** What an offered card is worth to side s right now. */
 function offerWorth(st, s, id) {
   const d = st.data.skills[id], B = st[s].board.filter(Boolean), f = st[s].f;
-  let v = cardWorth(st, E.make(st, id), d) + d.tier;
+  let v = cardWorth(st, E.make(st, id), d, s) + d.tier;
   for (const x of d.fx) if (x.when === "play") v += B.filter((c) => x.to !== "school" || E.defOf(st, c).school === x.school).length * ((x.atk || 0) + (x.hp || 0) + (x.kw ? 2 : 0));
-  if (d.school === f.ai?.prefer) v += 2;
+  if (d.school === f.ai?.prefer) v += f.ai.bias ?? 2;
   if (f.power?.fx.some((x) => x.school === d.school)) v += 1;
   const copies = B.filter((c) => c.id === id && !c.gold).length;
   return v + (copies === 1 ? 2 : copies >= 2 ? 9 : 0);
 }
 
-/** Strongest attackers first; a card that buffs "the card to its right" goes just left of the best attacker. */
+/** Takedowns go first with the ground cards right behind them; then a card that buffs "the card to its right"; then strongest attackers first, combo cards kept together. */
 export function arrange(st, s) {
-  const B = st[s].board.filter(Boolean).sort((x, y) => y.atk - x.atk || y.hp - x.hp);
-  const lead = B.filter((c) => E.defOf(st, c).fx.some((x) => x.to === "right")), rest = B.filter((c) => !lead.includes(c));
-  const out = [...lead, ...rest];
+  const B = st[s].board.filter(Boolean).sort((x, y) => y.atk - x.atk || y.hp - x.hp), td = has(B, "takedown") > 0;
+  const group = (c) => (c.kw.takedown ? 0 : c.kw.getup || (td && (c.kw.ground || c.kw.sub)) ? 1 : E.defOf(st, c).fx.some((x) => x.to === "right") ? 2 : c.kw.combo ? 3 : 4);
+  const out = B.map((c, i) => [group(c), i, c]).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map((x) => x[2]);
   st[s].board = [...out, ...Array(st.cfg.slots - out.length).fill(null)];
 }
 
@@ -39,12 +56,12 @@ export function shop(st, s, skill = st[s].f.ai?.skill ?? 1) {
     if (E.canTier(st, s) && sh.gold >= sh.upCost && st.turn >= sh.tier * 3 && sharp()) { E.tierUp(st, s); continue; }
     if (sh.gold < cfg.cost) break;
     const full = F.board.every(Boolean);
-    const low = full ? F.board.reduce((m, c, i) => (m == null || cardWorth(st, c, E.defOf(st, c)) < cardWorth(st, F.board[m], E.defOf(st, F.board[m])) ? i : m), null) : null;
+    const low = full ? F.board.reduce((m, c, i) => (m == null || cardWorth(st, c, E.defOf(st, c), s) < cardWorth(st, F.board[m], E.defOf(st, F.board[m]), s) ? i : m), null) : null;
     const opts = sh.offers.map((id, i) => {
       if (!id) return null;
       const p = E.place(st, s, id), v = offerWorth(st, s, id);
       if (p) return { i, v, sell: null };
-      const lv = cardWorth(st, F.board[low], E.defOf(st, F.board[low]));
+      const lv = cardWorth(st, F.board[low], E.defOf(st, F.board[low]), s);
       return v > lv + 3 ? { i, v: v - lv, sell: low } : null;
     }).filter(Boolean).sort((x, y) => y.v - x.v);
     if (!opts.length) { if (sh.gold > cfg.cost && rerolls++ < 3) { E.reroll(st, s); continue; } break; }
