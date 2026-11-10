@@ -119,10 +119,30 @@ test("making him swing at air opens him up and gives the counter: more energy ne
   intent(st, ["cross", "hook"]);
   give(st, "a", []);
   play(st, "retreat");
-  E.endExchange(st);
-  assert.ok(E.isOpen(st, "b"), "he is open during the next exchange");
+  const e = st.a.energy;
+  E.runIntent(st);
+  assert.equal(st.stage, "post");
+  assert.ok(E.isOpen(st, "b"), "he is open for the counter");
   assert.equal(st.a.window, true);
-  assert.equal(st.a.energy, data.config.energy + data.config.counter.energy);
+  assert.equal(st.a.energy, e + data.config.counter.energy);
+  E.endExchange(st);
+  assert.equal(E.isOpen(st, "b"), false, "the opening does not carry into the next exchange");
+});
+
+test("two stages: defences are set before he goes, attacks may wait until after", () => {
+  const st = fresh();
+  st.range = 1;
+  intent(st, ["cross"]);
+  give(st, "a", ["slip", "cross", "slip"]);
+  st.a.energy = 5;
+  play(st, "slip");
+  E.runIntent(st);
+  assert.equal(evs(st, "slip").length, 1);
+  assert.ok(E.isOpen(st, "b"));
+  assert.equal(E.usable(st, "a", data.cards.slip).why, "late");
+  assert.equal(E.usable(st, "a", data.config.basics.guard).ok, false);
+  assert.ok(play(st, "cross"), "the counter is thrown after his attack");
+  assert.equal(evs(st, "hit").filter((x) => x.s === "a").length + evs(st, "over").length, 1);
 });
 
 test("a plan that walks forward first is not escaped by a step back", () => {
@@ -131,7 +151,7 @@ test("a plan that walks forward first is not escaped by a step back", () => {
   intent(st, ["advance", "cross"], "pressure");
   give(st, "a", []);
   play(st, "retreat");
-  E.endExchange(st);
+  E.runIntent(st);
   assert.equal(evs(st, "whiff").length, 0);
   assert.equal(st.a.window, false);
 });

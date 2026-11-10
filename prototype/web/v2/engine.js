@@ -3,9 +3,10 @@
 // All numbers and card properties come from rules/v2/*.json; the engine never compares card names.
 //
 // Side "b" leads: before each exchange it commits an INTENT (a list of cards / basic moves).
-// Side "a" answers: it sees as much of that intent as its read level allows, then plays any number of
-// cards with its energy; each resolves at once. Then b's intent runs. Defence steps in b's intent are
-// already standing while a plays (so a's strikes can be guarded, slipped, checked or sprawled on).
+// Side "a" answers in two stages. "pre": it sees as much of that intent as its read level allows and may
+// set defences, step, or strike first (each card resolves at once). Then b's intent runs (runIntent) into
+// whatever a prepared. "post": a spends the energy it kept on the counter. Defence steps in b's intent
+// stand through both stages (so a's strikes can be guarded, slipped, checked or sprawled on).
 // 3 rounds x 5 exchanges. Energy is per exchange; gas is the whole-fight tank.
 
 export const other = (s) => (s === "a" ? "b" : "a");
@@ -48,7 +49,7 @@ const setDef = (F, d) => { F.def[d.def] = d; if (d.def === "guard") F.block = d.
 const newSeq = () => ({ setup: false, last: null, cleans: 0, struggle: 0 });
 
 export function createBout(data, aId, bId, seed = 1) {
-  const st = { data, cfg: data.config, rng: (seed >>> 0) || 1, round: 1, ex: 1, tick: 0, turn: "a", range: 0, pos: 0, ground: null, phase: "play", over: null, log: [], intent: null, rounds: [], groundTicks: 0 };
+  const st = { data, cfg: data.config, rng: (seed >>> 0) || 1, round: 1, ex: 1, tick: 0, turn: "a", stage: "pre", range: 0, pos: 0, ground: null, phase: "play", over: null, log: [], intent: null, rounds: [], groundTicks: 0 };
   for (const [s, id] of [["a", aId], ["b", bId]]) {
     const f = data.fighters[id];
     st[s] = {
@@ -96,6 +97,7 @@ export function usable(st, s, d) {
     if (d.move === "retreat" && (st.range === 0 || onCage(st, s))) return { ok: false, why: st.range === 0 ? "range" : "cage" };
     if (d.move === "circle" && !(s === "a" ? st.pos < 0 : st.pos > 0)) return { ok: false, why: "cage" };
   }
+  if (d.kind === "defence" && s === "a" && st.stage === "post") return { ok: false, why: "late" };
   if (d.kind === "defence" && st[s].def[d.def]) return { ok: false, why: "done" };
   if (d.kind === "control" && st[s].def.control) return { ok: false, why: "done" };
   return { ok: true };
@@ -165,13 +167,16 @@ function ev(st, t, o = {}) { st.log.push({ t, round: st.round, ex: st.ex, ...o, 
 const addScore = (st, s, x) => { st[s].score += x * (st.ex === st.cfg.exchanges ? st.cfg.score.lastMul : 1); };
 const addRead = (st, s, x) => { st[s].readPts += x * (st[s].f.readRate || 1); };
 function setOpen(st, s) {
-  st[s].openUntil = s === "b" && st.turn === "b" ? st.tick + 1 : st.tick;
+  // an opening lasts to the end of this exchange; a's own mistake after b has already gone is paid for in the next one
+  st[s].openUntil = s === "a" && st.stage === "post" ? st.tick + 1 : st.tick;
   ev(st, "open", { s });
 }
-/** Side s answered an attack (slip, check, sprawl, or made it fall short): next exchange it has more energy. */
+/** Side s answered an attack (slip, check, sprawl, or made it fall short): more energy for the counter.
+ *  a gets it at once (b has just gone, a's counter stage is next); b gets it in his next plan. */
 function earn(st, s) {
-  if (st[s].counter) return;
-  st[s].counter = true;
+  const F = st[s];
+  if (s === "a") { if (F.window) return; F.window = true; F.energy += st.cfg.counter.energy; }
+  else { if (F.counter) return; F.counter = true; }
   ev(st, "window", { s });
 }
 function finish(st, winner, how) {
@@ -198,6 +203,7 @@ export function beginExchange(st) {
   const cfg = st.cfg;
   st.intent = null;
   st.turn = "a";
+  st.stage = "pre";
   for (const s of SIDES) {
     const F = st[s], O = st[other(s)];
     F.energy = F.rocked ? cfg.rock.energy : lowGas(st, s) ? cfg.lowGasEnergy : cfg.energy;
@@ -461,10 +467,10 @@ function takedown(st, s, d) {
   ev(st, "takedown", { s, id: d.id, ok, p });
 }
 
-/** Side a is done: b's intent runs, then gas, read, stall, round bookkeeping. */
-export function endExchange(st) {
-  if (st.over || st.phase !== "play") return;
-  const cfg = st.cfg, it = st.intent, B = st.b;
+/** a has prepared: b's intent runs now. Afterwards a is in the "post" stage and may counter. */
+export function runIntent(st) {
+  if (st.over || st.phase !== "play" || st.stage !== "pre") return;
+  const it = st.intent, B = st.b;
   st.turn = "b";
   if (it) {
     if (it.cancelled) ev(st, "cancelled", { s: "b" });
@@ -488,7 +494,16 @@ export function endExchange(st) {
       if (st.ground !== before) break; // the scene changed: the rest of the plan no longer applies
     }
   }
+  st.turn = "a";
+  st.stage = "post";
+}
+
+/** Side a is done (b's intent runs first if it has not yet): gas, read, stall, round bookkeeping. */
+export function endExchange(st) {
+  if (st.over || st.phase !== "play") return;
+  if (st.stage === "pre") runIntent(st);
   if (st.over) return;
+  const cfg = st.cfg;
   if (st.ground) st.groundTicks++;
   for (const s of SIDES) {
     const F = st[s], O = st[other(s)];

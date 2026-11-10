@@ -2,7 +2,7 @@
 // The intent AI reads only the fighter's `ai` block in rules/v2/fighters.json; the category shares it
 // reports are the real weights it then samples from, so what the player is shown is never a lie.
 
-import { defOf, rand, cost, usable, onCage, lowGas, legStacks, scene, readLevel, preview, legal, visibleIntent, setIntent, act, endExchange, corner, isOpen, createBout } from "./engine.js";
+import { defOf, rand, cost, usable, onCage, lowGas, legStacks, scene, readLevel, preview, legal, visibleIntent, setIntent, act, runIntent, endExchange, corner, isOpen, createBout } from "./engine.js";
 
 const CONDS = {
   aHurtBody: (st) => st.a.bodyLoss >= 1,
@@ -183,7 +183,7 @@ export function cornerPick(st, s) {
 function threat(st) {
   const v = visibleIntent(st);
   const t = { head: 0, body: 0, legs: 0, td: 0, def: 0, defs: [], punch: null, exact: false, advance: true, cat: null, cats: null, out: 0 };
-  if (!v || v.cancelled) return t;
+  if (!v || v.cancelled || st.stage === "post") return t; // after he has gone there is nothing left to answer
   if (v.steps) {
     const ds = v.steps.map((id) => defOf(st, id));
     const hit = (r) => (ds.some((d) => d.kind === "strike" && d.region === r) ? 1 : 0);
@@ -217,7 +217,7 @@ function threat(st) {
 /** How much a step back is worth as the last thing a does: what of his plan would fall short? */
 function wantOut(st, t) {
   const d = st.cfg.basics.retreat;
-  if (!usable(st, "a", d).ok || cost(st, "a", d) > st.a.energy) return 0;
+  if (st.stage === "post" || !usable(st, "a", d).ok || cost(st, "a", d) > st.a.energy) return 0;
   const v = visibleIntent(st);
   if (!v || v.cancelled) return 0;
   if (t.exact) {
@@ -270,7 +270,7 @@ function value(st, x, t, all) {
     case "move":
       if (d.move === "retreat") return -1; // handled in smartPick(): it is only ever the closing move
       if (d.move === "advance") {
-        if (A.backed) return 0;
+        if (A.backed && st.stage !== "post") return 0;
         if (st.range > 0) return onCage(st, "b") || t.out > 0 ? 0 : per(1.2);
         const n = A.hand.filter((id) => { const k = defOf(st, id); return k.range && k.range.includes(1) && !k.range.includes(0) && k.scene === "stand"; }).length;
         return per(1.5 + 2 * n);
@@ -292,16 +292,21 @@ function smartPick(st, o = {}) {
   if (o.noDef) all = all.filter((x) => !(x.d && x.d.kind === "defence"));
   if (o.noMove) all = all.filter((x) => !(x.d && x.d.kind === "move" && x.d.basic && !(x.d.move === "advance" && st.range === 0)));
   if (!all.length) return null;
-  const t = threat(st);
+  const t = threat(st), pre = st.stage === "pre";
+  if (pre && st.a.backed) return null; // stepped out: wait for him to fall short, then counter
   t.out = o.noMove ? 0 : wantOut(st, t);
+  const tired = st.a.gas < st.a.f.gas * 0.45, bar = tired ? 3.2 : 1.2;
+  const score = all.map((x) => [x, x.d && x.d.move === "retreat" ? -1 : value(st, x, t, all)]);
+  // counter-fighting: if an answer is worth setting (or a step back is), keep the rest of the energy for after he has gone
+  const answer = (x) => x.d && x.d.kind === "defence" && x.d.def !== "guard";
+  const hold = pre && !st.b.rocked && (t.out > 0 || Object.keys(st.a.def).some((k) => k !== "guard" && k !== "control") || score.some(([x, v]) => answer(x) && v >= 5));
   let best = null, bv = -Infinity, out = null;
-  for (const x of all) {
+  for (const [x, v] of score) {
     if (x.d && x.d.move === "retreat") { out = x; continue; }
-    const v = value(st, x, t, all);
+    if (hold && !(x.d && x.d.kind === "defence")) continue;
     if (v > bv) { bv = v; best = x; }
   }
-  const tired = st.a.gas < st.a.f.gas * 0.45;
-  if (best && bv >= (tired ? 3.2 : 1.2)) return best;
+  if (best && bv >= bar) return best;
   if (out && t.out > 0 && (cost(st, "a", out.d) === 0 || t.out >= 7)) return out;
   return null;
 }
@@ -339,6 +344,8 @@ export function runBout(data, aId, bId, seed, bot = bots.smart) {
     if (st.phase === "corner") { corner(st, cornerPick(st, "a"), cornerPick(st, "b")); continue; }
     lead(st);
     exs++;
+    for (let i = 0; i < 30 && !st.over; i++) { const x = bot(st); if (!x || !act(st, x)) break; acts++; }
+    runIntent(st);
     for (let i = 0; i < 30 && !st.over; i++) { const x = bot(st); if (!x || !act(st, x)) break; acts++; }
     endExchange(st);
   }

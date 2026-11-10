@@ -16,7 +16,7 @@ const CAT = { strike: "打擊", takedown: "抱摔", pressure: "前壓進攻", co
 const REGION = { head: "頭", body: "身體", legs: "腿" };
 const RANGE = ["遠距", "近距", "抱纏"];
 const RSHORT = ["遠", "近", "纏"];
-const WHY = { scene: "這個場景不能用", range: "距離不對", cage: "沒有空間", done: "已經準備了" };
+const WHY = { scene: "這個場景不能用", range: "距離不對", cage: "沒有空間", done: "已經準備了", late: "他已經出手了" };
 
 let data, st, busy = false, choice = { a: null, b: null };
 const frame = $("#frame");
@@ -45,7 +45,7 @@ function startScreen() {
   };
   frame.innerHTML = `<div class="over"><div class="box">
     <h2>Octagon Cards V2 · 解題式交鋒</h2>
-    <p>對手每一段會先<b>決定計畫</b>；你看得到多少取決於<b>看穿度</b>。你用 <b>${data.config.energy} 點氣</b>出多張牌回應，然後他的計畫才執行。${data.config.rounds} 回合 × ${data.config.exchanges} 段。</p>
+    <p>對手每一段會先<b>決定計畫</b>；你看得到多少取決於<b>看穿度</b>。你有 <b>${data.config.energy} 點氣</b>：先放防守、踩步法（也可以搶攻），按「換他出手」讓他打，再用剩下的氣<b>反擊</b>。${data.config.rounds} 回合 × ${data.config.exchanges} 段。</p>
     <h3>你用誰</h3><div class="pick you">${ids.map((id) => btn("a", id)).join("")}</div>
     <h3>對手</h3><div class="pick foe">${ids.map((id) => btn("b", id)).join("")}</div>
     <button class="go" id="go">開打</button></div></div>`;
@@ -79,7 +79,6 @@ function leadShow() {
   const from = st.log.length;
   lead(st);
   for (const e of st.log.slice(from)) show(e);
-  if (st.a.window) logLine(`反擊時機：你這一段多 ${st.cfg.counter.energy} 點氣`, "big");
 }
 
 function help() {
@@ -87,12 +86,12 @@ function help() {
   const d = document.createElement("div");
   d.className = "over";
   d.innerHTML = `<div class="box"><h2>規則速覽</h2>
-  <p><b>一段交鋒</b>：對手先定好計畫（左上角）。你出牌，每張立刻結算；按「結束這一段」後他的計畫才執行。他計畫裡的防守（閃躲／擋踢／壓趴／架擋）在你出牌時就已經就位。</p>
+  <p><b>一段交鋒分兩個階段</b>：對手先定好計畫（左上角）。<b>①準備</b>：放防守、踩步法，想搶攻也可以（每張立刻結算，打晃他會打斷計畫）。按「換他出手」，他的計畫打在你準備好的東西上。<b>②反擊</b>：用剩下的氣出手，再按「結束這一段」。氣要留多少給反擊是你的決定。他計畫裡的防守（閃躲／擋踢／壓趴／架擋）兩個階段都在。</p>
   <p><b>看穿度</b>：Lv0 只看到他各種計畫的真實機率；Lv1 知道這一段是哪一類、主攻哪裡；Lv2 看到每一張牌。每撐過一段 +${c.read.perExchange}，起手牌碰到 +${c.read.setup}，防守成功 +${c.read.defence}。</p>
   <p><b>氣與體力</b>：每段 ${c.energy} 點氣（對手先亮牌所以多 ${c.leadEnergy} 點）。沒用完的氣每點回 1 體力，全用完扣 ${c.gasFullCost}。催油門：體力 −${c.throttle.gas} 換 +${c.throttle.energy} 氣，一段最多 ${c.throttle.max} 次。體力低於 ${pct(c.lowGasFrac)} 時只剩 ${c.lowGasEnergy} 點氣、打實率 ${pct(c.hit.tired)}。</p>
   <p><b>連段</b>：起手牌（刺拳、假動作）之後下一張打實 +${pct(c.hit.setup)}；換攻擊部位 +${pct(c.hit.levelChange)}。終結技沒鋪墊又沒打實會<b>露破綻</b>（他對你打實 +${pct(c.hit.open)}）。</p>
   <p><b>步法</b>：每段<b>第一步免費</b>（前壓／後撤／側移），第二步起花氣。打完後撤，他近距離的招會<b>揮空</b>；但他的計畫若有「前壓」（前壓進攻、抱摔）就追得上，白退還更靠近籠邊。背貼籠邊的人被打實 +${pct(c.hit.cage)}、不能後撤。</p>
-  <p><b>防守與反擊</b>：架擋擋 2 記（頭不會被打實）；閃躲躲掉一記頭部拳並反擊；擋踢讓他的腿反吃傷害；壓趴讓抱摔必敗。閃躲／擋踢／壓趴成功，或讓他揮空：<b>他露破綻（你打實 +${pct(c.hit.open)}、不會打空），你下一段 +${c.counter.energy} 氣</b>。他對你也一樣：你打進他準備好的防守，他這段的計畫就打得更準。</p>
+  <p><b>防守與反擊</b>：架擋擋 2 記（頭不會被打實）；閃躲躲掉一記頭部拳並反擊；擋踢讓他的腿反吃傷害；壓趴讓抱摔必敗。閃躲／擋踢／壓趴成功，或讓他揮空：<b>他露破綻到這一段結束（你打實 +${pct(c.hit.open)}、不會打空），你立刻 +${c.counter.energy} 氣</b>，所以要留氣反擊。他對你也一樣：你打進他準備好的防守，他這段的計畫就打得更準。</p>
   <p><b>假動作</b>：騙到他準備的閃躲／擋踢（假抱腿騙壓趴）：防守作廢、他露破綻、退回 ${c.feint.refund} 氣。看到「有準備防守」卻不知道是哪種時先晃一下。架擋騙不掉，改打身體或腿。</p>
   <p><b>傷害</b>：頭→暈眩，滿了就<b>被打晃</b>（對手下一段 +${c.rock.chase} 氣，再吃 ${c.rock.hp} 傷害就 TKO）；身體→每 ${c.body.perGas} 傷害扣 1 體力上限；腿→每 ${c.legs.perStack} 傷害一層（${c.legs.moveStacks} 層移動變貴，${c.legs.powerStacks} 層出手變弱）。</p>
   <p><b>判分</b>：每回合看上方分數條，高的拿 10-9（差 ${c.score.big} 以上 10-8），最後一段分數 ×${c.score.lastMul}。</p>
@@ -113,7 +112,8 @@ function gauges(sn) {
     const stacks = Math.floor(g.legs / st.cfg.legs.perStack), low = g.gas <= base * st.cfg.lowGasFrac;
     const chips = [];
     if (g.rocked) chips.push(`<span class="chip hot">被打晃</span>`);
-    if (E.isOpen(st, s)) chips.push(`<span class="chip warn">露破綻</span>`);
+    // after he has gone, an opening on you only matters if it carries into his next plan
+    if (s === "a" && st.stage === "post" ? st.a.openUntil > st.tick : E.isOpen(st, s)) chips.push(`<span class="chip warn">露破綻</span>`);
     if (low) chips.push(`<span class="chip warn">沒體力</span>`);
     if (g.body >= 1) chips.push(`<span class="chip">身體 ${Math.round(g.body)}</span>`);
     if (stacks) chips.push(`<span class="chip ${stacks >= st.cfg.legs.moveStacks ? "warn" : ""}">腿 ${stacks} 層</span>`);
@@ -151,6 +151,15 @@ function drawIntent() {
   const lv = st.cfg.read.levels, pts = st.a.readPts, next = lv[v.level + 1];
   const prog = next ? (pts - lv[v.level]) / (next - lv[v.level]) : 1;
   let h = `<h4>${esc(st.b.f.short)} 的計畫<span>看穿 Lv${v.level}<i class="readbar"><b style="width:${prog * 100}%"></b></i></span></h4>`;
+  if (st.stage === "post" && !v.cancelled) {
+    const hot = E.isOpen(st, "b") && !st.ground;
+    h += `<div class="plan">${CAT[st.intent.cat] || st.intent.cat}<small>他已經出手</small></div><div class="note">${hot ? "<b>他露破綻</b>：這一段你打實 +" + pct(st.cfg.hit.open) + "、不會打空。" : "輪到你反擊：用剩下的氣出手。"}</div>`;
+    const left = Object.keys(st.b.def).filter((k) => st.b.def[k] && st.b.def[k].name);
+    if (left.length && v.level >= 2) h += `<div class="note">他還留著：<b>${left.map((k) => esc(st.b.def[k].name)).join("、")}</b></div>`;
+    else if (left.length && v.level >= 1) h += `<div class="note"><b>他還有防守沒用掉</b></div>`;
+    box.innerHTML = h;
+    return;
+  }
   if (v.cancelled) h += `<div class="plan">計畫被你打斷了<small>這一段他什麼都做不了</small></div>`;
   else if (v.steps) {
     h += `<div class="plan">${CAT[v.cat] || v.cat}${v.focus ? `<small>主攻${REGION[v.focus]}</small>` : ""}${v.throttle ? `<small>催了油門</small>` : ""}</div><div class="steps">`;
@@ -225,7 +234,7 @@ function render() {
   const th = $("#throttle");
   th.classList.toggle("off", !lm.has("t"));
   th.innerHTML = `催油門 +${t.energy} 氣<small>體力 −${t.gas}（${A.throttled}/${t.max}）</small>`;
-  $("#end").innerHTML = `結束這一段<small>換 ${esc(st.b.f.short)} 出手</small>`;
+  $("#end").innerHTML = st.stage === "pre" ? `換 ${esc(st.b.f.short)} 出手<small>他打完，你再用剩下的氣反擊</small>` : `結束這一段<small>反擊完了</small>`;
   $("#end").classList.toggle("off", busy);
 }
 
@@ -269,7 +278,7 @@ function show(e) {
     case "refstand": logLine("地面沒有進展，裁判叫起", "big"); break;
     case "rocked": logLine(`${who(e.s)} 被打晃了！`, "big"); float(e.s, "打晃！", "clean"); break;
     case "recover": logLine(`${who(e.s)} 撐過來了（下巴變弱）`, e.s); break;
-    case "window": if (e.s === "b") logLine(`${who(e.s)} 抓到反擊時機：他下一段多 ${st.cfg.counter.energy} 點氣`, "big"); else float("a", "反擊時機", "info"); return e.s === "b";
+    case "window": logLine(e.s === "b" ? `${who(e.s)} 抓到反擊時機：他下一段多 ${st.cfg.counter.energy} 點氣` : `反擊時機！你 +${st.cfg.counter.energy} 氣`, "big"); float(e.s, "反擊時機", "info"); break;
     case "open": logLine(`${who(e.s)} 露出破綻`, "big"); float(e.s, "破綻", "bad"); break;
     case "throttle": logLine(`${who(e.s)} 催油門`, e.s); break;
     case "struggle": logLine(`${who(e.s)} 掙扎（丟掉 ${n}）`, e.s); break;
@@ -294,8 +303,13 @@ async function endTurn() {
   if (busy || !st || st.over || st.phase !== "play") return;
   busy = true;
   $("#end").classList.add("off");
-  const from = st.log.length;
-  E.endExchange(st);
+  const from = st.log.length, pre = st.stage === "pre";
+  if (pre) {
+    logLine(`${st.b.f.short} 出手`, "sep");
+    E.runIntent(st);
+    // nothing left to counter with: the exchange is over
+    if (!st.over && !E.legal(st).some((x) => x.type !== "throttle")) E.endExchange(st);
+  } else E.endExchange(st);
   for (const e of st.log.slice(from)) {
     if (e.t === "over") continue;
     gauges(e.snap);
@@ -303,6 +317,7 @@ async function endTurn() {
   }
   busy = false;
   if (st.over) return finish();
+  if (st.phase === "play" && st.stage === "post") { logLine("輪到你反擊", "sep"); return render(); }
   if (st.phase === "corner") return cornerScreen();
   leadShow();
   render();

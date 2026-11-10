@@ -1,5 +1,5 @@
 {
- "_doc": "V2 解題式戰鬥（提案 docs/REDESIGN_V2.md 第 1 步）。rounds 回合數；exchanges 每回合幾段交鋒；energy 每段的氣（leadEnergy 先亮出意圖的對手多幾點、leadHand 多抽幾張），體力低於 lowGasFrac 只剩 lowGasEnergy；throttle 催油門（花 gas 體力換 energy 氣，每段最多 max 次）；gasFullCost 氣全用完時扣的體力，沒用完的氣每點回 1 體力。hit：miss 完全打空、graze 擦到的傷害倍率、setup 起手後下一張打實加成、levelChange 換層加成、open 對手露破綻、rocked 對手被打晃、tired 自己沒體力、cage 對手背貼籠。guard 架擋時各部位傷害倍率（頭不會被打實）。rock 被打晃：hp 再吃多少傷害就 TKO、chase 對手下一段多幾點氣、energy 自己下一段剩幾點氣、after 撐過後暈眩回到下巴的幾成、chinLoss 下巴永久減少。body.perGas 身體每吃多少傷害扣 1 點體力上限。legs：perStack 每多少傷害一層、moveStacks 幾層起移動多 1 氣、powerStacks 幾層起出手變弱。td 抱摔成功率的各項加減。ground 地面：escape 起身基本成功率、control 被壓制、pass 每過一次腿、struggle 每丟一張牌掙扎、stall 幾段沒傷害裁判叫起。read 看穿度：levels 各級門檻、perExchange 每撐過一段、setup 起手牌碰到、defence 防守成功。score 判分。corner 角落：base 一定有的恢復，options 三選一。freeStep 每段前幾次步法（前壓／後撤／側移）不花氣。counter.energy 反擊窗口：閃躲、擋踢、壓趴成功，或讓對手因距離揮空，下一段多幾點氣（對手同時露破綻）。feint.refund 假動作騙到防守時退回幾點氣（對手同時露破綻）。basics 不用牌的基本動作（scene：stand 站立／top 上位／bottom 下位）。",
+ "_doc": "V2 解題式戰鬥（提案 docs/REDESIGN_V2.md 第 1 步）。rounds 回合數；exchanges 每回合幾段交鋒；energy 每段的氣（leadEnergy 先亮出意圖的對手多幾點、leadHand 多抽幾張），體力低於 lowGasFrac 只剩 lowGasEnergy；throttle 催油門（花 gas 體力換 energy 氣，每段最多 max 次）；gasFullCost 氣全用完時扣的體力，沒用完的氣每點回 1 體力。hit：miss 完全打空、graze 擦到的傷害倍率、setup 起手後下一張打實加成、levelChange 換層加成、open 對手露破綻、rocked 對手被打晃、tired 自己沒體力、cage 對手背貼籠。guard 架擋時各部位傷害倍率（頭不會被打實）。rock 被打晃：hp 再吃多少傷害就 TKO、chase 對手下一段多幾點氣、energy 自己下一段剩幾點氣、after 撐過後暈眩回到下巴的幾成、chinLoss 下巴永久減少。body.perGas 身體每吃多少傷害扣 1 點體力上限。legs：perStack 每多少傷害一層、moveStacks 幾層起移動多 1 氣、powerStacks 幾層起出手變弱。td 抱摔成功率的各項加減。ground 地面：escape 起身基本成功率、control 被壓制、pass 每過一次腿、struggle 每丟一張牌掙扎、stall 幾段沒傷害裁判叫起。read 看穿度：levels 各級門檻、perExchange 每撐過一段、setup 起手牌碰到、defence 防守成功。score 判分。corner 角落：base 一定有的恢復，options 三選一。freeStep 每段前幾次步法（前壓／後撤／側移）不花氣。counter.energy 反擊窗口：閃躲、擋踢、壓趴成功，或讓對手因距離揮空，立刻多幾點氣給反擊階段用（對手同時露破綻；對手拿到的話是下一段）。feint.refund 假動作騙到防守時退回幾點氣（對手同時露破綻）。basics 不用牌的基本動作（scene：stand 站立／top 上位／bottom 下位）。",
  "rounds": 3,
  "exchanges": 5,
  "handSize": 5,
@@ -34,10 +34,10 @@
  },
  "basics": {
   "advance": { "name": "前壓", "cost": 1, "kind": "move", "move": "advance", "scene": "stand", "text": "遠→近；已經近距就把他推向籠邊" },
-  "retreat": { "name": "後撤", "cost": 1, "kind": "move", "move": "retreat", "scene": "stand", "text": "他夠不到的招揮空：他露破綻、你下段 +1 氣。他前壓就白退" },
+  "retreat": { "name": "後撤", "cost": 1, "kind": "move", "move": "retreat", "scene": "stand", "text": "他出手前退：夠不到的招揮空，他露破綻、你 +1 氣。他前壓就白退" },
   "circle": { "name": "側移", "cost": 1, "kind": "move", "move": "circle", "scene": "stand", "text": "離開籠邊，回中央一格" },
   "probe": { "name": "虛晃", "cost": 1, "kind": "feint", "range": [0, 1], "baits": ["slip", "check"], "scene": "stand", "text": "下張打實 +20%。騙到閃躲／擋踢：他露破綻、退 1 氣" },
-  "guard": { "name": "架擋", "cost": 1, "kind": "defence", "def": "guard", "blocks": 2, "scene": "stand", "text": "擋 2 記頭／身體：頭不會被打實、頭傷 ×0.4、身體 ×0.75" },
+  "guard": { "name": "架擋", "cost": 1, "kind": "defence", "def": "guard", "blocks": 2, "scene": "stand", "text": "他出手前先放。擋 2 記：頭不會被打實、頭傷 ×0.4、身體 ×0.75" },
   "pound": { "name": "砸拳", "cost": 1, "kind": "strike", "region": "head", "dmg": 5, "clean": 0.55, "scene": "top", "text": "上位打擊" },
   "control": { "name": "壓制", "cost": 1, "kind": "control", "scene": "top", "text": "判分 +2、他體力 -1、他這段起身 -20%" },
   "standup": { "name": "放他起來", "cost": 0, "kind": "standup", "scene": "top", "text": "回到站立近距" },
