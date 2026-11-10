@@ -1,12 +1,12 @@
-// Octagon Cards — battlegrounds-style mode. Pure rules: no DOM, no clock; the browser and the simulation share this file.
-// A bout is `rounds` rounds. Before each round side a shops (buy / sell / reorder skills); side b's board for the
-// round is public. In a round the two boards fire slot by slot, left to right, for `exchanges` passes.
-// All numbers and skill properties come from rules/bg/*.json; the engine never compares skill names.
+// Octagon Cards — one-on-one board battler (bg.html). Pure rules: no DOM, no clock; browser and simulation share this file.
+// A bout is rounds x clashes turns. Each turn both sides shop (their own shop), then the two boards clash:
+// cards (attack / stamina) take turns hitting each other, left to right; the side left standing damages the
+// other FIGHTER's hp. hp 0 = KO; otherwise the rounds are scored 10-9 by clashes won.
+// All numbers and card properties come from rules/bg/*.json; the engine never compares card ids.
 
 export const other = (s) => (s === "a" ? "b" : "a");
-const SIDES = ["a", "b"];
+export const SIDES = ["a", "b"];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const r1 = (v) => Math.round(v * 10) / 10;
 
 export function rand(st) {
   const a = (st.rng = (st.rng + 0x6d2b79f5) >>> 0);
@@ -15,325 +15,340 @@ export function rand(st) {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
+const pickOne = (st, arr) => arr[Math.floor(rand(st) * arr.length)];
 
 export function prepare(data) {
-  for (const [id, d] of Object.entries(data.skills)) { d.id = id; d.active = d.kind === "strike" || d.kind === "takedown"; }
+  for (const [id, d] of Object.entries(data.skills)) { d.id = id; d.kw = d.kw || []; d.fx = d.fx || []; }
   return data;
 }
-const parse = (x) => { const [id, lv] = String(x).split(":"); return { id, lv: Number(lv) || 1 }; };
-export const skillOf = (st, c) => (c ? st.data.skills[c.id] : null);
-export const lvMul = (st, c) => st.cfg.levelMul[(c.lv || 1) - 1] ?? 1;
-const fits = (m, d) => !m || Object.entries(m).every(([k, v]) => d[k] === v);
-
-function fillBoard(st, list) {
-  const b = Array(st.cfg.slots).fill(null);
-  list.slice(0, st.cfg.slots).forEach((x, i) => (b[i] = parse(x)));
-  return b;
+export const defOf = (st, c) => (c ? st.data.skills[c.id] : null);
+/** A fresh copy of a card as it sits on a board. */
+export function make(st, id, gold = false) {
+  const d = st.data.skills[id], m = gold ? st.cfg.golden : 1;
+  return { id, gold, atk: d.atk * m, hp: d.hp * m, kw: Object.fromEntries(d.kw.map((k) => [k, true])) };
 }
+const mulOf = (st, c) => (c.gold ? st.cfg.golden : 1);
 
 export function createGame(data, aId, bId, seed = 1) {
-  const st = { data, cfg: data.config, rng: (seed >>> 0) || 1, round: 0, ex: 0, cursor: 0, phase: "shop", over: null, log: [], rounds: [], shop: { tier: 1, gold: 0, offers: [], special: null }, reacted: false, wonLast: false };
+  const cfg = data.config;
+  const st = { data, cfg, rng: (seed >>> 0) || 1, round: 1, clash: 0, turn: 0, phase: "shop", over: null, log: [], rounds: [], wins: { a: 0, b: 0 }, c: null };
   for (const [s, id] of [["a", aId], ["b", bId]]) {
-    const f = data.fighters[id];
-    st[s] = { id, f, stun: 0, chinLoss: 0, chinUp: 0, gas: f.gas, score: 0, rocked: null, weak: 0, board: Array(st.cfg.slots).fill(null), x: {}, stats: { dmg: 0, blocks: 0, td: 0 } };
+    st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null,
+      shop: { gold: 0, tier: 1, offers: [], frozen: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 } };
   }
-  st.a.board = fillBoard(st, st.a.f.start);
-  beginShop(st);
+  beginTurn(st);
   return st;
 }
 
-// ---------- derived stats ----------
-function passive(st, s, key) {
-  let n = 0;
-  for (const c of st[s].board) { const d = skillOf(st, c); if (d && d.kind === "passive" && d[key]) n += d[key] * lvMul(st, c); }
-  return n;
+// ---------- effects (shared by the shop and the clash) ----------
+const alive = (list) => list.filter((c) => c && c.hp > 0);
+function targets(st, list, self, fx, bought) {
+  const all = alive(list), others = all.filter((c) => c !== self);
+  switch (fx.to) {
+    case "self": return self ? [self] : [];
+    case "bought": return bought ? [bought] : [];
+    case "right": { const i = list.indexOf(self); for (let j = i + 1; j < list.length; j++) if (list[j] && list[j].hp > 0) return [list[j]]; return []; }
+    case "leftmost": return all.slice(0, 1);
+    case "others": return others;
+    case "school": return others.filter((c) => defOf(st, c).school === fx.school);
+    case "random": return others.length ? [pickOne(st, others)] : [];
+    case "all": return all;
+    default: return [];
+  }
 }
-export const chinOf = (st, s) => Math.round(st[s].f.chin + st[s].chinUp - st[s].chinLoss + passive(st, s, "chin"));
-export const gasMaxOf = (st, s) => Math.round(st[s].f.gas + passive(st, s, "gas"));
-
-/** The numbers printed on a card for side s (so the UI and the engine never disagree). */
-export function view(st, s, c) {
-  const d = skillOf(st, c), F = st[s], m = lvMul(st, c), bn = F.f.bonus && fits(F.f.bonus.match, d) ? F.f.bonus : null;
-  const out = { name: d.name, kind: d.kind, lv: c.lv || 1, gas: d.gas || 0 };
-  if (d.kind === "strike") { out.dmg = r1((d.dmg * m + (bn?.dmg || 0)) * F.f.power); out.hits = d.hits || 1; out.acc = clamp(d.acc + (bn?.acc || 0), 0, 1); out.region = d.region; }
-  if (d.kind === "takedown") out.p = clamp(d.p + F.f.wrestle + (bn?.p || 0) + (c.lv - 1) * 0.1, 0, 1);
-  if (d.counter) out.counter = r1(d.counter * m);
-  return out;
+/** Run one buff / grant effect on a list of cards (board instances or clash units). Returns the cards it touched. */
+function applyFx(st, list, self, fx, m, bought = null) {
+  const n = fx.per ? alive(list).filter((c) => defOf(st, c).school === fx.per).length : 1;
+  const hit = targets(st, list, self, fx, bought);
+  for (const t of hit) {
+    if (fx.do === "buff") { t.atk += (fx.atk || 0) * m * n; t.hp += (fx.hp || 0) * m * n; }
+    if (fx.do === "grant") t.kw[fx.kw] = true;
+  }
+  return hit;
 }
-
-// ---------- log ----------
-const snap = (st) => {
-  const one = (s) => ({ stun: r1(st[s].stun), chin: chinOf(st, s), gas: st[s].gas, gasMax: gasMaxOf(st, s), rocked: !!st[s].rocked, score: r1(st[s].score), weak: st[s].weak });
-  return { a: one("a"), b: one("b"), round: st.round, ex: st.ex };
-};
-function ev(st, t, o = {}) { const e = { t, ...o, snap: snap(st) }; st.log.push(e); return e; }
+const powerFx = (st, s, when) => (st[s].f.power?.fx || []).filter((x) => x.when === when);
 
 // ---------- shop ----------
-export function goldFor(st) { const g = st.cfg.gold; return g.base + g.perRound * (st.round - 1) + (st.wonLast ? g.win : 0); }
-
-function roll(st) {
-  const sh = st.cfg.shop, pool = Object.values(st.data.skills).filter((d) => d.kind !== "special" && d.tier <= st.shop.tier);
-  const out = [];
-  while (out.length < sh.offers && pool.length) out.push(pool.splice(Math.floor(rand(st) * pool.length), 1)[0].id);
-  st.shop.offers = out;
+export const goldFor = (st, s) => clamp(st.cfg.gold.start + st.cfg.gold.perTurn * (st.turn - 1), 0, st.cfg.gold.cap) + (st[s].lostLast ? st.cfg.gold.loser : 0) + st[s].bonusGold;
+const pool = (st, tier) => Object.values(st.data.skills).filter((d) => d.tier <= tier);
+const offerCount = (st, s) => st.cfg.shop.offers[st[s].shop.tier];
+function roll(st, s) {
+  const p = pool(st, st[s].shop.tier);
+  st[s].shop.offers = Array.from({ length: offerCount(st, s) }, () => pickOne(st, p).id);
 }
-function rollSpecial(st) {
-  const pool = Object.values(st.data.skills).filter((d) => d.kind === "special" && d.tier <= st.shop.tier);
-  st.shop.special = pool.length && rand(st) < st.cfg.shop.specialChance ? pool[Math.floor(rand(st) * pool.length)].id : null;
+function reward(st, s, tier) {
+  const p = pool(st, tier).filter((x) => x.tier === tier);
+  st[s].discover = Array.from({ length: st.cfg.shop.discover }, () => pickOne(st, p).id);
 }
-
-function beginShop(st) {
-  st.round++;
+function beginTurn(st) {
+  st.turn++; st.clash++;
+  if (st.clash > st.cfg.clashes) { st.clash = 1; st.round++; }
   st.phase = "shop";
-  st.shop.gold = goldFor(st);
-  st.b.board = fillBoard(st, st.b.f.builds[Math.min(st.round, st.b.f.builds.length) - 1]);
-  for (const s of SIDES) st[s].gas = gasMaxOf(st, s);
-  roll(st); rollSpecial(st);
+  for (const s of SIDES) {
+    const F = st[s], sh = F.shop;
+    sh.gold = goldFor(st, s);
+    F.bonusGold = 0;
+    if (st.turn > 1) sh.upCost = Math.max(0, sh.upCost - st.cfg.shop.tierDrop);
+    if (sh.frozen) { const p = pool(st, sh.tier); sh.offers = sh.offers.filter(Boolean); while (sh.offers.length < offerCount(st, s)) sh.offers.push(pickOne(st, p).id); }
+    else roll(st, s);
+    sh.frozen = false;
+  }
   ev(st, "shop", {});
 }
 
-export const costOf = (st, id) => st.data.skills[id].cost ?? st.cfg.shop.cost;
-/** Where a bought skill would go: { merge: slot } | { slot } | null (no room). */
-export function place(st, id) {
-  const B = st.a.board, same = B.findIndex((c) => c && c.id === id && c.lv < st.cfg.shop.maxLevel);
-  if (same >= 0) return { merge: same };
-  const empty = B.findIndex((c) => !c);
-  return empty >= 0 ? { slot: empty } : null;
+/** Where a bought card goes: { triple: true } (it completes three of a kind) | { slot } | null (no room). */
+export function place(st, s, id) {
+  const B = st[s].board;
+  if (B.filter((c) => c && c.id === id && !c.gold).length >= 2) return { triple: true };
+  const slot = B.findIndex((c) => !c);
+  return slot >= 0 ? { slot } : null;
 }
-export function buy(st, i) {
-  if (st.phase !== "shop") return false;
-  const id = st.shop.offers[i];
-  if (!id || costOf(st, id) > st.shop.gold) return false;
-  const p = place(st, id);
-  if (!p) return false;
-  st.shop.gold -= costOf(st, id);
-  st.shop.offers[i] = null;
-  if (p.merge != null) st.a.board[p.merge].lv++; else st.a.board[p.slot] = { id, lv: 1 };
-  st.a.gas = gasMaxOf(st, "a");
-  ev(st, "buy", { id, merge: p.merge != null });
+/** Put a new card on the board (a full board gets a temporary extra slot when the card completes a triple). */
+function enter(st, s, id) {
+  const F = st[s], B = F.board, card = make(st, id);
+  let slot = B.findIndex((c) => !c);
+  if (slot < 0) { B.push(null); slot = B.length - 1; }
+  B[slot] = card;
+  const school = defOf(st, card).school;
+  for (const fx of powerFx(st, s, "buy")) if (!fx.school || fx.school === school) applyFx(st, B, null, fx, 1, card);
+  for (const c of B) if (c && c !== card) for (const fx of defOf(st, c).fx) if (fx.when === "buy" && fx.school === school) applyFx(st, B, c, fx, mulOf(st, c));
+  for (const fx of defOf(st, card).fx) if (fx.when === "play") applyFx(st, B, card, fx, mulOf(st, card));
+  ev(st, "buy", { s, id });
+  // three of a kind fold into one golden card that keeps their buffs, and earn a pick from the next tier
+  const idx = B.map((c, i) => (c && c.id === id && !c.gold ? i : -1)).filter((i) => i >= 0);
+  if (idx.length >= 3) {
+    const d = st.data.skills[id], g = make(st, id, true);
+    for (const i of idx.slice(0, 3)) { g.atk += B[i].atk - d.atk; g.hp += B[i].hp - d.hp; Object.assign(g.kw, B[i].kw); B[i] = null; }
+    B[idx[0]] = g;
+    reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1));
+    ev(st, "triple", { s, id });
+  }
+  B.length = st.cfg.slots;
+}
+export function buy(st, s, i) {
+  const F = st[s], sh = F.shop, id = sh.offers[i];
+  if (st.phase !== "shop" || F.discover || !id || sh.gold < st.cfg.shop.cost || !place(st, s, id)) return false;
+  sh.gold -= st.cfg.shop.cost;
+  sh.offers[i] = null;
+  enter(st, s, id);
   return true;
 }
-export function buySpecial(st) {
-  if (st.phase !== "shop" || !st.shop.special) return false;
-  const d = st.data.skills[st.shop.special];
-  if (costOf(st, d.id) > st.shop.gold) return false;
-  st.shop.gold += (d.gold || 0) - costOf(st, d.id);
-  if (d.stun) st.a.stun = Math.max(0, st.a.stun - d.stun);
-  if (d.chinUp) st.a.chinUp += d.chinUp;
-  st.shop.special = null;
-  ev(st, "special", { id: d.id });
-  return true;
-}
-export function sell(st, slot) {
-  if (st.phase !== "shop" || !st.a.board[slot]) return false;
-  st.a.board[slot] = null;
-  st.shop.gold += st.cfg.shop.sell;
-  st.a.gas = gasMaxOf(st, "a");
-  return true;
-}
-export function swap(st, i, j) {
-  if (st.phase !== "shop") return false;
-  const B = st.a.board;
-  [B[i], B[j]] = [B[j], B[i]];
-  return true;
-}
-export function reroll(st) {
-  if (st.phase !== "shop" || st.shop.gold < st.cfg.shop.reroll) return false;
-  st.shop.gold -= st.cfg.shop.reroll;
-  roll(st);
-  return true;
-}
-export const tierCost = (st) => st.cfg.shop.tierCost[st.shop.tier] ?? null;
-export function tierUp(st) {
-  const c = tierCost(st);
-  if (st.phase !== "shop" || c == null || st.shop.gold < c) return false;
-  st.shop.gold -= c;
-  st.shop.tier++;
-  return true;
-}
-
-// ---------- fight ----------
-export function startRound(st) {
-  if (st.phase !== "shop") return false;
-  st.phase = "fight";
-  st.ex = 1; st.cursor = 0; st.reacted = false;
-  for (const s of SIDES) { st[s].score = 0; st[s].gas = gasMaxOf(st, s); resetExchange(st, s); }
-  ev(st, "round", {});
-  return true;
-}
-function resetExchange(st, s) {
+/** Take one of the offered reward cards (after a triple or a corner lesson). With no room the reward is lost. */
+export function pick(st, s, i) {
   const F = st[s];
-  F.x = { used: {}, grounded: false, setup: false, last: null, slow: 0 };
+  if (!F.discover || !F.discover[i]) return false;
+  const id = F.discover[i];
+  F.discover = null;
+  if (place(st, s, id)) enter(st, s, id);
+  return true;
 }
-const sideAt = (st, p) => ((p % 2 === 0) === (st.ex % 2 === 1) ? "a" : "b");
+export function sell(st, s, slot) {
+  const F = st[s];
+  if (st.phase !== "shop" || !F.board[slot]) return false;
+  F.board[slot] = null;
+  F.shop.gold += st.cfg.shop.sell;
+  return true;
+}
+export function swap(st, s, i, j) { if (st.phase !== "shop") return false; const B = st[s].board; [B[i], B[j]] = [B[j], B[i]]; return true; }
+export function reroll(st, s) {
+  const sh = st[s].shop;
+  if (st.phase !== "shop" || sh.gold < st.cfg.shop.reroll) return false;
+  sh.gold -= st.cfg.shop.reroll; sh.frozen = false;
+  roll(st, s);
+  return true;
+}
+export function freeze(st, s) { if (st.phase !== "shop") return false; st[s].shop.frozen = !st[s].shop.frozen; return true; }
+export const canTier = (st, s) => st[s].shop.tier < st.cfg.shop.maxTier;
+export function tierUp(st, s) {
+  const sh = st[s].shop;
+  if (st.phase !== "shop" || !canTier(st, s) || sh.gold < sh.upCost) return false;
+  sh.gold -= sh.upCost;
+  sh.tier++;
+  sh.upCost = st.cfg.shop.tierCost[sh.tier] ?? 0;
+  return true;
+}
 
-/** Would this slot act now? Returns the skill or null (empty, passive, defence, grounded, or needs unmet). */
-function acts(st, s, slot) {
-  const c = st[s].board[slot], d = skillOf(st, c);
-  if (!d || !d.active || st[s].x.grounded) return null;
-  if (d.needs === "grounded" && !st[other(s)].x.grounded) return null;
-  return { c, d };
+// ---------- log ----------
+const unitView = (u) => (u ? { uid: u.uid, id: u.id, gold: u.gold, atk: u.atk, hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
+const view = (st) => (st.c ? { a: st.c.a.map(unitView), b: st.c.b.map(unitView) } : null);
+function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, view: view(st) }; st.log.push(e); return e; }
+
+// ---------- clash ----------
+export function startClash(st) {
+  if (st.phase !== "shop" || st.a.discover || st.b.discover) return false;
+  st.phase = "clash";
+  let uid = 0;
+  const c = (st.c = { n: 0, turn: null, pending: null, ace: null, reacted: false, a: [], b: [] });
+  for (const s of SIDES) {
+    st[s].shown = st[s].board.map((x) => (x ? { ...x, kw: { ...x.kw } } : null));
+    c[s] = st[s].board.map((x, slot) => (x ? { ...x, kw: { ...x.kw }, uid: ++uid, slot, side: s, acted: false, stun: false, swings: 0 } : null));
+  }
+  ev(st, "clash", {});
+  for (const s of SIDES) {
+    for (const fx of powerFx(st, s, "start")) fxInClash(st, s, null, fx, 1);
+    for (const u of c[s]) if (u && u.hp > 0) for (const fx of defOf(st, u).fx) if (fx.when === "start") fxInClash(st, s, u, fx, mulOf(st, u));
+  }
+  reap(st);
+  const na = alive(c.a).length, nb = alive(c.b).length;
+  c.turn = na > nb ? "a" : nb > na ? "b" : rand(st) < 0.5 ? "a" : "b";
+  const all = [...alive(c.b), ...alive(c.a)]; // ties go to the opponent's card: the player defends
+  c.ace = all.reduce((m, u) => (!m || u.atk > m.atk ? u : m), null)?.uid ?? null;
+  return true;
 }
-/** The next skill that will fire: { s, slot, c, d } or null when the exchange has nothing left. */
+function fxInClash(st, s, self, fx, m) {
+  const c = st.c;
+  if (fx.do === "dmg") {
+    const foes = alive(c[other(s)]);
+    if (!foes.length) return;
+    const t = pickOne(st, foes), d = harm(st, t, (fx.dmg || 0) * m, null);
+    ev(st, "fx", { s, from: self?.uid, to: t.uid, dmg: d });
+  } else {
+    const hit = applyFx(st, c[s], self, fx, m);
+    if (hit.length) ev(st, "fx", { s, from: self?.uid, buff: hit.map((u) => u.uid) });
+  }
+}
+/** Deal damage to a unit; a slip soaks the first hit. Returns the damage that got through. */
+function harm(st, t, dmg, from) {
+  if (dmg <= 0 || t.hp <= 0) return 0;
+  if (t.kw.slip) { delete t.kw.slip; ev(st, "slip", { uid: t.uid }); return 0; }
+  t.hp -= dmg;
+  if (from && from.kw.sub && t.hp > 0) { t.hp = 0; ev(st, "sub", { uid: t.uid, from: from.uid }); }
+  return dmg;
+}
+function reap(st) {
+  const c = st.c;
+  for (let guard = 0; guard < 20; guard++) {
+    let any = false;
+    for (const s of SIDES) for (const u of c[s]) {
+      if (!u || u.hp > 0 || u.gone) continue;
+      u.gone = true; any = true;
+      ev(st, "break", { uid: u.uid, s });
+      for (const fx of defOf(st, u).fx) if (fx.when === "break") fxInClash(st, s, u, fx, mulOf(st, u));
+    }
+    if (!any) break;
+  }
+}
+const canHit = (u) => u && u.hp > 0 && u.atk > 0;
+/** The next attack, decided once (attacker and target): { s, u, t } or null when the clash is over or stuck. */
 export function upcoming(st) {
-  if (st.phase !== "fight") return null;
-  for (let p = st.cursor; p < st.cfg.slots * 2; p++) {
-    const s = sideAt(st, p), slot = Math.floor(p / 2), a = acts(st, s, slot);
-    if (a) return { p, s, slot, ...a };
+  const c = st.c;
+  if (st.phase !== "clash" || !c) return null;
+  if (c.pending) return c.pending;
+  if (!alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
+  for (let tries = 0; tries < 2; tries++) {
+    const s = c.turn, mine = c[s];
+    if (mine.some(canHit)) {
+      let u = mine.find((x) => canHit(x) && !x.acted);
+      if (!u) { for (const x of mine) if (x) x.acted = false; u = mine.find(canHit); }
+      const foes = alive(c[other(s)]), guards = foes.filter((x) => x.kw.guard);
+      return (c.pending = { s, u, t: pickOne(st, guards.length ? guards : foes) });
+    }
+    c.turn = other(s); // nobody on this side can attack: the other side goes
   }
   return null;
 }
-function blocker(st, s, d) {
-  const F = st[s];
-  for (let i = 0; i < F.board.length; i++) {
-    const c = F.board[i], k = skillOf(st, c);
-    if (k && k.kind === "defence" && fits(k.blocks, d) && (F.x.used[i] || 0) < (k.charges || 1)) return { i, c, k };
-  }
-  return null;
-}
-const total = (st, s, c) => { const v = view(st, s, c); return v.dmg * v.hits; };
-/** Is the next thing b's heavy strike that a cannot block — the moment for the player's timing bar? */
+/** Is the next attack the one the timing bar is for? (the ace's first swing, once a clash) */
 export function needsReact(st) {
-  const u = upcoming(st);
-  if (!u || u.s !== "b" || st.reacted || u.d.kind !== "strike" || st.b.gas < (u.d.gas || 0)) return null;
-  if (total(st, "b", u.c) < st.cfg.react.heavy || blocker(st, "a", u.d)) return null;
-  return u;
+  const p = upcoming(st), c = st.c;
+  if (!p || c.reacted || p.u.uid !== c.ace || p.u.swings > 0 || p.u.stun) return null;
+  return p;
+}
+function swing(st, u, t, mul) {
+  const c = st.c, o = other(u.side);
+  u.swings++;
+  ev(st, "attack", { s: u.side, from: u.uid, to: t.uid, mul });
+  const got = harm(st, t, Math.round(u.atk * mul), u);
+  if (got) ev(st, "dmg", { uid: t.uid, dmg: got });
+  const back = harm(st, u, t.atk, t);
+  if (back) ev(st, "dmg", { uid: u.uid, dmg: back });
+  if (u.kw.sweep) for (const n of [c[o][t.slot - 1], c[o][t.slot + 1]]) if (n && n.hp > 0) { const d = harm(st, n, Math.round(u.atk * mul), u); if (d) ev(st, "dmg", { uid: n.uid, dmg: d }); }
+  if (got && t.hp > 0) for (const fx of defOf(st, u).fx) if (fx.when === "hit") {
+    const m = mulOf(st, u);
+    if (fx.do === "weaken") { t.atk = Math.max(0, t.atk - fx.atk * m); ev(st, "weaken", { uid: t.uid }); }
+    if (fx.do === "stun") { t.stun = true; ev(st, "stun", { uid: t.uid }); }
+  }
+  reap(st);
+}
+/** Resolve the next attack. grade (perfect | good | miss) applies when needsReact() said so. */
+export function step(st, grade = null) {
+  const c = st.c;
+  if (st.phase !== "clash" || !c) return false;
+  const react = grade ? needsReact(st) : null, p = upcoming(st);
+  if (!p) { endClash(st); return true; }
+  c.pending = null; c.n++;
+  const { s, u } = p, R = st.cfg.react;
+  u.acted = true;
+  c.turn = other(s);
+  if (u.stun) { u.stun = false; ev(st, "stunned", { uid: u.uid }); return true; }
+  let mul = 1;
+  if (u.uid === c.ace && u.swings === 0) {
+    c.reacted = true;
+    if (react) {
+      mul = s === "a" ? (grade === "perfect" ? R.perfectHit : grade === "good" ? R.goodHit : 1) : grade === "perfect" ? R.perfect : grade === "good" ? R.good : 1;
+      ev(st, "react", { s, grade, uid: u.uid });
+    }
+  }
+  swing(st, u, p.t, mul);
+  if (u.kw.flurry && u.hp > 0) { const foes = alive(c[other(s)]), g = foes.filter((x) => x.kw.guard); if (foes.length) swing(st, u, pickOne(st, g.length ? g : foes), 1); }
+  return true;
 }
 
-function finish(st, winner, how) {
-  if (st.over) return;
-  st.over = { winner, how, round: st.round };
+function endClash(st) {
+  const c = st.c, cfg = st.cfg, na = alive(c.a).length, nb = alive(c.b).length;
+  const w = na && !nb ? "a" : nb && !na ? "b" : null;
+  let dmg = 0;
+  if (w) {
+    const l = other(w);
+    dmg = Math.min(cfg.damage.caps[st.round - 1] ?? 99, alive(c[w]).reduce((n, u) => n + defOf(st, u).tier, 0) + st[w].shop.tier);
+    st[l].hp = Math.max(0, st[l].hp - dmg);
+    st[w].stats.won++; st[w].stats.dmg += dmg;
+    st.wins[w]++;
+    // cards that asked for it grow when their side wins and they are still standing
+    for (const u of alive(c[w])) for (const fx of defOf(st, u).fx) if (fx.when === "win") { const real = st[w].board[u.slot]; if (real && real.id === u.id) applyFx(st, st[w].board, real, fx, mulOf(st, real)); }
+  }
+  for (const s of SIDES) st[s].lostLast = w === other(s);
+  ev(st, "clashend", { s: w, dmg });
+  st.c = null;
+  if (w && st[other(w)].hp <= 0) return finish(st, w, "KO");
+  if (st.clash >= cfg.clashes) return endRound(st);
+  beginTurn(st);
+}
+function finish(st, winner, how, total) {
+  st.over = { winner, how, round: st.round, total };
   st.phase = "over";
   ev(st, "over", { s: winner, how });
 }
-function hurt(st, s, o, dmg, region, clean, d) {
-  const A = st[s], D = st[o], cfg = st.cfg;
-  A.stats.dmg += dmg;
-  A.score += dmg * cfg.score.perDmg * (clean ? 1 : cfg.score.graze);
-  if (D.rocked) { D.rocked.hp -= dmg; if (D.rocked.hp <= 0) return finish(st, s, "TKO"); }
-  if (region !== "head") return;
-  if (clean && d && d.ko && rand(st) < clamp(d.ko * (1 + cfg.ko.stunScale * Math.min(1, D.stun / chinOf(st, o))), 0, 0.9)) return finish(st, s, "KO");
-  D.stun += dmg;
-  if (!D.rocked && D.stun >= chinOf(st, o)) { D.rocked = { hp: cfg.rock.hp }; ev(st, "rocked", { s: o }); }
-}
-
-function strike(st, u, grade) {
-  const { s, slot, c, d } = u, o = other(s), A = st[s], D = st[o], cfg = st.cfg, v = view(st, s, c), m = lvMul(st, c);
-  const b = blocker(st, o, d);
-  if (b) {
-    D.x.used[b.i] = (D.x.used[b.i] || 0) + 1;
-    D.stats.blocks++;
-    D.score += cfg.score.block;
-    ev(st, "block", { s: o, slot: b.i, by: b.k.id, id: d.id, from: slot });
-    const back = (b.k.counter || 0) * lvMul(st, b.c) + passive(st, o, "onBlock");
-    if (b.k.back) A.weak = clamp(A.weak + b.k.back * lvMul(st, b.c), 0, 0.5);
-    if (back > 0) { const dmg = r1(back * D.f.power * (1 - D.weak)); ev(st, "counter", { s: o, dmg }); hurt(st, o, s, dmg, "head", true, null); }
-    A.x.last = d.type; A.x.setup = false;
-    return;
-  }
-  if (grade === "perfect") {
-    st.a.stats.blocks++;
-    ev(st, "react", { s: "a", grade, id: d.id, from: slot });
-    const dmg = r1(cfg.react.counter * st.a.f.power);
-    ev(st, "counter", { s: "a", dmg });
-    hurt(st, "a", "b", dmg, "head", true, null);
-    A.x.last = d.type; A.x.setup = false;
-    return;
-  }
-  const aft = d.after && A.x.last === d.after.type ? d.after : null;
-  const ramp = passive(st, s, "ramp") * (st.ex - 1);
-  let acc = v.acc + (A.x.setup ? cfg.hit.setup : 0) + (aft?.acc || 0) + (A.rocked ? cfg.hit.rocked : 0) - A.x.slow;
-  if (D.x.grounded) acc += 0.1;
-  acc = clamp(acc, cfg.hit.min, cfg.hit.max);
-  A.x.slow = 0;
-  let landed = false;
-  for (let h = 0; h < (d.hits || 1) && !st.over; h++) {
-    let clean = rand(st) < acc, mul = clean ? 1 : cfg.hit.graze;
-    if (grade === "good") { clean = false; mul = cfg.react.good; }
-    const dmg = r1((v.dmg + (aft?.dmg || 0) + ramp) * mul * (1 - A.weak));
-    ev(st, "hit", { s, slot, id: d.id, region: d.region, dmg, clean, grade: grade || null, combo: !!aft });
-    if (clean) {
-      landed = true;
-      if (d.drain) D.gas = Math.max(0, D.gas - Math.round(d.drain * m));
-      if (d.weaken) D.weak = clamp(D.weak + d.weaken * m, 0, 0.5);
-    }
-    if (d.slow) D.x.slow = d.slow;
-    hurt(st, s, o, dmg, d.region, clean, d);
-  }
-  A.x.setup = !!d.setup && landed;
-  A.x.last = d.type;
-}
-
-function takedown(st, u) {
-  const { s, slot, c, d } = u, o = other(s), A = st[s], D = st[o], cfg = st.cfg;
-  const b = blocker(st, o, d);
-  if (b) {
-    D.x.used[b.i] = (D.x.used[b.i] || 0) + 1;
-    D.stats.blocks++; D.score += cfg.score.block;
-    if (b.k.drainOnBlock) A.gas = Math.max(0, A.gas - b.k.drainOnBlock);
-    ev(st, "block", { s: o, slot: b.i, by: b.k.id, id: d.id, from: slot });
-    const back = passive(st, o, "onBlock");
-    if (back > 0) { const dmg = r1(back * D.f.power); ev(st, "counter", { s: o, dmg }); hurt(st, o, s, dmg, "head", true, null); }
-    return;
-  }
-  const p = clamp(view(st, s, c).p - D.f.tdDef, 0.05, 0.95), ok = rand(st) < p;
-  if (ok) { D.x.grounded = true; A.stats.td++; A.score += cfg.score.takedown; }
-  A.x.last = "takedown";
-  ev(st, "takedown", { s, slot, id: d.id, ok, p });
-}
-
-/** Fire the next skill (grade = the player's timing when needsReact() said so). Returns false when the bout is not in a fight. */
-export function step(st, grade = null) {
-  if (st.phase !== "fight" || st.over) return false;
-  const u = upcoming(st), want = grade ? needsReact(st) : null;
-  if (!u) { endExchange(st); return true; }
-  st.cursor = u.p + 1;
-  const A = st[u.s], cost = u.d.gas || 0;
-  if (A.gas < cost) { A.gas = Math.min(gasMaxOf(st, u.s), A.gas + st.cfg.fizzleRegen); ev(st, "tired", { s: u.s, slot: u.slot, id: u.d.id }); return true; }
-  A.gas -= cost;
-  const react = want && want.p === u.p ? grade : null;
-  if (react) st.reacted = true;
-  if (u.d.kind === "strike") strike(st, u, react && react !== "miss" ? react : null); else takedown(st, u);
-  return true;
-}
-
-function endExchange(st) {
-  const cfg = st.cfg;
-  for (const s of SIDES) {
-    st[s].gas = clamp(st[s].gas + cfg.gasRegen + passive(st, s, "regen"), 0, gasMaxOf(st, s));
-    if (!st[s].rocked) st[s].stun = Math.max(0, r1(st[s].stun - (cfg.stunDecay || 0))); // he shakes it off between exchanges
-    resetExchange(st, s);
-  }
-  st.cursor = 0;
-  if (st.ex >= cfg.exchanges) return endRound(st);
-  st.ex++;
-  ev(st, "exchange", {});
-}
-
 function endRound(st) {
-  const cfg = st.cfg, d = st.a.score - st.b.score, big = Math.abs(d) >= cfg.score.big;
-  const card = d > 0.001 ? { a: 10, b: big ? 8 : 9 } : d < -0.001 ? { a: big ? 8 : 9, b: 10 } : { a: 10, b: 10 };
-  card.pts = { a: r1(st.a.score), b: r1(st.b.score) };
+  const cfg = st.cfg, { a, b } = st.wins, big = Math.abs(a - b) >= cfg.score.big;
+  const card = a > b ? { a: 10, b: big ? 8 : 9 } : b > a ? { a: big ? 8 : 9, b: 10 } : { a: 10, b: 10 };
+  card.wins = { a, b };
   st.rounds.push(card);
-  st.wonLast = d > 0.001;
-  for (const s of SIDES) {
-    const F = st[s];
-    if (F.rocked) { F.rocked = null; F.chinLoss += cfg.rock.chinLoss; F.stun = r1(chinOf(st, s) * cfg.rock.after); }
-    else F.stun = Math.max(0, F.stun - cfg.rest.stun);
-  }
+  st.wins = { a: 0, b: 0 };
   ev(st, "roundend", { card });
   if (st.round >= cfg.rounds) {
     const ta = st.rounds.reduce((n, c) => n + c.a, 0), tb = st.rounds.reduce((n, c) => n + c.b, 0);
-    st.over = { winner: ta > tb ? "a" : tb > ta ? "b" : null, how: "DEC", round: st.round, total: { a: ta, b: tb } };
-    st.phase = "over";
-    ev(st, "over", { s: st.over.winner, how: "DEC" });
-  } else beginShop(st);
+    const w = ta > tb ? "a" : tb > ta ? "b" : st.a.hp > st.b.hp ? "a" : st.b.hp > st.a.hp ? "b" : null;
+    return finish(st, w, "DEC", { a: ta, b: tb });
+  }
+  st.phase = "corner";
+  st.cornered = { a: false, b: false };
+}
+/** Between rounds each side takes one corner option; when both have, the next shop opens. */
+export function corner(st, s, id) {
+  const o = st.cfg.corner[id], F = st[s];
+  if (st.phase !== "corner" || !o || st.cornered[s]) return false;
+  st.cornered[s] = true;
+  if (o.heal) F.hp = Math.min(st.cfg.hp, F.hp + o.heal);
+  if (o.gold) F.bonusGold += o.gold;
+  if (!o.heal && !o.gold) reward(st, s, F.shop.tier); // a lesson: pick a card of the current tier
+  if (st.cornered.a && st.cornered.b) beginTurn(st);
+  return true;
 }
 
-/** Run the whole round with no pauses (simulation). timing(st) gives the grade for each timing bar. */
-export function playRound(st, timing = () => "miss") {
-  startRound(st);
+/** Run a whole clash with no pauses (simulation). timing(st, p) gives the grade for the timing bar. */
+export function playClash(st, timing = () => "miss") {
+  if (!startClash(st)) return false;
   let guard = 0;
-  const r = st.round;
-  while (st.phase === "fight" && st.round === r && guard++ < 500) step(st, needsReact(st) ? timing(st) : null);
+  while (st.phase === "clash" && guard++ < 1000) { const p = needsReact(st); step(st, p ? timing(st, p) : null); }
+  return true;
 }

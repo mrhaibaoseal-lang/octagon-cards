@@ -1,18 +1,19 @@
 {
- "_doc": "戰場式玩法（bg.html）。一場 rounds 回合，每回合 exchanges 段；每段雙方的技能列由左到右輪流發動（slots 格）。gold：每回合商店的金幣＝base＋perRound×(回合−1)，上一回合贏了再 +win。shop：offers 一次擺幾張、cost 技能價格、sell 賣價、reroll 重抽價、tierCost 升到第 2／3 級商店的價格、maxLevel 技能最高等級（買到同一張就升級）、specialChance 出現特殊選項的機率。levelMul 各等級的數值倍率。hit：graze 沒打實的傷害倍率、setup 起手技打到後下一招的打實加成、rocked 被打晃的人出手打實率、min／max 上下限。gasRegen 每段回多少體力；stunDecay 每段結束頭傷自己恢復多少（沒被打晃時）；fizzleRegen 沒氣放不出技能時回多少。rock：hp 被打晃後再吃多少傷害就 TKO、after 撐過回合後頭傷回到下巴的幾成、chinLoss 下巴永久減少。ko.stunScale 頭傷越滿 KO 機率越高的倍率。rest：回合間頭傷恢復、體力回滿。score：perDmg 每點傷害的分數、graze 沒打實的倍率、takedown 抱摔成功、block 防守成功、big 一回合差多少算 10-8。react 時機條：heavy 對手一招總傷害達到多少會出現（每回合一次，而且你沒有防守擋得住）、good 按到好時那一招的傷害倍率（而且不算打實）、counter 完美時反擊傷害、zone 好區與完美區寬度、speed 游標每秒幾趟、sweeps 幾趟沒按算失敗。",
+ "_doc": "戰場式玩法（bg.html）第二版：一對一，雙方各逛自己的商店。rounds 回合 × clashes 段，每段之前逛一次商店。slots 技能列格數。hp 選手耐久。gold：start 第一段的金幣、perTurn 每段多幾金、cap 上限、loser 上一段打輸的人多幾金。shop：cost 買牌、sell 賣價、reroll 重抽、offers 各級商店一次擺幾張、tierCost 升到下一級的原價（每過一段便宜 tierDrop）、maxTier 最高級、discover 三連後幾選一。golden 金卡的數值倍率。damage：打贏的一方對輸家選手造成的耐久傷害＝剩下的牌的等級加總＋商店等級，caps 是各回合的上限。score.big 一回合贏幾段以上算 10-8。corner 回合之間三選一：heal 回耐久、gold 下一段多金幣、discover 從目前商店等級三選一張牌。react 時機條：每段一次，出現在場上攻擊最高的那張牌第一次出手時；對手的牌：good／perfect 是你受到的傷害倍率；你的牌：goodHit／perfectHit 是你造成的傷害倍率；zone 好區與完美區寬度、speed 游標每秒幾趟、sweeps 幾趟沒按算失敗。maxAttacks 一段最多幾次出手（保險）。",
  "rounds": 5,
- "exchanges": 3,
- "slots": 5,
- "gold": { "base": 6, "perRound": 1, "win": 1 },
- "shop": { "offers": 4, "cost": 3, "sell": 1, "reroll": 1, "tierCost": [0, 4, 6], "maxLevel": 3, "specialChance": 0.6 },
- "levelMul": [1, 1.5, 2],
- "hit": { "graze": 0.4, "setup": 0.2, "rocked": -0.3, "min": 0.05, "max": 0.95 },
- "gasRegen": 2,
- "stunDecay": 3,
- "fizzleRegen": 1,
- "rock": { "hp": 22, "after": 0.5, "chinLoss": 3 },
- "ko": { "stunScale": 1.5 },
- "rest": { "stun": 8 },
- "score": { "perDmg": 0.25, "graze": 0.5, "takedown": 3, "block": 1, "big": 10 },
- "react": { "heavy": 9, "good": 0.2, "counter": 6, "zone": { "good": 0.34, "perfect": 0.1 }, "speed": 0.85, "sweeps": 3 }
+ "clashes": 3,
+ "slots": 6,
+ "hp": 45,
+ "gold": { "start": 3, "perTurn": 1, "cap": 10, "loser": 1 },
+ "shop": { "cost": 3, "sell": 1, "reroll": 1, "offers": [0, 3, 4, 4, 5], "tierCost": [0, 5, 7, 9], "tierDrop": 1, "maxTier": 4, "discover": 3 },
+ "golden": 2,
+ "damage": { "caps": [5, 7, 10, 12, 15] },
+ "score": { "big": 3 },
+ "corner": {
+  "heal": { "name": "冰敷休息", "text": "耐久 +5", "heal": 5 },
+  "gold": { "name": "贊助獎金", "text": "下一段金幣 +3", "gold": 3 },
+  "discover": { "name": "教練教一招", "text": "從目前等級的牌三選一，免費" }
+ },
+ "react": { "good": 0.25, "perfect": 0, "goodHit": 1.75, "perfectHit": 2.5, "zone": { "good": 0.34, "perfect": 0.1 }, "speed": 0.85, "sweeps": 3 },
+ "maxAttacks": 120
 }
