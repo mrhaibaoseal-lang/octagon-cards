@@ -75,7 +75,7 @@ export function fight(st, o, skill = st[o.s].f.ai?.skill ?? 1) {
   const c = st.c, mine = c[o.s].filter((x) => x && x.hp > 0), tools = mine.some((x) => x.kw.ground || x.kw.sub);
   let best = null;
   for (const u of o.units) for (const t of o.targets) {
-    const dmg = E.power(st, u), back = u.kw.reach ? 0 : E.power(st, t);
+    const dmg = E.power(st, u), back = E.counter(st, u, t);
     const kills = !t.kw.slip && dmg >= t.hp, dies = !u.kw.slip && back >= u.hp;
     let v = t.kw.slip ? 4 - u.atk : kills ? 8 + 2 * t.atk + t.hp : Math.min(dmg, t.hp);
     v -= dies ? 5 + u.atk + u.hp : back * 0.5;
@@ -95,13 +95,13 @@ export function groundWeights(st, s) {
   const c = st.c, G = st.cfg.ground, A = G.ai, g = c.ground, f = st[s].f, foe = s === "a" ? "b" : "a", last = c.glast?.[foe];
   const mine = E.groundMoves(st, s), theirs = E.groundMoves(st, foe), w = {};
   for (const m of mine) {
-    const def = G.moves[m], kw = def.hit?.cardKw || def.cardKw;
+    const def = G.moves[m], kw = def.hit?.cardKw || def.hit?.upKw;
     let x = A.base[m] * (f.ai?.ground?.[m] ?? 1);
     x *= Math.max(0.2, 1 + (A.layerLean[m] || 0) * (g.layer - 1));
     if (def.gain && g.layer >= G.layers) x *= 0.3; // already as deep as it goes
     if (kw) x *= 1 + A.cardBoost * count(st, s, kw);
     if (last && G.beat[m] === last) x *= 1 + A.react; // leans toward what beat his last move
-    if (theirs.some((y) => (G.moves[y].hit?.base ?? 0) >= A.bigHit && G.beat[m] === y)) x *= 1 + A.threat; // he can finish: cover it
+    if (theirs.some((y) => E.groundDamage(st, foe, y) >= A.bigHit && G.beat[m] === y)) x *= 1 + A.threat; // he can finish: cover it
     w[m] = x;
   }
   const sum = Object.values(w).reduce((n, v) => n + v, 0);
@@ -113,11 +113,11 @@ const draw = (st, w) => { let r = E.rand(st); for (const [m, p] of Object.entrie
 export const groundPick = (st, s) => draw(st, groundWeights(st, s));
 /** The best answer to what the other side is likely to do (what a player who reads the table does). Ties go to the first. */
 export function groundRead(st, s) {
-  const G = st.cfg.ground, foe = s === "a" ? "b" : "a", q = groundWeights(st, foe), val = (m) => G.moves[m].hit?.base ?? (G.moves[m].gain ? 2 : 1);
+  const G = st.cfg.ground, foe = s === "a" ? "b" : "a", q = groundWeights(st, foe), val = (s2, m) => E.groundDamage(st, s2, m) || (G.moves[m].gain ? 2 : 1);
   let best = null;
   for (const m of E.groundMoves(st, s)) {
     let ev = 0;
-    for (const [y, p] of Object.entries(q)) ev += p * (G.beat[m] === y ? val(m) : G.beat[y] === m ? -val(y) : 0);
+    for (const [y, p] of Object.entries(q)) ev += p * (G.beat[m] === y ? val(s, m) : G.beat[y] === m ? -val(foe, y) : 0);
     if (!best || ev > best[0]) best = [ev, m];
   }
   return best[1];

@@ -235,6 +235,8 @@ function reap(st) {
 }
 /** A unit's attack right now (the ground game is played with moves, not cards, so nothing changes down there). */
 export const power = (st, u) => (u ? u.atk : 0);
+/** What target t hits u back for when u attacks it: its attack, or that much less (never below 0) when u strikes from long range. */
+export const counter = (st, u, t) => Math.max(0, power(st, t) - (u.kw.reach ? st.cfg.reachCounter : 0));
 /** u landed a takedown: a sprawl on the other side stops it; otherwise the ground game starts with u's side on top. */
 function takedown(st, u) {
   const c = st.c, s = u.side;
@@ -302,7 +304,7 @@ function swing(st, u, t, mul) {
   ev(st, "attack", { s, from: u.uid, to: t.uid, mul, combo });
   const got = harm(st, t, hit, u);
   if (got) ev(st, "dmg", { uid: t.uid, dmg: got });
-  const back = u.kw.reach ? 0 : harm(st, u, power(st, t), t); // a long-range strike is not hit back
+  const back = harm(st, u, counter(st, u, t), t); // a long-range strike is hit back for less
   if (back) ev(st, "dmg", { uid: u.uid, dmg: back });
   if (u.kw.sweep) for (const n of [c[o][t.slot - 1], c[o][t.slot + 1]]) if (n && n.hp > 0) { const d = harm(st, n, hit, u); if (d) ev(st, "dmg", { uid: n.uid, dmg: d }); }
   if (got && t.hp > 0) for (const fx of defOf(st, u).fx) if (fx.when === "hit") {
@@ -345,17 +347,12 @@ export function step(st, grade = null) {
 }
 
 // ---------- the ground game ----------
-/** The moves side s may pick this beat: its role's moves, minus any that need a deeper layer than the position has reached. */
+/** The moves side s may pick this beat: the moves of its role (top or bottom). Every layer has the full ring, so no move is locked. */
 export function groundMoves(st, s) {
   const c = st.c, g = c?.ground, G = st.cfg.ground;
   if (!g) return [];
   const role = g.top === s ? "top" : "bottom";
-  return Object.keys(G.moves).filter((id) => {
-    const m = G.moves[id];
-    if (m.role !== role) return false;
-    if (m.layer == null) return true;
-    return g.layer >= (m.cardKw && alive(c[s]).some((u) => u.kw[m.cardKw]) ? m.cardLayer : m.layer);
-  });
+  return Object.keys(G.moves).filter((id) => G.moves[id].role === role);
 }
 /** What the ground game looks like right now: { top, layer, beat, max, moves: { a, b }, last } or null. */
 export function groundOptions(st) {
@@ -369,10 +366,15 @@ export function chooseGround(st, s, move) {
   (st.c.gchoice ||= {})[s] = move;
   return true;
 }
-/** Damage a hitting move does for side s: its base plus a bonus for each of that side's cards with the move's keyword. */
+/** Damage a hitting move does for side s right now. A flat move: its base plus a bonus for each of s's cards with the move's keyword.
+ *  A move with byLayer hits harder the deeper the position is, and counts as one layer deeper while s has a card with its upKw. */
 export function groundDamage(st, s, id) {
-  const h = st.cfg.ground.moves[id]?.hit;
+  const h = st.cfg.ground.moves[id]?.hit, g = st.c?.ground;
   if (!h) return 0;
+  if (h.byLayer) {
+    const up = h.upKw && alive(st.c[s]).some((u) => u.kw[h.upKw]) ? 1 : 0;
+    return h.byLayer[clamp((g ? g.layer : 1) + up, 1, h.byLayer.length) - 1];
+  }
   return h.base + (h.cardKw ? h.perCard * alive(st.c[s]).filter((u) => u.kw[h.cardKw]).reduce((n, u) => n + mulOf(st, u), 0) : 0);
 }
 function runBeat(st) {
@@ -386,8 +388,8 @@ function groundBeat(st, mv) {
   const res = G.beat[mv[top]] === mv[bot] ? "top" : G.beat[mv[bot]] === mv[top] ? "bottom" : "tie";
   let dmg = 0, drop = 0, flip = false;
   if (res === "top") {
+    dmg = groundDamage(st, top, mv[top]); // measured on the layer the beat was played on
     if (mt.gain) g.layer = Math.min(G.layers, g.layer + mt.gain);
-    dmg = groundDamage(st, top, mv[top]);
   } else if (res === "bottom") {
     const has = (kw) => kw && alive(c[bot]).some((u) => u.kw[kw]);
     if (has(mb.flip)) flip = true;

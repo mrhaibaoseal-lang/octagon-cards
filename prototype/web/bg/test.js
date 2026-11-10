@@ -154,7 +154,7 @@ test("ground: a takedown that lands pauses the cards and starts the guessing gam
   assert.deepEqual({ top: st.c.ground.top, layer: st.c.ground.layer, beat: st.c.ground.beat }, { top: "a", layer: G.start, beat: 1 });
   assert.equal(E.options(st), null, "no card attacks while they grapple");
   const o = E.groundOptions(st);
-  assert.deepEqual(o.moves.a, ["press", "strike"], "the top man cannot go for the finish on the first layer");
+  assert.deepEqual(o.moves.a, ["press", "strike", "sub"], "the top man may go for the finish from the very first layer");
   assert.deepEqual(o.moves.b, ["guard", "rise", "turn"]);
 });
 
@@ -188,14 +188,15 @@ test("ground: the top man pressing a layer deeper, striking the fighter, or fini
   st = down(["elbows", "groundpound"], ["cross"], "a", 2);
   assert.equal(beat(st, "strike", "rise").dmg, G.moves.strike.hit.base + 2 * G.moves.strike.hit.perCard, "each ground card adds to the strike");
 
-  st = down(["cross"], ["cross"], "a", 3);
-  assert.ok(E.groundMoves(st, "a").includes("sub"), "the finish opens on the deepest layer");
-  assert.equal(beat(st, "sub", "turn").dmg, G.moves.sub.hit.base);
-
-  st = down(["cross"], ["cross"], "a", 2);
-  assert.ok(!E.groundMoves(st, "a").includes("sub"));
-  st = down(["rnc"], ["cross"], "a", 2);
-  assert.ok(E.groundMoves(st, "a").includes("sub"), "a submission card opens it one layer sooner");
+  const by = G.moves.sub.hit.byLayer;
+  for (let layer = 1; layer <= G.layers; layer++) {
+    st = down(["cross"], ["cross"], "a", layer);
+    assert.ok(E.groundMoves(st, "a").includes("sub"), "the finish can be tried on every layer");
+    assert.equal(beat(st, "sub", "turn").dmg, by[layer - 1], "and it hurts more the deeper the position");
+    st = down(["rnc"], ["cross"], "a", layer);
+    assert.equal(beat(st, "sub", "turn").dmg, by[Math.min(by.length, layer + 1) - 1], "a submission card counts as one layer deeper");
+  }
+  assert.ok(by.every((d, i) => i === 0 || d > by[i - 1]), "deeper = heavier");
 
   st = down(["cross"], ["cross"], "a", 3);
   assert.equal(beat(st, "press", "guard").dmg, 0);
@@ -243,6 +244,41 @@ test("ground: it ends when the bottom man gets out of the first layer, after the
   assert.equal(evs(st, "gbeat").length, 1, "an unanswered beat plays itself with random moves");
 });
 
+test("ground: on every layer the ring is whole: the top man wins three of nine pairings, loses three, draws three, and has a counter to every bottom move", () => {
+  const top = Object.keys(G.moves).filter((m) => G.moves[m].role === "top"), bot = Object.keys(G.moves).filter((m) => G.moves[m].role === "bottom");
+  for (let layer = 1; layer <= G.layers; layer++) {
+    const tally = { top: 0, bottom: 0, tie: 0 }, answered = new Set();
+    for (const t of top) for (const b of bot) {
+      const st = down(["cross"], ["cross"], "a", layer);
+      assert.deepEqual(E.groundMoves(st, "a"), top, `all top moves on layer ${layer}`);
+      assert.deepEqual(E.groundMoves(st, "b"), bot, `all bottom moves on layer ${layer}`);
+      const res = beat(st, t, b).res;
+      tally[res]++;
+      if (res === "top") answered.add(b);
+    }
+    assert.deepEqual(tally, { top: 3, bottom: 3, tie: 3 }, `layer ${layer}`);
+    assert.equal(answered.size, bot.length, `on layer ${layer} every escape has a move that beats it`);
+  }
+});
+
+test("ground: a long-range strike is hit back for less (reachCounter), never below zero, and the fighter AI counts it the same way", () => {
+  const R = data.config.reachCounter;
+  assert.ok(R > 0);
+  const st = fresh();
+  put(st, "a", ["highkick", "highguard", "highguard"]); put(st, "b", ["ironwall"]);
+  E.startClash(st);
+  const u = st.c.a[0], t = st.c.b[0];
+  t.atk = R + 3;
+  assert.equal(E.counter(st, u, t), 3, "a long-range card takes the counter minus the reduction");
+  assert.equal(E.counter(st, { kw: {} }, t), R + 3, "a plain card takes all of it");
+  t.atk = Math.max(0, R - 1);
+  assert.equal(E.counter(st, u, t), 0);
+  t.atk = R + 3;
+  const hp = u.hp;
+  E.choose(st, u.uid, t.uid); E.step(st);
+  assert.equal(u.hp, hp - 3);
+});
+
 test("ground: a sprawl stops a takedown while it stands; a kick that lands on a takedown card gets caught", () => {
   let st = fresh();
   put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "sprawl"]);
@@ -261,7 +297,7 @@ test("ground: a sprawl stops a takedown while it stands; a kick that lands on a 
 test("ground AI: the table sums to one over the moves it may play, leans toward the counter of your last move, and covers a finish", () => {
   let st = down(["cross"], ["cross"], "b", 1);
   let w = groundWeights(st, "b");
-  assert.deepEqual(Object.keys(w).sort(), ["press", "strike"]);
+  assert.deepEqual(Object.keys(w).sort(), ["press", "strike", "sub"]);
   assert.ok(Math.abs(Object.values(w).reduce((n, v) => n + v, 0) - 1) < 1e-9);
   const before = groundWeights(st, "a");
   st.c.glast = { a: "guard", b: "press" };

@@ -11,7 +11,7 @@ const SCHOOL = { punch: "拳", kick: "踢", grap: "摔", def: "防" };
 const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏", takedown: "抱摔", sprawl: "防摔", getup: "起身", ground: "地面技", combo: "連段", reach: "長距離" };
 const KW_TEXT = {
   guard: () => "對手必須先打這張", slip: () => "躲掉打向它的第一下", flurry: () => "一次出手打兩下", sweep: () => "同時打到目標左右兩張",
-  sub: (c) => `地面猜拳：有這張，降伏在${c.ground.layerNames[c.ground.moves.sub.cardLayer - 1]}就能出（原本要${c.ground.layerNames[c.ground.moves.sub.layer - 1]}）`,
+  sub: (c) => `地面猜拳：降伏傷害依位置 ${c.ground.moves.sub.hit.byLayer.join(" / ")}（${c.ground.layerNames.join(" / ")}）；你有這張時算深一層`,
   takedown: (c) => `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
   sprawl: () => "只要這張還在場上，對手的抱摔都不成功",
   getup: (c) => `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
@@ -444,8 +444,6 @@ function pickGround(o) {
   if (speed === 0) return Promise.resolve(groundRead(st, "a"));
   const G = st.cfg.ground, top = o.top === "a", role = top ? "top" : "bottom", ids = Object.keys(G.moves).filter((m) => G.moves[m].role === role), foeIds = Object.keys(G.moves).filter((m) => G.moves[m].role !== role);
   const w = groundWeights(st, "b"), beats = (m) => G.beat[m], beaten = (m) => Object.keys(G.beat).find((k) => G.beat[k] === m);
-  const hasKw = (kw) => st.c.a.some((u) => u && u.hp > 0 && u.kw[kw]);
-  const need = (m) => { const d = G.moves[m]; return d.layer == null ? 1 : hasKw(d.cardKw) ? d.cardLayer : d.layer; };
   return new Promise((res) => {
     let sel = null, done = false;
     const last = o.last?.a ? `你上一拍出${GN(o.last.a)}，他出${GN(o.last.b)}` : "";
@@ -458,7 +456,7 @@ function pickGround(o) {
       p.className = done ? "done" : "";
       p.innerHTML = ids.map((m) => {
         const d = G.moves[m], ok = o.moves.a.includes(m), dmg = d.hit ? E.groundDamage(st, "a", m) : 0;
-        return `<button class="gm ${role} ${ok ? "" : "lock"} ${sel === m ? "sel" : ""}" data-m="${m}"><b>${d.name}</b><span>${ok ? d.text + (dmg ? `（−${dmg}）` : "") : `要到${G.layerNames[need(m) - 1]}才能出`}</span><em><u>壓過${GN(beats(m))}</u><s>被${GN(beaten(m))}破</s></em></button>`;
+        return `<button class="gm ${role} ${ok ? "" : "lock"} ${sel === m ? "sel" : ""}" data-m="${m}"><b>${d.name}</b><span>${d.text + (dmg ? `（−${dmg}）` : "")}</span><em><u>壓過${GN(beats(m))}</u><s>被${GN(beaten(m))}破</s></em></button>`;
       }).join("") + `<button class="gfight">出招</button>`;
       p.querySelectorAll(".gm").forEach((n) => (n.onclick = () => { if (done || n.classList.contains("lock")) return; if (sel === n.dataset.m) return go(); sel = n.dataset.m; say("選好了就按出招", "", `你選了${GN(sel)}，再點一次或按右邊的出招`); draw(); }));
       p.querySelector(".gfight").onclick = () => (sel ? go() : say("先選一招", "bad", "點下面的一張招式卡"));
