@@ -1,6 +1,7 @@
 {
- "_doc": "B 計畫（自動對戰）。styles：一種打法＝對機器人各類行動價值的倍率（strike 打擊、head／body／legs 部位、td 抱摔、def 防守、out 後撤、control 壓制、escape 起身、standup 放他起來；hold：always 一定等他出手後才打／never 一定先打；thrift 出手門檻倍率，越低越捨得花體力）。needs：牌組裡要有這種牌才會出現。tactics：賽前與回合間可選的戰術。moments：關鍵時刻（when 條件新成立時暫停，options 三選一；keep＝照原本的戰術），選的指令在條件消失前有效。closeGap：最後一段雙方分數差多少以內算接近。 boost：這個打法每段多耗 gas 體力、換 energy 氣（體力不夠就沒有）。",
+ "_doc": "B 計畫（自動對戰）。styles：一種打法＝對機器人各類行動價值的倍率（strike 打擊、head／body／legs 部位、td 抱摔、def 防守、out 後撤、control 壓制、escape 起身、standup 放他起來；hold：always 一定等他出手後才打／never 一定先打；thrift 出手門檻倍率，越低越捨得花體力）。needs：牌組裡要有這種牌才會出現。tactics：賽前與回合間可選的戰術。moments：關鍵時刻（when 條件新成立時暫停，options 三選一；keep＝照原本的戰術），選的指令在條件消失前有效。closeGap：最後一段雙方分數差多少以內算接近。 boost：這個打法每段多耗 gas 體力、換 energy 氣（體力不夠就沒有）。 qte：時機條。heavy 對手一招的總傷害達到多少（或抱摔）會出現反應提示；perRound 每回合最多幾次；good／perfect 是好區與完美區佔整條的寬度；speed 游標每秒來回幾趟、sweeps 幾趟沒按算失敗；energy 出力提示各評價多／少幾點氣；counter 反應提示打出完美時多幾點氣反擊。反應提示按到好以上＝免費得到對應的防守（閃／擋踢／防摔／擋）。",
  "closeGap": 3,
+ "qte": {"heavy":10,"perRound":2,"good":0.34,"perfect":0.1,"speed":0.85,"sweeps":3,"energy":{"perfect":1,"good":0,"miss":-1},"counter":1},
  "tactics": ["body","counter","pressure","wrestle"],
  "styles": {
   "body": {"name":"打身體耗他","text":"他的體力上限會掉，越後面越沒氣","w":{"body":2.2,"legs":1.2,"head":0.6}},

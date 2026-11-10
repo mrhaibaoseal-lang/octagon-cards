@@ -146,6 +146,7 @@ function line(e) {
   const o = e.s ? E.other(e.s) : null, n = e.id ? nameOf(e.id) : "", mine = e.s === "a", W = e.s ? who(e.s) : "";
   const good = mine ? "good" : "bad";
   switch (e.t) {
+    case "defence": return null;
     case "hit": {
       const d = Math.round(e.dmg);
       float(o, `${e.clean ? "打實" : e.guard ? "擋住" : "擦到"}${d ? " −" + d : ""}`, e.clean ? "clean" : "graze"); shake(o);
@@ -181,13 +182,64 @@ function ask(m) {
   });
 }
 
+const GRADE = { perfect: "完美！", good: "好", miss: "慢了" };
+/** The timing bar: a marker sweeps back and forth; click (or space) when it is in the zone. Resolves to a grade. */
+function qte(title, sub, cls = "warn") {
+  const q = data.tactics.qte;
+  if (speed === 0) return Promise.resolve("good"); // ?fast=1 skips the prompt
+  return new Promise((res) => {
+    const box = $("#ask");
+    $("#feed").hidden = true; box.hidden = false;
+    say(title, cls, "看準時機，按下去");
+    const g0 = (1 - q.good) / 2, p0 = (1 - q.perfect) / 2;
+    box.innerHTML = `<button class="qte"><span class="track"><i class="good" style="left:${g0 * 100}%;width:${q.good * 100}%"></i><i class="perfect" style="left:${p0 * 100}%;width:${q.perfect * 100}%"></i><b class="mark"></b></span><small>${esc(sub)}　按空白鍵或點這裡</small></button>`;
+    const mark = box.querySelector(".mark"), t0 = performance.now();
+    let done = false, x = 0, raf = 0;
+    const end = (grade) => {
+      if (done) return;
+      done = true; cancelAnimationFrame(raf); removeEventListener("keydown", key);
+      box.querySelector(".qte").classList.add(grade);
+      say(GRADE[grade], grade === "miss" ? "bad" : "good", title);
+      setTimeout(() => { box.hidden = true; $("#feed").hidden = false; res(grade); }, 550);
+    };
+    const hit = () => { const d = Math.abs(x - 0.5); end(d <= q.perfect / 2 ? "perfect" : d <= q.good / 2 ? "good" : "miss"); };
+    const key = (e) => { if (e.code === "Space" || e.code === "Enter") { e.preventDefault(); hit(); } };
+    const tick = (now) => {
+      const sweeps = ((now - t0) / 1000) * q.speed;
+      if (sweeps >= q.sweeps) return end("miss");
+      const f = sweeps % 2;
+      x = f <= 1 ? f : 2 - f;
+      mark.style.left = x * 100 + "%";
+      raf = requestAnimationFrame(tick);
+    };
+    box.querySelector(".qte").onclick = hit;
+    addEventListener("keydown", key);
+    raf = requestAnimationFrame(tick);
+  });
+}
+
 async function loop(id) {
   say("比賽開始", "", `第 ${st.round} 回合`);
   await sleep(700);
   while (id === runId && !st.over) {
     if (st.phase === "corner") { const t = await cornerScreen(); if (id !== runId) return; A.nextRound(au, t); coach(); say("開始", "", `第 ${st.round} 回合`); gauges(live()); await sleep(600); continue; }
     const m = A.nextMoment(au);
-    if (m) { gauges(live()); const pick = await ask(m); if (id !== runId) return; A.choose(au, m, pick); }
+    if (m) {
+      gauges(live());
+      const pick = await ask(m);
+      if (id !== runId) return;
+      A.choose(au, m, pick);
+      if (A.needsPower(au)) { const g = await qte(styleOf(au.order.id).name, "按得越準，這一段多出越多招"); if (id !== runId) return; A.power(au, g); feed(g === "miss" ? "出力沒跟上" : g === "perfect" ? "全力爆發！" : "加大出力", g === "miss" ? "bad" : "good"); }
+    } else {
+      const r = A.reaction(au);
+      if (r) {
+        gauges(live());
+        const g = await qte(`他要出${r.name}！`, `按準了就${r.answer}掉`, "bad");
+        if (id !== runId) return;
+        const ok = A.react(au, r, g);
+        feed(ok ? `你看穿了${r.name}：${r.answer}${g === "perfect" ? "，還多一招反擊" : ""}` : `沒反應過來，${r.name}要來了`, ok ? "good" : "bad");
+      }
+    }
     coach();
     const from = st.log.length, tag = `第 ${st.round} 回合・第 ${st.ex} 段`;
     A.playExchange(au);

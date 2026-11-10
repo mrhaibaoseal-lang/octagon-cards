@@ -402,3 +402,37 @@ test("auto bout: a boosted style burns gas for energy, and not when the tank can
   st.a.gas = b.gas - 1;
   assert.equal(E.dig(st, "a", b), false);
 });
+
+test("auto bout: a heavy shot coming gives a reaction prompt; good timing sets the right answer for free, capped per round", () => {
+  const au = Auto.createAuto(data, "poirier", "holloway", 5, "body"), st = au.st, q = data.tactics.qte;
+  st.range = 1;
+  intent(st, ["hook"]);
+  const r = Auto.reaction(au);
+  assert.equal(r.id, "slip");
+  const e = st.a.energy;
+  assert.equal(Auto.react(au, r, "miss"), false);
+  assert.equal(st.a.def.slip, undefined);
+  assert.equal(Auto.react(au, r, "perfect"), true);
+  assert.ok(st.a.def.slip, "the slip is set");
+  assert.equal(st.a.energy, e + q.counter, "it cost nothing, and perfect timing adds the counter energy");
+  for (let i = 1; i < q.perRound; i++) assert.ok(Auto.reaction(au));
+  assert.equal(Auto.reaction(au), null, "no more this round");
+  const au2 = Auto.createAuto(data, "poirier", "holloway", 5, "body");
+  au2.st.range = 1;
+  intent(au2.st, ["jab"]);
+  assert.equal(Auto.reaction(au2), null, "a light shot gives no prompt");
+});
+
+test("auto bout: the timing of a dig-deep order changes how much energy it gives", () => {
+  const q = data.tactics.qte, b = data.tactics.styles.finish.boost;
+  const energyAfter = (grade) => {
+    const au = Auto.createAuto(data, "poirier", "holloway", 5, "body");
+    au.order = { when: "bRocked", id: "finish" };
+    assert.equal(Auto.needsPower(au), true);
+    Auto.power(au, grade);
+    return au.bonus;
+  };
+  assert.equal(energyAfter("perfect"), q.energy.perfect);
+  assert.equal(energyAfter("miss"), q.energy.miss);
+  assert.ok(b.energy + q.energy.miss >= 0);
+});

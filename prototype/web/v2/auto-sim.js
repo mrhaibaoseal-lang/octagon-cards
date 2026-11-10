@@ -6,10 +6,10 @@ import { runAuto, offered } from "./auto.js";
 const data = loadData(), N = Number(process.argv[2]) || 200;
 const ids = Object.keys(data.fighters), T = data.tactics;
 const pc = (x) => `${Math.round(x * 100)}%`.padStart(5);
-function run(a, b, t, pick) {
+function run(a, b, t, pick, timing) {
   const r = { w: 0, fin: 0, finBy: 0, picks: 0 };
   for (let i = 0; i < N; i++) {
-    const au = runAuto(data, a, b, 500 + i * 7919, t, pick), o = au.st.over;
+    const au = runAuto(data, a, b, 500 + i * 7919, t, pick || (() => "keep"), null, timing), o = au.st.over;
     r.picks += au.picks / N;
     if (o.winner === "a") { r.w += 1 / N; if (o.how !== "DEC") r.fin += 1 / N; } else if (o.how !== "DEC") r.finBy += 1 / N;
   }
@@ -41,9 +41,19 @@ for (const m of T.moments) console.log(`${m.title.padEnd(12, "　")}` + m.option
   return `${o === "keep" ? "照原本的打" : T.styles[o].name} ${pc(w).trim()}`;
 }).join("｜"));
 
-console.log("\n三、檢查");
+console.log("\n三、時機條按得好不好的勝率（每種戰術、所有對戰平均；關鍵時刻選第一項）");
+const grades = {};
+for (const g of ["miss", "good", "perfect"]) {
+  let w = 0, n = 0, q = 0;
+  for (const t of T.tactics) for (const [a, b] of pairs) { if (!offered(data, a, t)) continue; const r = run(a, b, t, (m) => m.options[0], () => g); w += r.w; n++; }
+  for (let i = 0; i < 40; i++) { const au = runAuto(data, ids[0], ids[1], 900 + i, T.tactics[0], (m) => m.options[0], null, () => g); q += (au.qte.miss + au.qte.good + au.qte.perfect) / 40; }
+  grades[g] = w / n;
+  console.log(`${{ miss: "全部失敗", good: "全部按到好", perfect: "全部完美" }[g]}　${pc(w / n)}　（每場約 ${q.toFixed(1)} 次）`);
+}
+
+console.log("\n四、檢查");
 const tops = new Set(Object.values(best).map((x) => x.t));
-const checks = [["沒有一種戰術在每個對戰都最好（至少兩種戰術各自是某個對戰的最佳）", tops.size >= 2]];
+const checks = [["沒有一種戰術在每個對戰都最好（至少兩種戰術各自是某個對戰的最佳）", tops.size >= 2], ["時機條有用：全部按到好比全部失敗高至少 8 個百分點", grades.good - grades.miss >= 0.08], ["時機條不是全部：全部失敗仍有 30% 以上勝率", grades.miss >= 0.3]];
 let bad = 0;
 for (const [t, ok] of checks) { console.log(`${ok ? "✓" : "✗"} ${t}`); if (!ok) bad++; }
 process.exitCode = bad ? 1 : 0;

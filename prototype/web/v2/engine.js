@@ -293,6 +293,14 @@ export function answers(st) {
   };
 }
 
+/** Side s gets a basic defence for free (a reaction the player timed). False if it cannot be set now. */
+export function prepareFree(st, s, id) {
+  const d = st.cfg.basics[id];
+  if (!d || d.kind !== "defence" || st.over || !usable(st, s, d).ok) return false;
+  perform(st, s, d);
+  return true;
+}
+
 /** Dig deep: side s burns gas for extra energy this exchange (b = { gas, energy }). False if the tank cannot pay. */
 export function dig(st, s, b) {
   const F = st[s];

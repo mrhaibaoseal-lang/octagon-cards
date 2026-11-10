@@ -24,3 +24,11 @@
 .box.wide{width:760px}
 .go.ghost{background:none;border-color:var(--line);font-weight:400;font-size:12px;padding:5px 20px;margin-top:8px}
 [hidden]{display:none!important}
+.qte{flex:1;background:#141b27;border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.qte .track{position:relative;display:block;width:78%;height:34px;background:#222a38;border-radius:8px}
+.qte .track i{position:absolute;top:0;bottom:0}
+.qte .track .good{background:#2b5fa8;border-radius:6px}
+.qte .track .perfect{background:var(--gold)}
+.qte .mark{position:absolute;top:-7px;bottom:-7px;width:6px;margin-left:-3px;border-radius:3px;background:#fff;box-shadow:0 0 0 2px #000}
+.qte small{font-size:12px;color:var(--dim)}
+.qte.perfect{border-color:var(--gold)} .qte.good{border-color:var(--blue)} .qte.miss{border-color:var(--red)}
