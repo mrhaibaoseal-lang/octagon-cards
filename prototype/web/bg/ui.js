@@ -1,6 +1,6 @@
 // Octagon Cards — one-on-one board battler, browser front end. Rules live in engine.js / ai.js; this file draws and forwards clicks.
 import * as E from "./engine.js";
-import { shop as aiShop, cornerPick } from "./ai.js";
+import { shop as aiShop, fight as aiFight, cornerPick } from "./ai.js";
 
 const params = new URLSearchParams(location.search);
 const load = async (n) => (await fetch(`rules/bg/${n}.json`)).json();
@@ -122,6 +122,7 @@ function showTip(node) {
 }
 function hideTip() { if (tipEl) tipEl.remove(); tipAt = null; }
 frame.addEventListener("pointermove", (e) => {
+  if (drag?.ghost) return;
   if (e.pointerType !== "mouse") { if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 12) { clearTimeout(holdT); if (held) hideTip(); } return; }
   mouse = { x: e.clientX, y: e.clientY };
   const c = cardAt(e.target);
@@ -136,7 +137,7 @@ frame.addEventListener("pointerdown", (e) => {
 });
 for (const t of ["pointerup", "pointercancel"]) frame.addEventListener(t, (e) => { if (e.pointerType === "mouse") return; clearTimeout(holdT); downAt = null; if (held) hideTip(); });
 // A press that showed the details is not a buy / select.
-frame.addEventListener("click", (e) => { if (held) { held = false; e.stopPropagation(); e.preventDefault(); } }, true);
+frame.addEventListener("click", (e) => { if (held || dragged) { held = dragged = false; e.stopPropagation(); e.preventDefault(); } }, true);
 frame.addEventListener("contextmenu", (e) => { if (cardAt(e.target)) e.preventDefault(); });
 // The screen redraws under a still cursor: follow whatever card is there now.
 new MutationObserver(() => {
@@ -145,16 +146,59 @@ new MutationObserver(() => {
   c ? showTip(c) : hideTip();
 }).observe(frame, { childList: true, subtree: true });
 
+// ---------- drag and drop (pointer events: mouse and touch alike) ----------
+// A screen sets dnd = { hot(from, under) -> element to light up | null, drop(from, under) }. Cards with data-drag can be picked up.
+let dnd = null, drag = null, dragged = false;
+const under = (e) => { const n = document.elementFromPoint(e.clientX, e.clientY); return n instanceof Element && frame.contains(n) ? n : null; };
+function endDrag() {
+  if (!drag) return;
+  drag.ghost?.remove(); drag.n.classList.remove("lift"); drag.hot?.classList.remove("hot");
+  frame.classList.remove("dragging", "drag-" + drag.n.dataset.drag);
+  drag = null;
+}
+frame.addEventListener("pointerdown", (e) => {
+  const n = e.target instanceof Element ? e.target.closest("[data-drag]") : null;
+  endDrag();
+  if (n && dnd && e.button <= 0) drag = { n, x: e.clientX, y: e.clientY, id: e.pointerId, ghost: null, hot: null };
+});
+addEventListener("pointermove", (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.ghost) {
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 8) return;
+    if (!drag.n.isConnected) return endDrag();
+    const g = (drag.ghost = drag.n.cloneNode(true));
+    for (const a of ["data-uid", "data-drag", "data-slot", "data-offer"]) g.removeAttribute(a);
+    g.classList.add("ghost"); g.classList.remove("sel", "can");
+    g.style.width = drag.n.offsetWidth + "px"; g.style.height = drag.n.offsetHeight + "px";
+    frame.appendChild(g);
+    drag.n.classList.add("lift"); frame.classList.add("dragging", "drag-" + drag.n.dataset.drag);
+    clearTimeout(holdT); hideTip();
+  }
+  const f = frame.getBoundingClientRect(), k = scale();
+  drag.ghost.style.left = (e.clientX - f.left) / k + "px"; drag.ghost.style.top = (e.clientY - f.top) / k + "px";
+  const u = under(e), hot = (u && dnd?.hot(drag.n, u)) || null;
+  if (hot !== drag.hot) { drag.hot?.classList.remove("hot"); hot?.classList.add("hot"); drag.hot = hot; }
+});
+addEventListener("pointerup", (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const was = drag, u = was.ghost ? under(e) : null;
+  endDrag();
+  if (!was.ghost) return;
+  dragged = true; setTimeout(() => (dragged = false), 0);
+  if (u && dnd && was.n.isConnected) dnd.drop(was.n, u);
+});
+addEventListener("pointercancel", endDrag);
+
 const empty = (o = {}, text = "空位") => `<div class="sk empty ${o.small ? "s" : ""}" ${o.attr || ""}><span>${text}</span></div>`;
 
 // ---------- screens ----------
 function pickScreen() {
-  runId++;
+  runId++; dnd = null;
   const ids = Object.keys(data.fighters);
   const btn = (s, id) => { const f = data.fighters[id]; return `<button data-s="${s}" data-id="${id}" class="${choice[s] === id ? "on" : ""}"><b>${esc(f.name)}</b><small>${esc(f.style)}｜${esc(f.power.text)}</small></button>`; };
   frame.innerHTML = `<div class="bgart"></div><div class="over solid"><div class="box">
     <h2>Octagon Cards</h2>
-    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方的牌<b>由左到右輪流出手</b>互打；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。<b>抱摔</b>打中會把這一段帶到地面：踢出不了手、被壓在下面的打得比較輕。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
+    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方<b>輪流出手</b>：輪到你時，把你的一張牌<b>拖到</b>要打的那張牌上（他有架擋就得先打架擋）；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。<b>抱摔</b>打中會把這一段帶到地面：踢出不了手、被壓在下面的打得比較輕。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
     <h3>你的選手</h3><div class="pick you">${ids.map((id) => btn("a", id)).join("")}</div>
     <h3>對手</h3><div class="pick foe">${ids.map((id) => btn("b", id)).join("")}</div>
     <button class="go" id="go">進商店</button></div></div>`;
@@ -180,24 +224,34 @@ function shopScreen(msg = "") {
   const offers = sh.offers.map((id, i) => {
     if (!id) return empty({}, "已買");
     const p = E.place(st, "a", id), can = sh.gold >= cfg.cost && p;
-    return card({ id }, { cls: (can ? "buy" : "no") + (p && p.triple ? " triple" : ""), attr: `data-offer="${i}"`, note: p && p.triple ? "第三張：合成金卡！" : !p ? "技能列滿了，先賣一張" : null });
+    return card({ id }, { cls: (can ? "buy" : "no") + (p && p.triple ? " triple" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, note: p && p.triple ? "第三張：合成金卡！" : !p ? "技能列滿了，先賣一張" : null });
   }).join("");
-  const shown = st.b.shown.some(Boolean);
   frame.innerHTML = `<div class="bgart shopbg"></div>${hud()}
-    <div id="foe"><h4>${esc(st.b.f.short)} 上一段用的牌<small>${shown ? "他這一段新買的要開打才看得到" : "還沒交手過"}</small></h4><div class="row s">${shown ? st.b.shown.map((c) => (c ? card(c, { small: true }) : empty({ small: true }, "？"))).join("") : ""}</div></div>
-    <div id="store"><h4>商店<small>第 ${sh.tier} 級</small><span class="coins"><i></i>${sh.gold}</span></h4>
+    <div id="store" data-sell="放這裡賣掉　+${cfg.sell} 金"><h4>商店<small>第 ${sh.tier} 級・牌 ${cfg.cost} 金，拖到下面你的牌那一排就買</small><span class="coins"><i></i>${sh.gold}</span></h4>
       <div class="row">${offers}</div>
       <div class="acts"><button id="reroll" class="${sh.gold >= cfg.reroll ? "" : "no"}">重抽<small>${cfg.reroll} 金</small></button>
       <button id="freeze" class="${sh.frozen ? "on" : ""}">${sh.frozen ? "已凍結" : "凍結"}<small>留到下一段</small></button>
       <button id="tier" class="${E.canTier(st, "a") && sh.gold >= sh.upCost ? "" : "no"}">${E.canTier(st, "a") ? `升級商店<small>${sh.upCost} 金</small>` : "商店已最高級"}</button></div></div>
-    <div id="mine"><h4>你的牌<small>${sel == null ? "牌 3 金。點一張選起來，再點另一格換位置" : "再點一格換位置，或賣掉"}</small>${sel != null ? `<button id="sell">賣掉 +${cfg.sell} 金</button>` : ""}</h4>
-      <div class="row">${F.board.map((c, i) => (c ? card(c, { cls: sel === i ? "sel" : "", attr: `data-slot="${i}"` }) : empty({ attr: `data-slot="${i}"` }))).join("")}</div></div>
-    <div id="foot"><span class="msg">${esc(msg) || "由左到右輪流出手。左下攻擊、右下耐力。滑鼠指著牌（手機按住）看效果。"}</span><button id="fight">開打</button></div>`;
-  frame.querySelectorAll("[data-offer]").forEach((el) => (el.onclick = () => {
-    const i = Number(el.dataset.offer), id = sh.offers[i];
-    if (E.buy(st, "a", i)) { sel = null; shopScreen(`買了${data.skills[id].name}`); }
-    else shopScreen(sh.gold < cfg.cost ? "金幣不夠" : "技能列滿了，先賣掉一張");
-  }));
+    <div id="mine"><h4>你的牌<small>${sel == null ? "拖到別格換位置，拖回商店賣掉" : "再點一格換位置，或賣掉"}</small>${sel != null ? `<button id="sell">賣掉 +${cfg.sell} 金</button>` : ""}</h4>
+      <div class="row">${F.board.map((c, i) => (c ? card(c, { cls: sel === i ? "sel" : "", attr: `data-slot="${i}" data-drag="slot"` }) : empty({ attr: `data-slot="${i}"` }))).join("")}</div></div>
+    <div id="foot"><span class="msg">${esc(msg) || "對手的牌要開打才看得到，自己記住。左下攻擊、右下耐力；滑鼠指著牌（手機按住）看效果。"}</span><button id="fight">開打</button></div>`;
+  const buyAt = (i, slot = null) => {
+    const id = sh.offers[i], p = id && E.place(st, "a", id);
+    if (!E.buy(st, "a", i)) return shopScreen(sh.gold < cfg.cost ? "金幣不夠" : "技能列滿了，先賣掉一張");
+    if (p.slot != null && slot != null && slot !== p.slot && !F.board[slot]) E.swap(st, "a", p.slot, slot);
+    sel = null; shopScreen(`買了${data.skills[id].name}`);
+  };
+  const slotOf = (n) => { const x = n.closest("#mine [data-slot]"); return x ? Number(x.dataset.slot) : null; };
+  dnd = {
+    hot: (from, u) => (from.dataset.drag === "offer" ? (u.closest("#mine") ? u.closest("#mine .sk.empty") || $("#mine .row") : null) : u.closest("#store") || (u.closest("#mine [data-slot]") !== from ? u.closest("#mine [data-slot]") : null)),
+    drop: (from, u) => {
+      if (from.dataset.drag === "offer") { if (u.closest("#mine")) buyAt(Number(from.dataset.offer), slotOf(u)); return; }
+      const i = Number(from.dataset.slot), j = slotOf(u);
+      if (u.closest("#store")) { const nm = data.skills[F.board[i].id].name; E.sell(st, "a", i); sel = null; shopScreen(`賣掉${nm}`); }
+      else if (j != null && j !== i) { E.swap(st, "a", i, j); sel = null; shopScreen(); }
+    },
+  };
+  frame.querySelectorAll("[data-offer]").forEach((el) => (el.onclick = () => buyAt(Number(el.dataset.offer))));
   frame.querySelectorAll("#mine .sk").forEach((el) => (el.onclick = () => {
     const i = Number(el.dataset.slot);
     if (sel == null) { if (F.board[i]) sel = i; } else { if (i !== sel) E.swap(st, "a", sel, i); sel = null; }
@@ -207,7 +261,7 @@ function shopScreen(msg = "") {
   $("#reroll").onclick = () => shopScreen(E.reroll(st, "a") ? "" : "金幣不夠");
   $("#freeze").onclick = () => { E.freeze(st, "a"); shopScreen(st.a.shop.frozen ? "商店會留到下一段" : ""); };
   $("#tier").onclick = () => shopScreen(E.tierUp(st, "a") ? "商店升級了：之後會出現更強的牌" : E.canTier(st, "a") ? "金幣不夠" : "");
-  $("#fight").onclick = () => { if (!F.board.some(Boolean)) return shopScreen("至少要有一張牌"); sel = null; clash(++runId); };
+  $("#fight").onclick = () => { if (!F.board.some(Boolean)) return shopScreen("至少要有一張牌"); sel = null; dnd = null; clash(++runId); };
   if (F.discover) discoverScreen();
 }
 
@@ -340,6 +394,29 @@ function qte(p) {
   });
 }
 
+/** The player's attack: drag one of your lit cards onto one of his (or tap yours, then his). Resolves [attacker uid, target uid]. */
+function pickAttack(o) {
+  if (speed === 0) return Promise.resolve(aiFight(st, o, 1));
+  return new Promise((res) => {
+    const un = new Set(o.units.map((u) => u.uid)), tg = new Set(o.targets.map((u) => u.uid));
+    let pick = o.units.length === 1 ? o.units[0].uid : null;
+    const mark = () => {
+      for (const uid of un) { const n = el(uid); if (n) { n.classList.add("can"); n.dataset.drag = "unit"; n.classList.toggle("sel", uid === pick); } }
+      for (const uid of tg) el(uid)?.classList.add("tgt");
+    };
+    const done = (u, t) => { dnd = null; $("#rowA").onclick = $("#rowB").onclick = null; frame.querySelectorAll(".can,.tgt,.sel").forEach((n) => { n.classList.remove("can", "tgt", "sel"); delete n.dataset.drag; }); res([u, t]); };
+    const uidOf = (n) => { const x = n.closest("[data-uid]"); return x ? Number(x.dataset.uid) : null; };
+    $("#rowA").onclick = $("#rowB").onclick = (e) => { const uid = uidOf(e.target); if (un.has(uid)) { pick = uid; mark(); } else if (tg.has(uid) && pick != null) done(pick, uid); };
+    dnd = {
+      hot: (from, u) => (tg.has(uidOf(u)) ? u.closest("[data-uid]") : null),
+      drop: (from, u) => { const a = uidOf(from), t = uidOf(u); if (un.has(a) && tg.has(t)) done(a, t); },
+    };
+    mark();
+    const guarded = o.targets.length < st.c[E.other(o.s)].filter((u) => u && u.hp > 0).length;
+    say("輪到你出手", "good", guarded ? "他有架擋：只能先打亮紅框的那張。把你的牌拖上去" : "把你的一張牌拖到要打的牌上（或先點你的，再點他的）");
+  });
+}
+
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
@@ -364,7 +441,15 @@ async function clash(id) {
   };
   await flush();
   while (id === runId && st.phase === "clash") {
-    const p = E.needsReact(st), g = p ? await qte(p) : null;
+    const o = E.options(st);
+    await flush(); // cards that sit a turn out show it before the choice
+    if (id !== runId) return;
+    if (o) {
+      const ch = o.s === "a" ? await pickAttack(o) : aiFight(st, o);
+      if (id !== runId) return;
+      E.choose(st, ch[0], ch[1]);
+    }
+    const p = o ? E.needsReact(st) : null, g = p ? await qte(p) : null;
     if (id !== runId) return;
     E.step(st, g);
     await flush();

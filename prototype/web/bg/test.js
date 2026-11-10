@@ -188,7 +188,7 @@ test("ground: a sprawl stops takedowns while it stands; a get-up card stands its
   for (let i = 0; i < 8 && !evs(st, "reverse").length && st.phase === "clash"; i++) E.step(st);
   assert.equal(evs(st, "ground")[0].s, "a");
   assert.equal(evs(st, "reverse")[0].s, "b");
-  assert.equal(st.c.ground.top, "b");
+  assert.equal(evs(st, "reverse")[0].view.ground.top, "b");
 });
 
 test("ground: a kick that lands on a takedown card gets caught", () => {

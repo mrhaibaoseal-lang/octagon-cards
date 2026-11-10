@@ -1,6 +1,6 @@
 // Octagon Cards — one-on-one board battler (bg.html). Pure rules: no DOM, no clock; browser and simulation share this file.
 // A bout is rounds x clashes turns. Each turn both sides shop (their own shop), then the two boards clash:
-// cards (attack / stamina) take turns hitting each other, left to right; the side left standing damages the
+// the sides take turns, each picking one of its cards (once per pass) and a target for it; the side left standing damages the
 // other FIGHTER's hp. hp 0 = KO; otherwise the rounds are scored 10-9 by clashes won.
 // A takedown puts the clash on the ground for a while (who is on top, which cards can strike and how hard changes);
 // combo cards hit harder in a row; lasting weakens stay on the real card until the round ends.
@@ -183,7 +183,7 @@ export function startClash(st) {
   if (st.phase !== "shop" || st.a.discover || st.b.discover) return false;
   st.phase = "clash";
   let uid = 0;
-  const c = (st.c = { n: 0, turn: null, pending: null, ace: null, reacted: false, ground: null, chain: { a: 0, b: 0 }, a: [], b: [] });
+  const c = (st.c = { n: 0, turn: null, pending: null, opt: null, ace: null, reacted: false, ground: null, chain: { a: 0, b: 0 }, a: [], b: [] });
   for (const s of SIDES) {
     st[s].shown = st[s].board.map((x) => (x ? { ...x, kw: { ...x.kw } } : null));
     c[s] = st[s].board.map((x, slot) => (x ? { ...x, kw: { ...x.kw }, uid: ++uid, slot, side: s, acted: false, stun: false, swings: 0 } : null));
@@ -253,30 +253,51 @@ function takedown(st, u) {
 }
 function standUp(st, s = null, uid = null) { st.c.ground = null; ev(st, "standup", { s, uid }); }
 const canHit = (st, u) => u && u.hp > 0 && power(st, u) > 0;
-/** The next attack, decided once (attacker and target): { s, u, t } or null when the clash is over or stuck. */
+/** Whose attack is next and what may be chosen: { s, units, targets } (clash units), or null when the clash is over.
+ *  Each card attacks once per pass through its side; a stunned card loses that turn; a guard must be hit first. */
+export function options(st) {
+  const c = st.c;
+  if (st.phase !== "clash" || !c) return null;
+  if (c.opt) return c.opt;
+  if (!alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
+  for (let tries = 0; tries < 4; tries++) {
+    const s = c.turn, mine = alive(c[s]);
+    const sitOut = () => { let n = 0; for (const x of mine) if (x.stun && !x.acted) { x.stun = false; x.acted = true; n++; ev(st, "stunned", { uid: x.uid }); } if (n) c.chain[s] = 0; return n; };
+    const free = () => mine.filter((x) => canHit(st, x) && !x.acted);
+    let sat = sitOut(), units = free();
+    if (!units.length && !sat) { for (const x of mine) x.acted = false; sat = sitOut(); units = free(); }
+    if (units.length) {
+      const foes = alive(c[other(s)]), guards = foes.filter((x) => x.kw.guard);
+      return (c.opt = { s, units, targets: guards.length ? guards : foes });
+    }
+    c.turn = other(s); // nobody on this side can attack right now: the other side goes
+    if (c.ground && --c.ground.left <= 0) { standUp(st); return options(st); } // a turn spent stuck underneath still runs the clock
+  }
+  if (c.ground) { standUp(st); return options(st); } // nobody can strike down here: back to the feet
+  return null;
+}
+/** Pick the attacker and the target for the next attack (by unit uid). False when that is not allowed. */
+export function choose(st, uid, tid) {
+  const o = options(st);
+  if (!o) return false;
+  const u = o.units.find((x) => x.uid === uid), t = o.targets.find((x) => x.uid === tid);
+  if (!u || !t) return false;
+  st.c.pending = { s: o.s, u, t };
+  return true;
+}
+/** The next attack: the one chosen, or by default the leftmost free card at a random legal target. */
 export function upcoming(st) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return null;
   if (c.pending) return c.pending;
-  if (!alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
-  for (let tries = 0; tries < 2; tries++) {
-    const s = c.turn, mine = c[s];
-    if (mine.some((x) => canHit(st, x))) {
-      let u = mine.find((x) => canHit(st, x) && !x.acted);
-      if (!u) { for (const x of mine) if (x) x.acted = false; u = mine.find((x) => canHit(st, x)); }
-      const foes = alive(c[other(s)]), guards = foes.filter((x) => x.kw.guard);
-      return (c.pending = { s, u, t: pickOne(st, guards.length ? guards : foes) });
-    }
-    c.turn = other(s); // nobody on this side can attack: the other side goes
-    if (c.ground && --c.ground.left <= 0) { standUp(st); return upcoming(st); } // a turn spent stuck underneath still runs the clock
-  }
-  if (c.ground) { standUp(st); return upcoming(st); } // nobody can strike down here: back to the feet
-  return null;
+  const o = options(st);
+  if (!o) return null;
+  return (c.pending = { s: o.s, u: o.units[0], t: pickOne(st, o.targets) });
 }
 /** Is the next attack the one the timing bar is for? (the ace's first swing, once a clash) */
 export function needsReact(st) {
   const p = upcoming(st), c = st.c;
-  if (!p || c.reacted || p.u.uid !== c.ace || p.u.swings > 0 || p.u.stun) return null;
+  if (!p || c.reacted || p.u.uid !== c.ace || p.u.swings > 0) return null;
   return p;
 }
 function swing(st, u, t, mul) {
@@ -313,11 +334,10 @@ export function step(st, grade = null) {
   if (st.phase !== "clash" || !c) return false;
   const react = grade ? needsReact(st) : null, p = upcoming(st);
   if (!p) { endClash(st); return true; }
-  c.pending = null; c.n++;
+  c.pending = null; c.opt = null; c.n++;
   const { s, u } = p, R = st.cfg.react;
   u.acted = true;
   c.turn = other(s);
-  if (u.stun) { u.stun = false; c.chain[s] = 0; ev(st, "stunned", { uid: u.uid }); return true; }
   const down = !!c.ground;
   if (down && c.ground.top !== s && u.kw.getup) standUp(st, s, u.uid);
   let mul = 1;
@@ -329,7 +349,7 @@ export function step(st, grade = null) {
     }
   }
   swing(st, u, p.t, mul);
-  if (u.kw.flurry && u.hp > 0) { const foes = alive(c[other(s)]), g = foes.filter((x) => x.kw.guard); if (foes.length) swing(st, u, pickOne(st, g.length ? g : foes), 1); }
+  if (u.kw.flurry && u.hp > 0) { const foes = alive(c[other(s)]), g = foes.filter((x) => x.kw.guard); if (foes.length) swing(st, u, p.t.hp > 0 ? p.t : pickOne(st, g.length ? g : foes), 1); }
   if (down && c.ground && --c.ground.left <= 0) standUp(st); // the referee stands them up
   return true;
 }
@@ -387,10 +407,15 @@ export function corner(st, s, id) {
   return true;
 }
 
-/** Run a whole clash with no pauses (simulation). timing(st, p) gives the grade for the timing bar. */
-export function playClash(st, timing = () => "miss") {
+/** Run a whole clash with no pauses (simulation). timing(st, p) grades the timing bar; pick(st, o) returns [attacker uid, target uid] for a side (default: leftmost card, random target). */
+export function playClash(st, timing = () => "miss", pick = null) {
   if (!startClash(st)) return false;
   let guard = 0;
-  while (st.phase === "clash" && guard++ < 1000) { const p = needsReact(st); step(st, p ? timing(st, p) : null); }
+  while (st.phase === "clash" && guard++ < 1000) {
+    const o = options(st), ch = o && pick ? pick(st, o) : null;
+    if (ch) choose(st, ch[0], ch[1]);
+    const p = o ? needsReact(st) : null;
+    step(st, p ? timing(st, p) : null);
+  }
   return true;
 }

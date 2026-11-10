@@ -120,16 +120,15 @@ button{font:inherit;color:inherit;cursor:pointer}
 #foot #fight:active{transform:translateY(2px);box-shadow:0 1px 0 #6b1712}
 
 /* 商店畫面 */
-#foe,#store,#mine{position:absolute;left:8px;right:8px}
-#foe{top:42px;height:76px} #store{top:120px;height:112px} #mine{top:236px;height:110px}
+#store,#mine{position:absolute;left:8px;right:8px}
+#store{top:46px;height:134px} #mine{top:190px;height:150px}
 h4{font-size:11.5px;font-weight:700;height:18px;line-height:18px;display:flex;align-items:center;gap:8px}
 h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
-#foe .row{height:56px;justify-content:flex-start}
-#store .row{height:92px;justify-content:flex-start;margin-right:150px}
-#mine .row{height:90px;justify-content:flex-start}
+#store .row{height:112px;justify-content:flex-start;margin-right:150px}
+#mine .row{height:128px;justify-content:flex-start;border-radius:12px}
 .coins{margin-left:auto;margin-right:152px;font-size:16px;font-weight:800;color:var(--gold);display:flex;align-items:center;gap:5px}
 .coins i{width:15px;height:15px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe9a3,#d99a00);box-shadow:0 0 6px #f5c54288}
-.acts{position:absolute;right:0;top:20px;width:142px;height:92px;display:flex;flex-direction:column;gap:4px}
+.acts{position:absolute;right:0;top:20px;width:142px;height:112px;display:flex;flex-direction:column;gap:4px}
 .acts button{flex:1;background:#1a2130;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px}
 .acts button small{font-weight:400;font-size:10px;color:var(--gold)}
 .acts button.no{opacity:.4}
@@ -180,3 +179,16 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #gnd:empty{display:none}
 #gnd.good{color:#7df0c0} #gnd.bad{color:#ff8780}
 .sk.off{filter:saturate(.25) brightness(.65)}
+
+/* 拖曳：買牌、換位置、賣牌、交鋒時指定目標 */
+#frame{touch-action:none}
+.sk[data-drag]{cursor:grab}
+.sk.lift{opacity:.3}
+.sk.ghost{position:absolute;z-index:40;pointer-events:none;flex:none;transform:translate(-50%,-50%) rotate(-3deg) scale(1.06);box-shadow:0 14px 26px #000d,0 0 0 2px #fff}
+.sk.can{box-shadow:0 0 0 2px #8fbaff,0 0 14px #4c8dffaa}
+.sk.tgt{box-shadow:0 0 0 2px #ff8a7a,0 0 10px #f0524f66;cursor:pointer}
+.sk.hot{box-shadow:0 0 0 3px var(--gold),0 0 20px var(--gold)!important;transform:scale(1.05)}
+#mine .row.hot{box-shadow:0 0 0 2px var(--gold),0 0 18px #f5c54255}
+.drag-slot #store::after{content:attr(data-sell);position:absolute;left:0;right:150px;top:20px;bottom:0;display:flex;align-items:center;justify-content:center;z-index:6;
+  background:#2a1f08e8;border:2px dashed #a37a1c;border-radius:12px;color:var(--gold);font-size:17px;font-weight:800}
+.drag-slot #store.hot::after{border-color:var(--gold);background:#4a360ae8}

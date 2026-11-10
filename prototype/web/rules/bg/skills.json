@@ -14,7 +14,7 @@
  "rapid": { "name": "連打", "school": "punch", "tier": 2, "atk": 2, "hp": 3, "kw": ["flurry", "combo"], "text": "連打" },
  "coach": { "name": "拳館教練", "school": "punch", "tier": 2, "atk": 1, "hp": 3, "fx": [{ "when": "play", "do": "buff", "to": "school", "school": "punch", "atk": 1, "hp": 1 }], "text": "上場：其他拳 +1/+1" },
  "bodykick": { "name": "中段踢", "school": "kick", "tier": 2, "atk": 3, "hp": 2, "kw": ["sweep", "reach"], "text": "掃：同時打到目標兩旁" },
- "knee": { "name": "迎擊膝", "school": "kick", "tier": 2, "atk": 3, "hp": 4, "kw": ["sprawl"], "text": "防摔" },
+ "knee": { "name": "迎擊膝", "school": "kick", "tier": 2, "atk": 4, "hp": 5, "kw": ["sprawl"], "text": "防摔" },
  "padman": { "name": "踢靶教練", "school": "kick", "tier": 2, "atk": 1, "hp": 3, "fx": [{ "when": "play", "do": "buff", "to": "school", "school": "kick", "atk": 1, "hp": 1 }], "text": "上場：其他踢 +1/+1" },
  "checkkick": { "name": "擋踢", "school": "def", "tier": 2, "atk": 2, "hp": 5, "kw": ["guard"], "text": "架擋" },
  "parry": { "name": "撥擋", "school": "def", "tier": 2, "atk": 2, "hp": 3, "fx": [{ "when": "play", "do": "grant", "to": "leftmost", "kw": "slip" }], "text": "上場：最左邊的牌得到閃躲" },

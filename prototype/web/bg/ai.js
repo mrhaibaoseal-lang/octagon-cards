@@ -72,12 +72,32 @@ export function shop(st, s, skill = st[s].f.ai?.skill ?? 1) {
   if (sh.gold >= cfg.reroll && sharp() && sh.offers.filter(Boolean).some((id) => offerWorth(st, s, id) >= 12)) { if (!sh.frozen) E.freeze(st, s); }
   if (sharp()) arrange(st, s);
 }
+/** Which card attacks which: the best trade it can see. Returns [attacker uid, target uid]. skill = chance it looks at all. */
+export function fight(st, o, skill = st[o.s].f.ai?.skill ?? 1) {
+  if (E.rand(st) >= skill) return [o.units[Math.floor(E.rand(st) * o.units.length)].uid, o.targets[Math.floor(E.rand(st) * o.targets.length)].uid];
+  const c = st.c, mine = c[o.s].filter((x) => x && x.hp > 0), tools = mine.some((x) => x.kw.ground || x.kw.sub);
+  let best = null;
+  for (const u of o.units) for (const t of o.targets) {
+    const dmg = E.power(st, u), back = u.kw.reach ? 0 : E.power(st, t);
+    const kills = !t.kw.slip && (dmg >= t.hp || (u.kw.sub && c.ground)), dies = !u.kw.slip && back >= u.hp;
+    let v = t.kw.slip ? 4 - u.atk : kills ? 8 + 2 * t.atk + t.hp : Math.min(dmg, t.hp);
+    v -= dies ? 5 + u.atk + u.hp : back * 0.5;
+    if (u.kw.takedown && (!c.ground || c.ground.top !== o.s)) v += tools ? 5 : 2;
+    if (u.kw.combo) v += 1;
+    if (u.kw.getup && c.ground && c.ground.top !== o.s) v += 4;
+    if (!c.ground && t.kw.takedown) v += kills ? 4 : st.cfg.ground.catch.includes(E.defOf(st, u).school) ? -8 : 0; // stop the shot before it comes; a kick he survives gets caught
+    if (!best || v > best[0]) best = [v, u.uid, t.uid];
+  }
+  return [best[1], best[2]];
+}
 export function cornerPick(st, s) { return st[s].hp <= st.cfg.hp - st.cfg.corner.heal - 3 ? "heal" : "discover"; }
 
 export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {} };
+/** How side a fights in the simulation: sharp picks its trades like the AI at full skill; blind takes the leftmost card and a random target. */
+export const fighters = { sharp: (st, o) => fight(st, o, o.s === "a" ? 1 : undefined), blind: (st, o) => (o.s === "a" ? null : fight(st, o)) };
 
 /** A whole bout: side a shops with `shopper`, side b with its own AI; timing(st, p) grades each timing bar. */
-export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss") {
+export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp) {
   const st = E.createGame(data, aId, bId, seed);
   let guard = 0;
   while (!st.over && guard++ < 60) {
@@ -85,7 +105,7 @@ export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing =
     if (st.a.discover && shopper === shoppers.none) E.pick(st, "a", 0);
     shopper(st);
     shop(st, "b");
-    if (!E.playClash(st, timing)) break;
+    if (!E.playClash(st, timing, pick)) break;
   }
   return st;
 }

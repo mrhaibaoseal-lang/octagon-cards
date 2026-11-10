@@ -1,14 +1,14 @@
 // One-on-one board battler simulation: same engine, cards and opponent AI as bg.html. node prototype/web/bg/sim.js [bouts per cell]
 import { loadData } from "./load.node.js";
-import { shoppers, runGame } from "./ai.js";
+import { shoppers, fighters, runGame } from "./ai.js";
 
 const data = loadData(), N = Number(process.argv[2]) || 200, ids = Object.keys(data.fighters);
 const pc = (x) => `${Math.round(x * 100)}%`.padStart(5);
 const pairs = ids.flatMap((a) => ids.filter((b) => b !== a).map((b) => [a, b]));
-function cell(a, b, shop, timing) {
+function cell(a, b, shop, timing, pick) {
   const r = { w: 0, ko: 0, koBy: 0, turns: 0, early: 0 };
   for (let i = 0; i < N; i++) {
-    const st = runGame(data, a, b, 300 + i * 7919, shop, timing), o = st.over;
+    const st = runGame(data, a, b, 300 + i * 7919, shop, timing, pick), o = st.over;
     if (!o) continue;
     r.turns += st.turn / N;
     if (o.how === "KO" && o.round <= 2) r.early += 1 / N;
@@ -16,7 +16,7 @@ function cell(a, b, shop, timing) {
   }
   return r;
 }
-console.log(`一對一戰場模擬：每格 ${N} 場；對手用自己的商店 AI。\n\n一、你這邊各種逛法的勝率（時機條全部失敗）`);
+console.log(`一對一戰場模擬：每格 ${N} 場；對手用自己的商店 AI 與出手 AI，你這邊預設用同一個出手 AI（滿分）。\n\n一、你這邊各種逛法的勝率（時機條全部失敗）`);
 console.log("逛法      " + pairs.map(([a, b]) => `${a.slice(0, 3)}>${b.slice(0, 3)}`.padStart(8)).join("") + "    平均    KO  被KO  前兩回合KO  平均段數");
 const avg = {}, extra = {};
 for (const [name, shop] of Object.entries(shoppers)) {
@@ -25,6 +25,9 @@ for (const [name, shop] of Object.entries(shoppers)) {
   avg[name] = s.w; extra[name] = s;
   console.log(`${row}   ${pc(s.w)} ${pc(s.ko)} ${pc(s.koBy)}      ${pc(s.early)}     ${s.turns.toFixed(1)}`);
 }
+let blind = 0;
+for (const [a, b] of pairs) blind += cell(a, b, shoppers.smart, undefined, fighters.blind).w / pairs.length;
+console.log(`\n同樣認真逛，但出手不挑（最左邊的牌、隨機目標）　${pc(blind)}`);
 console.log("\n二、時機條（smart 逛法）");
 const tm = {};
 for (const g of ["miss", "good", "perfect"]) { let w = 0; for (const [a, b] of pairs) w += cell(a, b, shoppers.smart, () => g).w / pairs.length; tm[g] = w; console.log(`${{ miss: "全部失敗", good: "全部按到好", perfect: "全部完美" }[g]}　${pc(w)}`); }
@@ -42,6 +45,7 @@ console.log("\n四、檢查");
 const checks = [
   ["認真逛（smart）對上對手 AI 的勝率在 50%～75%", avg.smart >= 0.5 && avg.smart <= 0.75],
   ["亂買（random）比 smart 低至少 15 個百分點：買什麼有差", avg.smart - avg.random >= 0.15],
+  ["出手不挑比自己挑目標低至少 8 個百分點：戰鬥中的選擇有差", avg.smart - blind >= 0.08],
   ["完全不買（none）勝率 < 5%", avg.none < 0.05],
   ["前兩回合就被 KO 的比例 < 5%：不會一開始就倒", extra.smart.early < 0.05 && extra.random.early < 0.05],
   ["平均打超過 10 段：商店用得到", extra.smart.turns >= 10],
