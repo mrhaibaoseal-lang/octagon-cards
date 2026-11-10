@@ -43,7 +43,9 @@ for (const a of ids) {
 
 console.log("\n三、通過條件");
 const checks = [
-  ["會讀意圖的打法（smart）勝率最高", summary.smart > Math.max(summary.allout, summary.turtle, summary.random)],
+  ["會讀意圖的打法（smart）勝率最高", Object.entries(summary).every(([k, v]) => k === "smart" || summary.smart > v)],
+  ["完全不防守（nodef）比 smart 低至少 8 個百分點：防守有用", summary.smart - summary.nodef >= 0.08],
+  ["不用步法、只會貼上去（nomove）比 smart 低至少 8 個百分點：移動有用", summary.smart - summary.nomove >= 0.08],
   ["亂出牌（random）勝率 < 35%", summary.random < 0.35],
   ["只防守（turtle）勝率 < 35%", summary.turtle < 0.35],
   ["無腦全攻（allout）勝率低於 smart 至少 10 個百分點", summary.smart - summary.allout >= 0.1],

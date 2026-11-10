@@ -53,7 +53,7 @@ export function createBout(data, aId, bId, seed = 1) {
     const f = data.fighters[id];
     st[s] = {
       id, f, gas: f.gas, gasMax: f.gas, chin: f.chin, stun: 0, bodyDmg: 0, bodyLoss: 0, legDmg: 0,
-      energy: 0, throttled: 0, draw: shuffle(st, [...f.deck]), discard: [], hand: [], readPts: 0,
+      energy: 0, throttled: 0, steps: 0, counter: false, window: false, backed: false, backedLast: false, draw: shuffle(st, [...f.deck]), discard: [], hand: [], readPts: 0,
       rocked: null, openUntil: -1, def: {}, seq: newSeq(), score: 0, dealtEx: 0,
       hist: { head: 0, body: 0, legs: 0, td: 0, def: 0, n: 0 },
       stats: { dmg: 0, td: 0, tdTry: 0, rocked: 0, clean: 0, landed: 0 },
@@ -75,7 +75,15 @@ export function readLevel(st, s) {
   for (let i = 0; i < lv.length; i++) if (st[s].readPts >= lv[i]) n = i;
   return n;
 }
-export const cost = (st, s, d) => d.cost + (d.kind === "move" && legStacks(st, s) >= st.cfg.legs.moveStacks ? 1 : 0);
+/** Energy price. The first footwork step of an exchange is free; hurt legs make every step dearer. */
+export function cost(st, s, d, steps = st[s].steps) {
+  let c = d.cost;
+  if (d.kind === "move") {
+    if (d.basic && steps < (st.cfg.freeStep || 0)) c = 0;
+    if (legStacks(st, s) >= st.cfg.legs.moveStacks) c += 1;
+  }
+  return c;
+}
 const powerMul = (st, s) => (legStacks(st, s) >= st.cfg.legs.powerStacks ? st.cfg.legs.power : 1);
 
 /** Can side s do d right now (ignoring energy)? why: scene | range | cage | done */
@@ -160,6 +168,12 @@ function setOpen(st, s) {
   st[s].openUntil = s === "b" && st.turn === "b" ? st.tick + 1 : st.tick;
   ev(st, "open", { s });
 }
+/** Side s answered an attack (slip, check, sprawl, or made it fall short): next exchange it has more energy. */
+function earn(st, s) {
+  if (st[s].counter) return;
+  st[s].counter = true;
+  ev(st, "window", { s });
+}
 function finish(st, winner, how) {
   if (st.over) return;
   st.over = { winner, how, round: st.round, ex: st.ex };
@@ -173,7 +187,8 @@ function cancelIntent(st) {
 // ---------- flow ----------
 function drawTo(st, s) {
   const F = st[s];
-  while (F.hand.length < st.cfg.handSize) {
+  const size = st.cfg.handSize + (s === "b" ? st.cfg.leadHand || 0 : 0); // the leader commits blind, so he gets more to choose from
+  while (F.hand.length < size) {
     if (!F.draw.length) { if (!F.discard.length) break; F.draw = shuffle(st, F.discard); F.discard = []; }
     F.hand.push(F.draw.pop());
   }
@@ -188,7 +203,11 @@ export function beginExchange(st) {
     F.energy = F.rocked ? cfg.rock.energy : lowGas(st, s) ? cfg.lowGasEnergy : cfg.energy;
     if (O.rocked && !F.rocked) F.energy += cfg.rock.chase;
     if (s === "b") F.energy += cfg.leadEnergy || 0; // the leader shows his hand first, so he gets more to work with
-    F.throttled = 0; F.def = {}; F.seq = newSeq(); F.dealtEx = 0;
+    F.window = F.counter;
+    if (F.counter) F.energy += cfg.counter.energy;
+    F.counter = false;
+    F.backedLast = F.backed; F.backed = false;
+    F.throttled = 0; F.steps = 0; F.def = {}; F.seq = newSeq(); F.dealtEx = 0;
     drawTo(st, s);
   }
   st.phase = "play";
@@ -202,14 +221,21 @@ export function setIntent(st, intent) {
   B.gas = Math.max(0, B.gas - n * cfg.throttle.gas);
   B.energy += n * cfg.throttle.energy;
   B.throttled = n;
-  let total = 0;
+  let total = 0, steps = 0;
   for (const step of intent.steps) {
     const d = defOf(st, step.id);
-    total += cost(st, "b", d);
+    total += cost(st, "b", d, steps);
+    if (d.kind === "move" && d.basic) steps++;
     if (d.kind === "defence") { setDef(B, d); step.pre = true; }
     if (d.kind === "control") { B.def.control = true; step.held = true; }
   }
   B.energy = Math.max(0, B.energy - total);
+  // footwork the planner marked "pre" happens before a answers (he is already out of reach)
+  for (const step of intent.steps) {
+    const d = defOf(st, step.id);
+    if (d.kind !== "move" || !step.pre) continue;
+    if (usable(st, "b", d).ok) perform(st, "b", d); else step.pre = false;
+  }
 }
 
 /** What side a is allowed to know about b's intent at its read level. */
@@ -291,7 +317,8 @@ function perform(st, s, d) {
       const bit = (d.baits || []).filter((k) => D.def[k]);
       addRead(st, s, cfg.read.setup);
       ev(st, "feint", { s, id: d.id, bit });
-      for (const k of bit) { delete D.def[k]; if (k === "sprawl") setOpen(st, o); }
+      for (const k of bit) delete D.def[k];
+      if (bit.length) { A.energy += cfg.feint.refund; setOpen(st, o); } // he bit: he is open and the feint paid for itself
       break;
     }
     case "defence":
@@ -300,8 +327,9 @@ function perform(st, s, d) {
       break;
     case "move": {
       const dir = s === "a" ? 1 : -1;
-      if (d.move === "advance") { if (st.range === 0) st.range = 1; st.pos = clamp(st.pos + dir, -2, 2); addScore(st, s, cfg.score.advance); }
-      if (d.move === "retreat") { st.range = Math.max(0, st.range - 1); st.pos = clamp(st.pos - dir, -2, 2); addScore(st, s, cfg.score.retreat); }
+      if (d.move === "advance") { if (st.range === 0) st.range = 1; else st.pos = clamp(st.pos + dir, -2, 2); addScore(st, s, cfg.score.advance); }
+      if (d.move === "retreat") { st.range = Math.max(0, st.range - 1); st.pos = clamp(st.pos - dir, -2, 2); addScore(st, s, cfg.score.retreat); A.backed = true; }
+      if (d.basic) A.steps++;
       if (d.move === "circle") st.pos = clamp(st.pos + dir, -2, 2);
       if (d.move === "clinch") st.range = 2;
       ev(st, "move", { s, id: d.id });
@@ -341,6 +369,7 @@ function strikeOnce(st, s, d) {
     addRead(st, o, cfg.read.defence);
     ev(st, "slip", { s: o, id: d.id, by: c.id });
     damage(st, o, "head", c.counter * D.f.power, true, c);
+    if (!st.over) { setOpen(st, s); earn(st, o); }
     return;
   }
   if (d.region === "legs" && D.def.check) {
@@ -350,6 +379,7 @@ function strikeOnce(st, s, d) {
     A.legDmg += c.back;
     addRead(st, o, cfg.read.defence);
     ev(st, "check", { s: o, id: d.id, by: c.id });
+    setOpen(st, s); earn(st, o);
     return;
   }
   const bonus = A.seq.setup || (!!A.seq.last && A.seq.last !== d.region) || isOpen(st, o) || !!D.rocked;
@@ -418,7 +448,7 @@ function takedown(st, s, d) {
     addScore(st, o, cfg.score.sprawl);
     addRead(st, o, cfg.read.defence);
     ev(st, "sprawl", { s: o, id: d.id });
-    setOpen(st, s);
+    setOpen(st, s); earn(st, o);
     return;
   }
   const p = tdChance(st, s, d), ok = rand(st) < p;
@@ -443,11 +473,14 @@ export function endExchange(st) {
       if (step.pre) continue;
       const d = defOf(st, step.id), before = st.ground;
       if (step.held) delete B.def.control; // it was standing while a played; now it scores
-      if (!usable(st, "b", d).ok) {
+      const u = usable(st, "b", d);
+      if (!u.ok) {
         if (d.kind === "strike" || d.kind === "takedown") {
           B.gas = Math.max(0, B.gas - 1);
           ev(st, "whiff", { s: "b", id: d.id });
-          if (d.finisher) setOpen(st, "b");
+          // he swung at air: a has the counter next exchange
+          if (u.why === "range") { if (!it.whiffed) setOpen(st, "b"); it.whiffed = true; earn(st, "a"); }
+          else if (d.finisher) setOpen(st, "b");
         }
         continue;
       }
@@ -490,7 +523,7 @@ function endRound(st) {
   const card = d > 0.001 ? { a: 10, b: big ? 8 : 9 } : d < -0.001 ? { a: big ? 8 : 9, b: 10 } : { a: 10, b: 10 };
   card.pts = { a: r1(st.a.score), b: r1(st.b.score) };
   st.rounds.push(card);
-  for (const s of SIDES) { if (st[s].rocked) recover(st, s); st[s].score = 0; }
+  for (const s of SIDES) { if (st[s].rocked) recover(st, s); st[s].score = 0; st[s].counter = false; st[s].backed = false; }
   st.ground = null; st.range = 0; st.pos = 0; st.intent = null;
   ev(st, "roundend", { card });
   if (st.round >= cfg.rounds) {

@@ -100,6 +100,69 @@ test("stepping back makes short-range plans whiff", () => {
   assert.equal(evs(st, "hit").length, 0);
 });
 
+test("footwork: the first step of an exchange is free, the next one costs energy", () => {
+  const st = fresh();
+  st.range = 1;
+  intent(st, []);
+  const e = st.a.energy;
+  assert.equal(E.cost(st, "a", data.config.basics.retreat), 0);
+  play(st, "retreat");
+  assert.equal(st.a.energy, e);
+  assert.equal(E.cost(st, "a", data.config.basics.advance), data.config.basics.advance.cost);
+  play(st, "advance");
+  assert.equal(st.a.energy, e - data.config.basics.advance.cost);
+});
+
+test("making him swing at air opens him up and gives the counter: more energy next exchange", () => {
+  const st = fresh();
+  st.range = 1;
+  intent(st, ["cross", "hook"]);
+  give(st, "a", []);
+  play(st, "retreat");
+  E.endExchange(st);
+  assert.ok(E.isOpen(st, "b"), "he is open during the next exchange");
+  assert.equal(st.a.window, true);
+  assert.equal(st.a.energy, data.config.energy + data.config.counter.energy);
+});
+
+test("a plan that walks forward first is not escaped by a step back", () => {
+  const st = fresh();
+  st.range = 1;
+  intent(st, ["advance", "cross"], "pressure");
+  give(st, "a", []);
+  play(st, "retreat");
+  E.endExchange(st);
+  assert.equal(evs(st, "whiff").length, 0);
+  assert.equal(st.a.window, false);
+});
+
+test("a feint that is bitten opens him and pays for itself; a slipped punch opens the puncher", () => {
+  let st = fresh();
+  st.range = 1;
+  intent(st, ["slip"], "counter");
+  give(st, "a", ["cross"]);
+  const e = st.a.energy;
+  play(st, "probe");
+  assert.equal(st.a.energy, e - data.config.basics.probe.cost + data.config.feint.refund);
+  assert.ok(E.isOpen(st, "b"));
+
+  st = fresh();
+  st.range = 1;
+  intent(st, ["slip", "jab"], "counter");
+  give(st, "a", ["cross"]);
+  play(st, "cross");
+  assert.ok(E.isOpen(st, "a"), "a walked onto the counter and is open for his plan");
+  assert.equal(st.b.counter, true);
+});
+
+test("an out-fighting plan steps out of the pocket before the answer", () => {
+  const st = fresh();
+  st.range = 1;
+  E.setIntent(st, { cat: "outfight", steps: [{ id: "retreat", pre: true }, { id: "jab" }], cats: { outfight: 1 }, focus: "head", throttle: 0, habits: [] });
+  assert.equal(st.range, 0);
+  assert.equal(E.usable(st, "a", data.cards.cross).ok, false);
+});
+
 test("setup and level change raise the clean chance; the numbers on the card are the engine's", () => {
   const st = fresh();
   st.range = 1;

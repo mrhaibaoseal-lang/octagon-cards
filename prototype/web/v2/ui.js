@@ -12,7 +12,7 @@ const $ = (s) => document.querySelector(s);
 const pct = (x) => `${Math.round(x * 100)}%`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-const CAT = { strike: "打擊", takedown: "抱摔", counter: "防守反擊", move: "走位", gnp: "地面打擊", control: "壓制", getup: "起身", cover: "護住", survive: "求生", chase: "追擊" };
+const CAT = { strike: "打擊", takedown: "抱摔", pressure: "前壓進攻", counter: "防守反擊", outfight: "拉開遊走", gnp: "地面打擊", control: "壓制", getup: "起身", cover: "護住", survive: "求生", chase: "追擊" };
 const REGION = { head: "頭", body: "身體", legs: "腿" };
 const RANGE = ["遠距", "近距", "抱纏"];
 const RSHORT = ["遠", "近", "纏"];
@@ -56,7 +56,6 @@ function startScreen() {
 function start() {
   const seed = Number(params.get("seed")) || (Date.now() % 2147483647);
   st = E.createBout(data, choice.a, choice.b, seed);
-  lead(st);
   busy = false;
   frame.innerHTML = `
     <div id="top"><div class="side l" id="sa"></div><div id="mid"></div><div class="side r" id="sb"></div></div>
@@ -71,7 +70,16 @@ function start() {
   $("#throttle").onclick = () => doAct({ type: "throttle" });
   $("#end").onclick = endTurn;
   logLine(`第 1 回合開始。${st.b.f.short} 的習慣你還不熟，先看傾向。`, "sep");
+  leadShow();
   render();
+}
+
+/** He commits his plan; anything he does up front (stepping out of the pocket) is shown at once. */
+function leadShow() {
+  const from = st.log.length;
+  lead(st);
+  for (const e of st.log.slice(from)) show(e);
+  if (st.a.window) logLine(`反擊時機：你這一段多 ${st.cfg.counter.energy} 點氣`, "big");
 }
 
 function help() {
@@ -83,7 +91,9 @@ function help() {
   <p><b>看穿度</b>：Lv0 只看到他各種計畫的真實機率；Lv1 知道這一段是哪一類、主攻哪裡；Lv2 看到每一張牌。每撐過一段 +${c.read.perExchange}，起手牌碰到 +${c.read.setup}，防守成功 +${c.read.defence}。</p>
   <p><b>氣與體力</b>：每段 ${c.energy} 點氣（對手先亮牌所以多 ${c.leadEnergy} 點）。沒用完的氣每點回 1 體力，全用完扣 ${c.gasFullCost}。催油門：體力 −${c.throttle.gas} 換 +${c.throttle.energy} 氣，一段最多 ${c.throttle.max} 次。體力低於 ${pct(c.lowGasFrac)} 時只剩 ${c.lowGasEnergy} 點氣、打實率 ${pct(c.hit.tired)}。</p>
   <p><b>連段</b>：起手牌（刺拳、假動作）之後下一張打實 +${pct(c.hit.setup)}；換攻擊部位 +${pct(c.hit.levelChange)}。終結技沒鋪墊又沒打實會<b>露破綻</b>（他對你打實 +${pct(c.hit.open)}）。</p>
-  <p><b>防守</b>：架擋擋 2 記（頭不會被打實）；閃躲躲掉一記頭部拳並反擊；擋踢讓他的腿反吃傷害；壓趴讓抱摔必敗；後撤讓近距離的招打空。</p>
+  <p><b>步法</b>：每段<b>第一步免費</b>（前壓／後撤／側移），第二步起花氣。打完後撤，他近距離的招會<b>揮空</b>；但他的計畫若有「前壓」（前壓進攻、抱摔）就追得上，白退還更靠近籠邊。背貼籠邊的人被打實 +${pct(c.hit.cage)}、不能後撤。</p>
+  <p><b>防守與反擊</b>：架擋擋 2 記（頭不會被打實）；閃躲躲掉一記頭部拳並反擊；擋踢讓他的腿反吃傷害；壓趴讓抱摔必敗。閃躲／擋踢／壓趴成功，或讓他揮空：<b>他露破綻（你打實 +${pct(c.hit.open)}、不會打空），你下一段 +${c.counter.energy} 氣</b>。他對你也一樣：你打進他準備好的防守，他這段的計畫就打得更準。</p>
+  <p><b>假動作</b>：騙到他準備的閃躲／擋踢（假抱腿騙壓趴）：防守作廢、他露破綻、退回 ${c.feint.refund} 氣。看到「有準備防守」卻不知道是哪種時先晃一下。架擋騙不掉，改打身體或腿。</p>
   <p><b>傷害</b>：頭→暈眩，滿了就<b>被打晃</b>（對手下一段 +${c.rock.chase} 氣，再吃 ${c.rock.hp} 傷害就 TKO）；身體→每 ${c.body.perGas} 傷害扣 1 體力上限；腿→每 ${c.legs.perStack} 傷害一層（${c.legs.moveStacks} 層移動變貴，${c.legs.powerStacks} 層出手變弱）。</p>
   <p><b>判分</b>：每回合看上方分數條，高的拿 10-9（差 ${c.score.big} 以上 10-8），最後一段分數 ×${c.score.lastMul}。</p>
   <button class="go">知道了</button></div>`;
@@ -107,6 +117,7 @@ function gauges(sn) {
     if (low) chips.push(`<span class="chip warn">沒體力</span>`);
     if (g.body >= 1) chips.push(`<span class="chip">身體 ${Math.round(g.body)}</span>`);
     if (stacks) chips.push(`<span class="chip ${stacks >= st.cfg.legs.moveStacks ? "warn" : ""}">腿 ${stacks} 層</span>`);
+    if (F.window && st.turn === "a") chips.push(`<span class="chip hot">反擊 +${st.cfg.counter.energy} 氣</span>`);
     if (s === "a") for (const k of Object.keys(F.def)) if (F.def[k] && F.def[k].name) chips.push(`<span class="chip hot">${esc(F.def[k].name)}${k === "guard" ? "×" + F.block : ""}</span>`);
     $("#s" + s).innerHTML = `
       <div class="row"><span class="nm">${s === "a" ? "你" : "對手"}<small>${esc(F.f.short)}</small></span>${chips.join("")}</div>
@@ -145,9 +156,10 @@ function drawIntent() {
     h += `<div class="plan">${CAT[v.cat] || v.cat}${v.focus ? `<small>主攻${REGION[v.focus]}</small>` : ""}${v.throttle ? `<small>催了油門</small>` : ""}</div><div class="steps">`;
     st.intent.steps.forEach((x) => {
       const d = E.defOf(st, x.id);
-      const pre = x.pre || x.held, gone = x.pre && !st.b.def[d.def];
+      const stepped = x.pre && d.kind === "move";
+      const pre = x.pre || x.held, gone = x.pre && !stepped && !st.b.def[d.def];
       const whiff = !pre && !E.usable(st, "b", d).ok;
-      h += `<span class="step ${d.region || ""} ${pre ? "pre" : ""} ${whiff || gone ? "whiff" : ""}">${esc(d.name)}${pre ? (gone ? "（已破）" : "（已就位）") : whiff ? "（夠不到）" : ""}</span>`;
+      h += `<span class="step ${d.region || ""} ${pre ? "pre" : ""} ${whiff || gone ? "whiff" : ""}">${esc(d.name)}${stepped ? "（已拉開）" : pre ? (gone ? "（已破）" : "（已就位）") : whiff ? "（夠不到）" : ""}</span>`;
     });
     h += `</div>`;
     if (v.habits.length) h += `<div class="note">習慣：<b>${v.habits.map(esc).join("；")}</b></div>`;
@@ -155,7 +167,8 @@ function drawIntent() {
     h += `<div class="plan">${CAT[v.cat] || v.cat}${v.focus ? `<small>主攻${REGION[v.focus]}</small>` : ""}</div>`;
     const bits = [];
     if (v.forced) bits.push(v.cat === "survive" ? "他被打晃，只能求生" : "你被打晃，他全力追擊");
-    if (v.advance) bits.push("會前壓");
+    if (v.advance) bits.push("<b>會前壓</b>（後撤躲不掉）");
+    else if (st.range >= 1 && (v.cat === "strike" || v.cat === "counter")) bits.push("不會追（後撤可能讓他揮空）");
     if (v.hasDef) bits.push("<b>有準備防守</b>（哪一種還看不出來）");
     h += `<div class="note">${bits.join("・") || "看不出更多細節"}</div><div class="note">看穿 Lv2 才看得到每一張牌。</div>`;
   } else {
@@ -207,6 +220,7 @@ function render() {
   const seq = [];
   if (A.seq.setup) seq.push(`起手 +${pct(st.cfg.hit.setup)}`);
   if (A.seq.last) seq.push(`剛打${REGION[A.seq.last]}，換部位 +${pct(st.cfg.hit.levelChange)}`);
+  if (sc === "stand") seq.push(A.steps < st.cfg.freeStep ? "免費一步還沒用" : "免費一步已用");
   $("#seq").textContent = seq.join("｜");
   const th = $("#throttle");
   th.classList.toggle("off", !lm.has("t"));
@@ -243,7 +257,7 @@ function show(e) {
     case "whiff": logLine(`${who(e.s)} ${n}：夠不到，揮空了`, "big"); float(e.s, "揮空", "info"); break;
     case "slip": logLine(`${who(e.s)} 閃掉 ${n} 並反擊！`, "big"); float(e.s, "閃躲反擊", "info"); break;
     case "check": logLine(`${who(e.s)} 擋下 ${n}，踢的人腿反而受傷`, "big"); float(e.s, "擋踢", "info"); break;
-    case "feint": logLine(`${who(e.s)} ${n}${e.bit.length ? "：騙掉了" + e.bit.map((k) => ({ slip: "閃躲", check: "擋踢", sprawl: "壓趴" })[k]).join("、") + "！" : ""}`, e.bit.length ? "big" : e.s); if (e.bit.length) float(o, "被騙", "bad"); break;
+    case "feint": logLine(`${who(e.s)} ${n}${e.bit.length ? "：騙掉了" + e.bit.map((k) => ({ slip: "閃躲", check: "擋踢", sprawl: "壓趴" })[k]).join("、") + `！退回 ${st.cfg.feint.refund} 氣` : ""}`, e.bit.length ? "big" : e.s); if (e.bit.length) float(o, "被騙", "bad"); break;
     case "defence": logLine(`${who(e.s)} 準備${n}`, e.s); break;
     case "move": logLine(`${who(e.s)} ${n}`, e.s); break;
     case "takedown": logLine(`${who(e.s)} ${n}（${pct(e.p)}）：${e.ok ? "成功，進地面上位" : "被擋下"}`, e.ok ? "big" : e.s); float(e.s, e.ok ? "抱摔成功" : "抱摔失敗", e.ok ? "info" : "graze"); break;
@@ -255,6 +269,7 @@ function show(e) {
     case "refstand": logLine("地面沒有進展，裁判叫起", "big"); break;
     case "rocked": logLine(`${who(e.s)} 被打晃了！`, "big"); float(e.s, "打晃！", "clean"); break;
     case "recover": logLine(`${who(e.s)} 撐過來了（下巴變弱）`, e.s); break;
+    case "window": if (e.s === "b") logLine(`${who(e.s)} 抓到反擊時機：他下一段多 ${st.cfg.counter.energy} 點氣`, "big"); else float("a", "反擊時機", "info"); return e.s === "b";
     case "open": logLine(`${who(e.s)} 露出破綻`, "big"); float(e.s, "破綻", "bad"); break;
     case "throttle": logLine(`${who(e.s)} 催油門`, e.s); break;
     case "struggle": logLine(`${who(e.s)} 掙扎（丟掉 ${n}）`, e.s); break;
@@ -289,7 +304,7 @@ async function endTurn() {
   busy = false;
   if (st.over) return finish();
   if (st.phase === "corner") return cornerScreen();
-  lead(st);
+  leadShow();
   render();
 }
 
@@ -308,7 +323,7 @@ function cornerScreen() {
     E.corner(st, mine, his);
     d.remove();
     logLine(`第 ${st.round} 回合開始。你選了${c.options[mine].name}，${st.b.f.short} 選了${c.options[his].name}。`, "sep");
-    lead(st);
+    leadShow();
     render();
   }));
   frame.appendChild(d);
