@@ -26,6 +26,44 @@ async function boot() {
   pickScreen();
 }
 
+// ---------- fighters on the stage ----------
+// Sprites come from assets/private (gitignored). Without them a plain coloured dummy stands in.
+const POSES = ["idle", "punch", "kick", "shoot", "hit", "down"], POSE_OF = { punch: "punch", kick: "kick", grap: "shoot", def: "punch" }, K = 0.62;
+const art = {}, poseT = {};
+let manifest = null;
+const loadImage = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+async function loadArt(ids) {
+  if (!manifest) { try { const r = await fetch("assets/private/manifest.json"); manifest = r.ok ? await r.json() : {}; } catch { manifest = {}; } }
+  await Promise.all(ids.map(async (id) => {
+    if (art[id]) return;
+    const meta = manifest.fighters?.[id], poses = {};
+    if (meta) await Promise.all(POSES.map(async (p) => { const img = await loadImage(`assets/private/${id}/${p}.png`); if (img) poses[p] = { src: img.src, w: img.naturalWidth, h: img.naturalHeight, ax: meta[p]?.anchorX ?? img.naturalWidth / 2 }; }));
+    art[id] = poses;
+  }));
+}
+/** Put side s in a pose; with ms it goes back to idle afterwards. */
+function pose(s, name, ms) {
+  const n = $("#f" + s);
+  if (!n) return;
+  clearTimeout(poseT[s]);
+  const set = art[st[s].id] || {}, p = set[name] || set.idle;
+  n.dataset.pose = name;
+  n.firstChild.innerHTML = p ? `<img src="${p.src}" style="width:${p.w * K}px;height:${p.h * K}px;left:${-p.ax * K}px">` : `<div class="dummy"><i></i></div>`;
+  if (ms) poseT[s] = setTimeout(() => pose(s, "idle"), ms / (speed || 1));
+}
+/** A fighter does something: attack (with the card's school), hit, slip, down. */
+function act(s, kind, school) {
+  const n = $("#f" + s);
+  if (!n) return;
+  if (kind === "down") return pose(s, "down");
+  if (speed === 0) return;
+  const move = (frames, ms) => n.firstChild.animate(frames, { duration: ms / speed, easing: "ease-out" });
+  if (kind === "attack") { pose(s, POSE_OF[school] || "punch", 380); move([{ transform: "translateX(-6px)" }, { transform: "translateX(30px)", offset: 0.4 }, { transform: "translateX(30px)", offset: 0.75 }, { transform: "none" }], 380); }
+  else if (kind === "hit") { pose(s, "hit", 320); move([{ transform: "none", filter: "brightness(2.2)" }, { transform: "translateX(-14px)", filter: "brightness(1)", offset: 0.35 }, { transform: "none" }], 320); }
+  else if (kind === "slip") move([{ transform: "none" }, { transform: "translateX(-20px) rotate(-10deg)", offset: 0.4 }, { transform: "none" }], 340);
+}
+function fighterPos(s) { return { x: s === "a" ? 366 : 478, y: 116 + 70 }; }
+
 // ---------- cards ----------
 /** One card. c = a board card / clash unit / { id } for a shop offer. o: small, cls, attr, note */
 function card(c, o = {}) {
@@ -52,7 +90,7 @@ function pickScreen() {
     <h3>對手</h3><div class="pick foe">${ids.map((id) => btn("b", id)).join("")}</div>
     <button class="go" id="go">進商店</button></div></div>`;
   frame.querySelectorAll(".pick button").forEach((b) => (b.onclick = () => { choice[b.dataset.s] = b.dataset.id; pickScreen(); }));
-  $("#go").onclick = () => { st = E.createGame(data, choice.a, choice.b, Number(params.get("seed")) || (Date.now() % 2147483647)); sel = null; shopScreen(); };
+  $("#go").onclick = async () => { await loadArt([choice.a, choice.b]); st = E.createGame(data, choice.a, choice.b, Number(params.get("seed")) || (Date.now() % 2147483647)); sel = null; shopScreen(); };
 }
 
 function hud(hp = { a: st.a.hp, b: st.b.hp }) {
@@ -78,7 +116,7 @@ function shopScreen(msg = "") {
   const shown = st.b.shown.some(Boolean);
   frame.innerHTML = `<div class="bgart shopbg"></div>${hud()}
     <div id="foe"><h4>${esc(st.b.f.short)} 上一段用的牌<small>${shown ? "他這一段新買的要開打才看得到" : "還沒交手過"}</small></h4><div class="row s">${shown ? st.b.shown.map((c) => (c ? card(c, { small: true }) : empty({ small: true }, "？"))).join("") : ""}</div></div>
-    <div id="store"><h4>商店<small>第 ${sh.tier} 級</small><span class="gold"><i></i>${sh.gold}</span></h4>
+    <div id="store"><h4>商店<small>第 ${sh.tier} 級</small><span class="coins"><i></i>${sh.gold}</span></h4>
       <div class="row">${offers}</div>
       <div class="acts"><button id="reroll" class="${sh.gold >= cfg.reroll ? "" : "no"}">重抽<small>${cfg.reroll} 金</small></button>
       <button id="freeze" class="${sh.frozen ? "on" : ""}">${sh.frozen ? "已凍結" : "凍結"}<small>留到下一段</small></button>
@@ -139,7 +177,8 @@ function float(at, text, cls) {
   frame.appendChild(f);
   setTimeout(() => f.remove(), 900);
 }
-function say(text, cls = "", small = "") { const b = $("#say"); if (b) b.innerHTML = `<small>${esc(small)}</small><b class="${cls}">${esc(text)}</b>`; }
+function say(text, cls = "", small = "") { const b = $("#say"), c = $("#cap"); if (b) b.innerHTML = `<b class="${cls}">${esc(text)}</b>`; if (c) c.textContent = small; }
+const unitOf = (v, uid) => { for (const s of ["a", "b"]) for (const u of v[s]) if (u && u.uid === uid) return u; return null; };
 const nameOf = (v, uid) => { for (const s of ["a", "b"]) for (const u of v[s]) if (u && u.uid === uid) return data.skills[u.id].name; return ""; };
 const sideOf = (v, uid) => (v.a.some((u) => u && u.uid === uid) ? "a" : "b");
 
@@ -151,23 +190,24 @@ async function showEvent(e, prev) {
       const from = e.from ? el(e.from) : null;
       if (from) { from.classList.add("cast"); }
       rows(e.view);
-      if (e.to) float(el(e.to) && pos(el(e.to)), e.dmg ? `−${e.dmg}` : "閃開", "dmg");
+      if (e.to) { float(el(e.to) && pos(el(e.to)), e.dmg ? `−${e.dmg}` : "閃開", "dmg"); act(sideOf(e.view, e.to), e.dmg ? "hit" : "slip"); }
       for (const uid of e.buff || []) float(el(uid) && pos(el(uid)), "強化", "buff");
       return 260;
     }
     case "attack": {
-      const a = el(e.from), t = el(e.to);
+      const a = el(e.from), t = el(e.to), u = unitOf(prev, e.from);
+      act(e.s, "attack", u && data.skills[u.id].school);
       if (a && t && speed !== 0) {
         const pa = pos(a), pt = pos(t);
         a.style.zIndex = 5;
-        await a.animate([{ transform: "none" }, { transform: `translate(${(pt.x - pa.x) * 0.8}px,${(pt.y - pa.y) * 0.72}px) scale(1.08)` }, { transform: "none" }], { duration: 300 / speed, easing: "ease-in-out" }).finished;
+        await a.animate([{ transform: "none" }, { transform: `translate(${(pt.x - pa.x) * 0.12}px,${(pt.y - pa.y) * 0.14}px) scale(1.1)`, filter: "brightness(1.5)" }, { transform: "none" }], { duration: 280 / speed, easing: "ease-in-out" }).finished;
         a.style.zIndex = "";
       }
       say(`${nameOf(prev, e.from)} → ${nameOf(prev, e.to)}`, e.s === "a" ? "good" : "bad", e.s === "a" ? "你出手" : "他出手");
       return 0;
     }
-    case "dmg": { const n = el(e.uid), p = n && pos(n); rows(e.view); float(p, `−${e.dmg}`, "dmg"); const m = el(e.uid); if (m) m.classList.add("shake"); return 150; }
-    case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); float(p, "閃開！", "buff"); return 220; }
+    case "dmg": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "hit"); float(p, `−${e.dmg}`, "dmg"); const m = el(e.uid); if (m) m.classList.add("shake"); return 150; }
+    case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "slip"); float(p, "閃開！", "buff"); return 220; }
     case "sub": float(el(e.uid) && pos(el(e.uid)), "降伏！", "dmg"); return 200;
     case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "攻擊下降", "dmg"); return 160;
     case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 160;
@@ -177,7 +217,7 @@ async function showEvent(e, prev) {
     case "clashend": {
       setHp(e.hp);
       const o = e.s ? E.other(e.s) : null;
-      if (e.s) { $("#hud" + o).classList.add("hurt"); say(e.s === "a" ? `這一段你贏了：他耐久 −${e.dmg}` : `這一段他贏了：你耐久 −${e.dmg}`, e.s === "a" ? "good" : "bad", "剩下的牌打在選手身上"); }
+      if (e.s) { $("#hud" + o).classList.add("hurt"); act(e.s, "attack", "punch"); act(o, e.hp[o] <= 0 ? "down" : "hit"); float(fighterPos(o), `−${e.dmg}`, "dmg"); say(e.s === "a" ? `這一段你贏了：他耐久 −${e.dmg}` : `這一段他贏了：你耐久 −${e.dmg}`, e.s === "a" ? "good" : "bad", "剩下的牌打在選手身上"); }
       else say("這一段平手", "", "雙方的牌都打光了");
       return 1300;
     }
@@ -221,8 +261,9 @@ function qte(p) {
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
-    <div class="row" id="rowB"></div><div id="band"><div id="say"></div><div id="qte"></div></div><div class="row" id="rowA"></div>
-    <div id="foot"><button id="speed"></button><span class="msg"></span><button id="quit">重來</button></div>`;
+    <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
+    <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
+  pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
   const sp = $("#speed"), label = () => (sp.textContent = `速度 ×${speed || 1}`);
   sp.onclick = () => { speed = speed >= 3 ? 1 : speed + 1; label(); };
