@@ -316,11 +316,22 @@ function value(st, x, t, all) {
     case "control": return per(4);
     case "pass": return per(2);
     case "escape": return per(preview(st, "a", d).p * 12);
+    case "standup": return 0.1; // only ever chosen when a style asks for it
     default: return -1;
   }
 }
 
-/** The reading bot. o.noDef: never defends. o.noMove: footwork only to close the distance. */
+/** How much a style (rules/v2/tactics.json) wants this action: a multiplier on its value. */
+function lean(w, x) {
+  const d = x.d;
+  if (!w || !d) return 1;
+  if (d.kind === "strike") return (w.strike ?? 1) * (w[d.region] ?? 1);
+  if (d.kind === "takedown") return w.td ?? 1;
+  if (d.kind === "defence") return w.def ?? 1;
+  return w[d.kind] ?? 1; // control, escape, standup, pass, feint, move
+}
+
+/** The reading bot. o.noDef: never defends. o.noMove: footwork only to close the distance. o.style: tactic weights. */
 function smartPick(st, o = {}) {
   let all = legal(st);
   if (o.noDef) all = all.filter((x) => !(x.d && x.d.kind === "defence"));
@@ -328,12 +339,13 @@ function smartPick(st, o = {}) {
   if (!all.length) return null;
   const t = threat(st), pre = st.stage === "pre";
   if (pre && st.a.backed) return null; // stepped out: wait for him to fall short, then counter
-  t.out = o.noMove ? 0 : wantOut(st, t);
-  const tired = st.a.gas < st.a.f.gas * 0.45, bar = tired ? 3.2 : 1.2;
-  const score = all.map((x) => [x, x.d && x.d.move === "retreat" ? -1 : value(st, x, t, all)]);
+  const w = o.style || null;
+  t.out = o.noMove ? 0 : wantOut(st, t) * (w?.out ?? 1);
+  const tired = st.a.gas < st.a.f.gas * 0.45, bar = (tired ? 3.2 : 1.2) * (w?.thrift ?? 1);
+  const score = all.map((x) => { if (x.d && x.d.move === "retreat") return [x, -1]; const v = value(st, x, t, all); return [x, v > 0 ? v * lean(w, x) : v]; });
   // counter-fighting: if an answer is worth setting (or a step back is), keep the rest of the energy for after he has gone
   const answer = (x) => x.d && x.d.kind === "defence" && x.d.def !== "guard";
-  const hold = pre && !st.b.rocked && (t.out > 0 || Object.keys(st.a.def).some((k) => k !== "guard" && k !== "control") || score.some(([x, v]) => answer(x) && v >= 5));
+  const hold = w?.hold !== "never" && pre && !st.b.rocked && (w?.hold === "always" || t.out > 0 || Object.keys(st.a.def).some((k) => k !== "guard" && k !== "control") || score.some(([x, v]) => answer(x) && v >= 5));
   let best = null, bv = -Infinity, out = null;
   for (const [x, v] of score) {
     if (x.d && x.d.move === "retreat") { out = x; continue; }
@@ -344,6 +356,9 @@ function smartPick(st, o = {}) {
   if (out && t.out > 0 && (cost(st, "a", out.d) === 0 || t.out >= 7)) return out;
   return null;
 }
+
+/** A bot that plays side a the way a style says (used by the auto-bout mode and its simulation). */
+export const styleBot = (style) => (st) => smartPick(st, { style });
 
 export const bots = {
   smart: (st) => smartPick(st),

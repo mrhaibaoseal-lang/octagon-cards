@@ -1,0 +1,26 @@
+/* B 計畫（教練模式）：共用 v2.css 的上方量表、場地與覆蓋層，這裡只有下半部。 */
+#say>b.warn{color:var(--gold)}
+#restart{bottom:23px}
+#coach{position:absolute;left:6px;top:208px;width:214px;height:176px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+#coach small{font-size:11px;color:var(--dim)}
+#coach b{font-size:18px;line-height:1.3}
+#coach span{font-size:11.5px;color:var(--dim);line-height:1.4}
+#speed{margin-top:auto;align-self:flex-start;font-size:11px;background:#1d2533;border:1px solid var(--line);border-radius:6px;padding:3px 10px;color:var(--dim)}
+#feed{position:absolute;left:226px;right:6px;top:208px;height:176px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;overflow:hidden}
+#feed p{font-size:13px;color:var(--dim);line-height:1.55;white-space:nowrap}
+#feed p:last-child{color:var(--text);font-size:15px;font-weight:700}
+#feed p.good{color:#8fe3bf} #feed p.bad{color:#ff9d9b}
+#ask{position:absolute;left:226px;right:6px;top:208px;height:176px;display:flex;gap:8px}
+.opts{display:flex;gap:8px;margin-top:8px}
+.opt{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:left;display:flex;flex-direction:column;gap:4px}
+.opt:hover{border-color:var(--blue);background:#1d2a45}
+.opt.on{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
+.opt b{font-size:16px;line-height:1.3}
+.opt small{font-size:11.5px;color:var(--dim);line-height:1.4}
+.opt i{font-style:normal;font-size:11px;color:var(--gold);margin-top:auto}
+#ask .opt{border-color:#6a4d10;background:#221a08}
+#ask .opt:hover{border-color:var(--gold);background:#33270c}
+#ask .opt b{font-size:19px}
+.box.wide{width:760px}
+.go.ghost{background:none;border-color:var(--line);font-weight:400;font-size:12px;padding:5px 20px;margin-top:8px}
+[hidden]{display:none!important}

@@ -1,0 +1,29 @@
+{
+ "_doc": "B 計畫（自動對戰）。styles：一種打法＝對機器人各類行動價值的倍率（strike 打擊、head／body／legs 部位、td 抱摔、def 防守、out 後撤、control 壓制、escape 起身、standup 放他起來；hold：always 一定等他出手後才打／never 一定先打；thrift 出手門檻倍率，越低越捨得花體力）。needs：牌組裡要有這種牌才會出現。tactics：賽前與回合間可選的戰術。moments：關鍵時刻（when 條件新成立時暫停，options 三選一；keep＝照原本的戰術），選的指令在條件消失前有效。closeGap：最後一段雙方分數差多少以內算接近。 boost：這個打法每段多耗 gas 體力、換 energy 氣（體力不夠就沒有）。",
+ "closeGap": 3,
+ "tactics": ["body","counter","pressure","wrestle"],
+ "styles": {
+  "body": {"name":"打身體耗他","text":"他的體力上限會掉，越後面越沒氣","w":{"body":2.2,"legs":1.2,"head":0.6}},
+  "counter": {"name":"等他出手再反擊","text":"少挨打，但出手也少","w":{"def":1.6,"out":1.5,"strike":0.6,"hold":"always"}},
+  "pressure": {"name":"壓上去對轟","text":"每段多出一招，拚早點終結","w":{"strike":1.4,"head":1.2,"def":0.8,"out":0,"hold":"never","thrift":0.6},"boost":{"gas":2,"energy":1}},
+  "wrestle": {"name":"摔倒他壓著打","text":"靠抱摔和壓制拿分","w":{"td":4,"control":1.5,"strike":0.8},"needs":"takedown"},
+  "finish": {"name":"衝上去終結","text":"全力打頭，拚現在結束","w":{"strike":1.6,"head":1.6,"def":0.5,"out":0,"hold":"never","thrift":0.2},"boost":{"gas":4,"energy":2}},
+  "hold": {"name":"抱摔壓住他","text":"把時間耗在地上","w":{"td":6,"control":3,"strike":0.5},"needs":"takedown"},
+  "cover": {"name":"護頭撐過去","text":"先活下來再說","w":{"def":3,"out":3,"strike":0.3,"hold":"always"}},
+  "brawl": {"name":"拚了對轟","text":"賭他先倒","w":{"strike":1.6,"head":1.5,"def":0,"out":0,"hold":"never","thrift":0.2},"boost":{"gas":4,"energy":2}},
+  "gnp": {"name":"砸他","text":"拚終結，他比較容易起身","w":{"strike":2,"control":0.3},"boost":{"gas":2,"energy":1}},
+  "ride": {"name":"壓制拿分","text":"穩穩拿分、耗他體力","w":{"control":3,"strike":0.6}},
+  "letup": {"name":"放他起來","text":"回到站立","w":{"standup":200,"strike":0,"control":0}},
+  "getup": {"name":"全力起身","text":"把氣都用在站起來","w":{"escape":3,"def":0.5},"boost":{"gas":3,"energy":2}},
+  "wait": {"name":"護頭等機會","text":"少挨打，等裁判叫起","w":{"def":3,"escape":0.4}},
+  "steal": {"name":"搶分","text":"最後一段多出手","w":{"strike":1.4,"def":1,"out":0,"hold":"auto","thrift":0.6},"boost":{"gas":3,"energy":2}},
+  "protect": {"name":"守住","text":"別在最後出事","w":{"def":2,"out":2,"strike":0.7,"hold":"always"}}
+ },
+ "moments": [
+  {"when":"aRocked","title":"你被打晃了","options":["cover","brawl","hold"]},
+  {"when":"bRocked","title":"他被打晃了","options":["finish","keep","hold"]},
+  {"when":"aTop","title":"你把他壓在地上","options":["gnp","ride","letup"]},
+  {"when":"aBottom","title":"你被壓在地上","options":["getup","wait"]},
+  {"when":"closeLast","title":"最後一段，分數很接近","options":["steal","protect","keep"]}
+ ]
+}

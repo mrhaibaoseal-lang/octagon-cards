@@ -293,6 +293,15 @@ export function answers(st) {
   };
 }
 
+/** Dig deep: side s burns gas for extra energy this exchange (b = { gas, energy }). False if the tank cannot pay. */
+export function dig(st, s, b) {
+  const F = st[s];
+  if (!b || F.gas < b.gas) return false;
+  F.gas -= b.gas; F.energy += b.energy;
+  ev(st, "dig", { s });
+  return true;
+}
+
 export function canThrottle(st, s = "a") {
   const t = st.cfg.throttle;
   return st[s].throttled < t.max && st[s].gas >= t.gas;

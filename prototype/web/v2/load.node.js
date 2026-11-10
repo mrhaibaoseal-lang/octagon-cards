@@ -6,5 +6,5 @@ const read = (n) => JSON.parse(readFileSync(new URL(`../rules/v2/${n}.json`, imp
 const strip = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith("_")));
 
 export function loadData() {
-  return prepare({ config: read("config"), cards: strip(read("cards")), fighters: strip(read("fighters")) });
+  return prepare({ config: read("config"), cards: strip(read("cards")), fighters: strip(read("fighters")), tactics: read("tactics") });
 }

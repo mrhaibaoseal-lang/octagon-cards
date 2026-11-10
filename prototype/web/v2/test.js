@@ -357,3 +357,48 @@ test("the engine never looks at card names", () => {
   for (const id of Object.keys(data.cards).filter((x) => !words.has(x))) assert.ok(!new RegExp(`["'\`]${id}["'\`]`).test(src), `engine mentions card "${id}"`);
   for (const id of Object.keys(data.fighters)) assert.ok(!src.includes(`"${id}"`), `engine mentions fighter "${id}"`);
 });
+
+// ---------- plan B: the auto bout ----------
+import * as Auto from "./auto.js";
+
+test("auto bout: same seed and tactic give the same fight, and every fight ends", () => {
+  for (const t of data.tactics.tactics) {
+    if (!Auto.offered(data, "makhachev", t)) continue;
+    const a = Auto.runAuto(data, "makhachev", "poirier", 9, t), b = Auto.runAuto(data, "makhachev", "poirier", 9, t);
+    assert.ok(a.st.over);
+    assert.deepEqual(a.st.over, b.st.over);
+    assert.equal(a.st.log.length, b.st.log.length);
+  }
+});
+
+test("auto bout: every tactic and moment option is a real style; card-gated ones are only offered with the card", () => {
+  const S = data.tactics.styles;
+  for (const t of data.tactics.tactics) assert.ok(S[t], t);
+  for (const m of data.tactics.moments) for (const o of m.options) assert.ok(o === "keep" || S[o], o);
+  assert.equal(Auto.offered(data, "poirier", "wrestle"), false);
+  assert.equal(Auto.offered(data, "makhachev", "wrestle"), true);
+});
+
+test("auto bout: a key moment is asked once when it comes up, and its order lasts only while it holds", () => {
+  const au = Auto.createAuto(data, "poirier", "holloway", 5, "body");
+  assert.equal(Auto.nextMoment(au), null);
+  au.st.b.rocked = { hp: 99, clearAt: au.st.tick + 1 };
+  const m = Auto.nextMoment(au);
+  assert.equal(m.when, "bRocked");
+  Auto.choose(au, m, "finish");
+  assert.equal(au.order.id, "finish");
+  assert.equal(Auto.nextMoment(au), null, "not asked twice for the same moment");
+  au.st.b.rocked = null;
+  Auto.nextMoment(au);
+  assert.equal(au.order, null, "back to the tactic");
+});
+
+test("auto bout: a boosted style burns gas for energy, and not when the tank cannot pay", () => {
+  const st = fresh();
+  const g = st.a.gas, e = st.a.energy, b = data.tactics.styles.finish.boost;
+  assert.equal(E.dig(st, "a", b), true);
+  assert.equal(st.a.gas, g - b.gas);
+  assert.equal(st.a.energy, e + b.energy);
+  st.a.gas = b.gas - 1;
+  assert.equal(E.dig(st, "a", b), false);
+});
