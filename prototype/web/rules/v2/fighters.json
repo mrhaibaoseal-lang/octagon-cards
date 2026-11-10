@@ -5,7 +5,7 @@
   "gas": 20, "chin": 28, "power": 0.95, "wrestle": 0, "tdDef": 0.1, "escape": 0.05, "readRate": 1,
   "skill": { "hook": 0.05, "bodyhook": 0.05 },
   "trait": { "type": "thirdClean", "n": 3, "stun": 3, "text": "連擊：一段內第 3 次打實，額外 +3 暈眩" },
-  "deck": ["jab", "jab", "jab", "cross", "cross", "hook", "hook", "upper", "bodyhook", "bodyhook", "lowkick", "calfkick", "feint", "slip", "slip", "check", "sprawl", "wallwalk"],
+  "deck": ["jab", "jab", "jab", "cross", "cross", "hook", "hook", "upper", "bodyhook", "bodyhook", "lowkick", "calfkick", "feint", "wallwalk"],
   "ai": { "aggression": 0.7, "pressure": 0.6, "grapple": 0, "caution": 0.55, "outfight": 0.1, "body": 0.8, "legs": 0.5, "hedge": 0.45, "adapt": 0.5, "throttle": 0.25, "gnp": 1,
    "habits": [
     { "when": "aHurtBody", "cat": "strike", "mul": 1.5, "text": "你身體受傷後，他更愛進攻" },
@@ -18,7 +18,7 @@
   "gas": 24, "chin": 36, "power": 0.9, "wrestle": 0, "tdDef": 0.15, "escape": 0.1, "readRate": 1.25,
   "skill": { "jab": 0.05, "flurry": 0.08 },
   "trait": { "type": "bigTank", "text": "無底油箱：氣用完也不扣體力" },
-  "deck": ["jab", "jab", "jab", "cross", "cross", "flurry", "flurry", "bodyhook", "bodyhook", "bodykick", "teep", "lowkick", "feint", "slip", "slip", "check", "sprawl", "wallwalk"],
+  "deck": ["jab", "jab", "jab", "cross", "cross", "flurry", "flurry", "bodyhook", "bodyhook", "bodykick", "teep", "lowkick", "feint", "wallwalk"],
   "ai": { "aggression": 0.8, "pressure": 0.35, "grapple": 0, "caution": 0.5, "outfight": 0.4, "body": 1, "legs": 0.5, "hedge": 0.5, "adapt": 0.6, "throttle": 0.35, "gnp": 1,
    "habits": [
     { "when": "lateRound", "cat": "strike", "mul": 1.8, "text": "回合後半越打越多" },
@@ -31,7 +31,7 @@
   "gas": 22, "chin": 32, "power": 1, "wrestle": 0.3, "tdDef": 0.3, "escape": 0.2, "readRate": 1,
   "skill": {},
   "trait": { "type": "topDrain", "gas": 1, "text": "重壓：他在上位時，對手每段多扣 1 體力" },
-  "deck": ["jab", "jab", "cross", "cross", "bodykick", "lowkick", "fakeshot", "takedown", "takedown", "takedown", "clinch", "knee", "gelbow", "pass", "check", "check", "slip", "sprawl"],
+  "deck": ["jab", "jab", "cross", "cross", "bodykick", "lowkick", "fakeshot", "takedown", "takedown", "takedown", "clinch", "knee", "gelbow", "pass"],
   "ai": { "aggression": 0.5, "pressure": 0.4, "grapple": 1.1, "caution": 0.5, "outfight": 0.1, "body": 0.7, "legs": 0.6, "hedge": 0.4, "adapt": 0.5, "throttle": 0.2, "gnp": 0.8,
    "habits": [
     { "when": "aCage", "cat": "takedown", "mul": 2, "text": "你背貼籠邊時，他幾乎一定摔" },

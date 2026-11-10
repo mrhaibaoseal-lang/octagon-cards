@@ -2,7 +2,7 @@
 // The intent AI reads only the fighter's `ai` block in rules/v2/fighters.json; the category shares it
 // reports are the real weights it then samples from, so what the player is shown is never a lie.
 
-import { defOf, rand, cost, usable, onCage, lowGas, legStacks, scene, readLevel, preview, legal, visibleIntent, setIntent, act, runIntent, endExchange, corner, isOpen, createBout } from "./engine.js";
+import { defOf, rand, cost, usable, onCage, lowGas, legStacks, scene, readLevel, preview, legal, visibleIntent, forecast, answers, setIntent, act, runIntent, endExchange, corner, isOpen, createBout } from "./engine.js";
 
 const CONDS = {
   aHurtBody: (st) => st.a.bodyLoss >= 1,
@@ -53,7 +53,17 @@ function addStrikes(st, bd, focus, max = 9, noFinisher = false, stay = false) {
     const near = all.filter((x) => x.d.range && x.d.range.includes(1)).length;
     if (near > far) bd.add(B.advance);
   }
-  const list = bd.cards((d) => isAtk(d, "stand") && bd.inRange(d) && !(noFinisher && d.finisher)).sort((x, y) => rank(x.d, focus) - rank(y.d, focus));
+  let list = bd.cards((d) => isAtk(d, "stand") && bd.inRange(d) && !(noFinisher && d.finisher)).sort((x, y) => rank(x.d, focus) - rank(y.d, focus));
+  const cap = st.cfg.planMax || 0;
+  if (cap && max > cap) {
+    // a short plan the player can read at a glance: at most one opener, then the heaviest he can afford, thrown in combo order
+    max = cap;
+    const open = list.find((x) => x.d.kind === "feint" || x.d.setup), rest = list.filter((x) => x !== open && x.d.kind === "strike").sort((x, y) => (y.d.dmg * (y.d.hits || 1)) - (x.d.dmg * (x.d.hits || 1)) - (x.d.region === focus ? 3 : 0) + (y.d.region === focus ? 3 : 0));
+    const pickd = []; let e = bd.e;
+    if (open && rest.length) { pickd.push(open); e -= cost(st, "b", open.d); }
+    for (const x of rest) { if (pickd.length >= cap) break; const c = cost(st, "b", x.d); if (c <= e) { pickd.push(x); e -= c; } }
+    list = list.filter((x) => pickd.includes(x));
+  }
   let n = 0;
   for (const x of list) { if (n >= max) break; if (bd.add(x.d, x.i)) n++; }
 }
@@ -62,6 +72,8 @@ function addStrikes(st, bd, focus, max = 9, noFinisher = false, stay = false) {
 function pickDefence(st, bd, ai, orGuard) {
   const have = {};
   for (const x of bd.cards((d) => d.kind === "defence" && d.scene === "stand")) have[x.d.def] = x;
+  // answers that need no card (basic moves other than the plain guard)
+  for (const d of Object.values(st.cfg.basics)) if (d.kind === "defence" && d.scene === "stand" && d.def !== "guard" && !have[d.def] && !st.b.def[d.def] && !bd.steps.some((s) => s.id === d.id)) have[d.def] = { d, i: null };
   const h = st.a.hist;
   let want;
   if (h.n > 0 && rand(st) < ai.adapt) {
@@ -103,7 +115,7 @@ export function planIntent(st) {
 
   let throttle = 0;
   const pushy = cat === "strike" || cat === "pressure" || cat === "chase" || cat === "takedown" || cat === "gnp";
-  if (pushy && B.gas - cfg.throttle.gas > B.f.gas * cfg.lowGasFrac && (cat === "chase" || rand(st) < ai.throttle)) throttle = 1;
+  if (pushy && cfg.throttle.max > 0 && B.gas - cfg.throttle.gas > B.f.gas * cfg.lowGasFrac && (cat === "chase" || rand(st) < ai.throttle)) throttle = 1;
   const bd = builder(st, B.energy + throttle * cfg.throttle.energy);
 
   let focus = null;
@@ -173,9 +185,10 @@ export function lead(st) {
 
 export function cornerPick(st, s) {
   const F = st[s];
-  if (F.stun > F.chin * 0.4) return "ice";
-  if (F.gas < F.gasMax * 0.6) return "rest";
-  return "coach";
+  const o = st.cfg.corner.options;
+  if (F.stun > F.chin * 0.4 && o.ice) return "ice";
+  if ((F.gas < F.gasMax * 0.6 || !o.coach) && o.rest) return "rest";
+  return o.coach ? "coach" : Object.keys(o)[0];
 }
 
 // ---------- answering bots (side a), used by the simulation and the tests ----------
@@ -249,7 +262,7 @@ function value(st, x, t, all) {
       const pv = preview(st, "a", d, lvl >= 2);
       if (pv.blocked === "slip" || pv.blocked === "check") return -1;
       let v = pv.dmg * pv.hits * (pv.clean + (1 - pv.clean) * cfg.hit.graze) + pv.ko * pv.clean * 40;
-      if (d.finisher && !pv.up) v -= 4 * (1 - pv.clean);
+      if (cfg.hit.finisherOpen && d.finisher && !pv.up) v -= 4 * (1 - pv.clean);
       if (d.setup) v += 2;
       if (lvl < 2 && t.def > 0.5 && d.region === "head" && d.punch) v *= 0.6;
       return per(v);
@@ -261,6 +274,27 @@ function value(st, x, t, all) {
     }
     case "defence": {
       const k = t.out > 0 ? 0.3 : 1; // if a is going to step out of reach anyway, a defence is mostly wasted
+      if (t.exact) {
+        // the plan is known: price each answer by what it actually takes off the incoming strikes
+        if (!answers(st)[d.def]) return 0;
+        const inc = forecast(st).filter((y) => y.reach), hits = [];
+        const pain = (y) => y.dmg * st.b.f.power * (y.clean + (1 - y.clean) * cfg.hit.graze) * (y.region === "head" ? 1.3 : 1);
+        for (const y of inc) if (y.d.kind === "strike") for (let n = 0; n < (y.d.hits || 1); n++) hits.push(y.d);
+        const first = (f) => hits.find(f);
+        if (d.def === "slip") { const y = first((h) => h.region === "head" && h.punch); return y ? per(pain(y) + d.counter + 3) * k : 0; }
+        if (d.def === "check") { const y = first((h) => h.region === "legs"); return y ? per(pain(y) + d.back + 3) * k : 0; }
+        if (d.def === "sprawl") return inc.some((y) => y.d.kind === "takedown") ? per(14) * k : 0;
+        if (d.def === "guard") {
+          let skip = A.def.slip ? 1 : 0, v = 0, left = d.blocks ?? 99;
+          for (const h of hits) {
+            if (skip && h.region === "head" && h.punch) { skip--; continue; }
+            if (cfg.guard[h.region] >= 1 || left <= 0) continue;
+            left--; v += pain(h) * (1 - cfg.guard[h.region]) + (h.region === "head" ? 1 : 0);
+          }
+          return per(v) * k;
+        }
+        return 0;
+      }
       if (d.def === "guard") return per(t.head * 8 + t.body * 2) * k;
       if (d.def === "slip") return per(t.exact ? (t.punch ? 14 : 0) : t.head * 7) * k;
       if (d.def === "check") return per(t.legs * 9) * k;

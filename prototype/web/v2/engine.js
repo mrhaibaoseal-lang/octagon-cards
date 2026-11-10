@@ -67,7 +67,7 @@ export function createBout(data, aId, bId, seed = 1) {
 // ---------- queries ----------
 export const legStacks = (st, s) => Math.floor(st[s].legDmg / st.cfg.legs.perStack);
 export const lowGas = (st, s) => st[s].gas <= st[s].f.gas * st.cfg.lowGasFrac;
-export const onCage = (st, s) => (s === "a" ? st.pos <= -2 : st.pos >= 2);
+export const onCage = (st, s) => !!st.cfg.useCage && (s === "a" ? st.pos <= -2 : st.pos >= 2);
 export const scene = (st, s) => (!st.ground ? "stand" : st.ground.top === s ? "top" : "bottom");
 export const isOpen = (st, s) => st[s].openUntil >= st.tick;
 export function readLevel(st, s) {
@@ -85,7 +85,8 @@ export function cost(st, s, d, steps = st[s].steps) {
   }
   return c;
 }
-const powerMul = (st, s) => (legStacks(st, s) >= st.cfg.legs.powerStacks ? st.cfg.legs.power : 1);
+// hurt legs weaken every strike; the leader (b) commits blind, so his strikes carry leadPower
+const powerMul = (st, s) => (legStacks(st, s) >= st.cfg.legs.powerStacks ? st.cfg.legs.power : 1) * (s === "b" ? st.cfg.leadPower || 1 : 1);
 
 /** Can side s do d right now (ignoring energy)? why: scene | range | cage | done */
 export function usable(st, s, d) {
@@ -93,7 +94,7 @@ export function usable(st, s, d) {
   if (d.range && !d.range.includes(st.range)) return { ok: false, why: "range" };
   if (d.kind === "move") {
     const o = other(s);
-    if (d.move === "advance" && st.range >= 1 && onCage(st, o)) return { ok: false, why: "cage" };
+    if (d.move === "advance" && st.range >= 1 && (!st.cfg.useCage || onCage(st, o))) return { ok: false, why: st.cfg.useCage ? "cage" : "near" };
     if (d.move === "retreat" && (st.range === 0 || onCage(st, s))) return { ok: false, why: st.range === 0 ? "range" : "cage" };
     if (d.move === "circle" && !(s === "a" ? st.pos < 0 : st.pos > 0)) return { ok: false, why: "cage" };
   }
@@ -261,6 +262,37 @@ export function visibleIntent(st) {
   return out;
 }
 
+/** b's attacks in plan order and whether each will reach. back = how many steps a moves away first. */
+export function forecast(st, back = 0) {
+  const it = st.intent, out = [];
+  if (!it || it.cancelled) return out;
+  let r = Math.max(0, st.range - back);
+  for (const step of it.steps) {
+    if (step.pre) continue;
+    const d = defOf(st, step.id);
+    if (d.kind === "move") { if (d.move === "advance" && r === 0) r = 1; if (d.move === "retreat") r = Math.max(0, r - 1); if (d.move === "clinch") r = 2; continue; }
+    const reach = d.scene === scene(st, "b") && (!d.range || st.ground || d.range.includes(r));
+    out.push({ d, reach: !!reach });
+  }
+  return out;
+}
+
+/** Which of a's answers would do something against b's plan as it stands (shown to the player as a hint). */
+export function answers(st) {
+  const now = forecast(st).filter((x) => x.reach).map((x) => x.d);
+  // an answer is only good if the attack it stops comes before a feint that would bait it away
+  const hit = (f, def) => { for (const d of now) { if (d.kind === "feint" && def && (d.baits || []).includes(def)) return false; if (d.kind === "strike" && f(d)) return true; } return false; };
+  const shot = () => { for (const d of now) { if (d.kind === "feint" && (d.baits || []).includes("sprawl")) return false; if (d.kind === "takedown") return true; } return false; };
+  const short = (n) => forecast(st, n).filter((x) => !x.reach && (x.d.kind === "strike" || x.d.kind === "takedown")).length;
+  return {
+    guard: hit((d) => st.cfg.guard[d.region] < 1),
+    slip: hit((d) => d.region === "head" && d.punch, "slip"),
+    check: hit((d) => d.region === "legs", "check"),
+    sprawl: shot(),
+    retreat: !st.ground && st.range > 0 && short(1) > short(0),
+  };
+}
+
 export function canThrottle(st, s = "a") {
   const t = st.cfg.throttle;
   return st[s].throttled < t.max && st[s].gas >= t.gas;
@@ -333,10 +365,11 @@ function perform(st, s, d) {
       break;
     case "move": {
       const dir = s === "a" ? 1 : -1;
-      if (d.move === "advance") { if (st.range === 0) st.range = 1; else st.pos = clamp(st.pos + dir, -2, 2); addScore(st, s, cfg.score.advance); }
-      if (d.move === "retreat") { st.range = Math.max(0, st.range - 1); st.pos = clamp(st.pos - dir, -2, 2); addScore(st, s, cfg.score.retreat); A.backed = true; }
+      const shift = (n) => { if (cfg.useCage) st.pos = clamp(st.pos + n, -2, 2); };
+      if (d.move === "advance") { if (st.range === 0) st.range = 1; else shift(dir); addScore(st, s, cfg.score.advance); }
+      if (d.move === "retreat") { st.range = Math.max(0, st.range - 1); shift(-dir); addScore(st, s, cfg.score.retreat); A.backed = true; }
       if (d.basic) A.steps++;
-      if (d.move === "circle") st.pos = clamp(st.pos + dir, -2, 2);
+      if (d.move === "circle") shift(dir);
       if (d.move === "clinch") st.range = 2;
       ev(st, "move", { s, id: d.id });
       break;
@@ -393,7 +426,7 @@ function strikeOnce(st, s, d) {
   if (!sure && rand(st) < cfg.hit.miss) {
     A.seq.setup = false; A.seq.last = d.region;
     ev(st, "miss", { s, id: d.id });
-    if (d.finisher && !bonus) setOpen(st, s);
+    if (cfg.hit.finisherOpen && d.finisher && !bonus) setOpen(st, s);
     return;
   }
   let clean = rand(st) < cleanChance(st, s, d), mul = 1;
@@ -413,7 +446,7 @@ function strikeOnce(st, s, d) {
   if (st.over) return;
   const t = A.f.trait;
   if (clean && t && t.type === "thirdClean" && A.seq.cleans === t.n) { ev(st, "trait", { s }); addStun(st, o, t.stun); }
-  if (d.finisher && !clean && !bonus) setOpen(st, s);
+  if (cfg.hit.finisherOpen && d.finisher && !clean && !bonus) setOpen(st, s);
   if (d.push && !st.ground) st.range = 0;
 }
 
@@ -486,7 +519,7 @@ export function runIntent(st) {
           ev(st, "whiff", { s: "b", id: d.id });
           // he swung at air: a has the counter next exchange
           if (u.why === "range") { if (!it.whiffed) setOpen(st, "b"); it.whiffed = true; earn(st, "a"); }
-          else if (d.finisher) setOpen(st, "b");
+          else if (st.cfg.hit.finisherOpen && d.finisher) setOpen(st, "b");
         }
         continue;
       }

@@ -63,7 +63,7 @@ test("slip beats a head punch and counters; check hurts the kicker; sprawl stuff
   intent(st, ["check"], "counter");
   give(st, "a", ["lowkick"]);
   play(st, "lowkick");
-  assert.equal(st.a.legDmg, data.cards.check.back);
+  assert.equal(st.a.legDmg, data.config.basics.check.back);
   assert.equal(st.b.legDmg, 0);
 
   st = fresh("makhachev", "poirier");
@@ -100,17 +100,18 @@ test("stepping back makes short-range plans whiff", () => {
   assert.equal(evs(st, "hit").length, 0);
 });
 
-test("footwork: the first step of an exchange is free, the next one costs energy", () => {
+test("footwork costs energy, and there is no stepping closer than close", () => {
   const st = fresh();
   st.range = 1;
   intent(st, []);
-  const e = st.a.energy;
-  assert.equal(E.cost(st, "a", data.config.basics.retreat), 0);
+  const e = st.a.energy, B = data.config.basics;
+  assert.equal(E.usable(st, "a", B.advance).ok, false);
   play(st, "retreat");
-  assert.equal(st.a.energy, e);
-  assert.equal(E.cost(st, "a", data.config.basics.advance), data.config.basics.advance.cost);
+  assert.equal(st.a.energy, e - B.retreat.cost);
+  assert.equal(st.range, 0);
   play(st, "advance");
-  assert.equal(st.a.energy, e - data.config.basics.advance.cost);
+  assert.equal(st.a.energy, e - B.retreat.cost - B.advance.cost);
+  assert.equal(st.range, 1);
 });
 
 test("making him swing at air opens him up and gives the counter: more energy next exchange", () => {
@@ -133,13 +134,13 @@ test("two stages: defences are set before he goes, attacks may wait until after"
   const st = fresh();
   st.range = 1;
   intent(st, ["cross"]);
-  give(st, "a", ["slip", "cross", "slip"]);
+  give(st, "a", ["cross"]);
   st.a.energy = 5;
   play(st, "slip");
   E.runIntent(st);
   assert.equal(evs(st, "slip").length, 1);
   assert.ok(E.isOpen(st, "b"));
-  assert.equal(E.usable(st, "a", data.cards.slip).why, "late");
+  assert.equal(E.usable(st, "a", data.config.basics.slip).why, "late");
   assert.equal(E.usable(st, "a", data.config.basics.guard).ok, false);
   assert.ok(play(st, "cross"), "the counter is thrown after his attack");
   assert.equal(evs(st, "hit").filter((x) => x.s === "a").length + evs(st, "over").length, 1);
@@ -160,10 +161,10 @@ test("a feint that is bitten opens him and pays for itself; a slipped punch open
   let st = fresh();
   st.range = 1;
   intent(st, ["slip"], "counter");
-  give(st, "a", ["cross"]);
+  give(st, "a", ["feint", "cross"]);
   const e = st.a.energy;
-  play(st, "probe");
-  assert.equal(st.a.energy, e - data.config.basics.probe.cost + data.config.feint.refund);
+  play(st, "feint");
+  assert.equal(st.a.energy, e - data.cards.feint.cost + data.config.feint.refund);
   assert.ok(E.isOpen(st, "b"));
 
   st = fresh();
@@ -263,26 +264,38 @@ test("rounds are scored 10-9 (10-8 on a big gap) and three rounds give a decisio
   assert.equal(st.over.winner, "a");
 });
 
-test("the intent shown is honest: level 0 leaks no steps, shares sum to 1, higher levels show the real plan", () => {
+test("the plan is always shown in full, and it is the real one", () => {
   for (let seed = 1; seed <= 40; seed++) {
     const st = fresh("poirier", "makhachev", seed);
     const it = planIntent(st);
     E.setIntent(st, it);
-    const sum = Object.values(it.cats).reduce((n, v) => n + v, 0);
-    assert.ok(Math.abs(sum - 1) < 1e-9);
-    assert.ok(it.cats[it.cat] > 0, "the chosen plan was one of the shown possibilities");
-    let v = E.visibleIntent(st);
-    assert.equal(v.level, 0);
-    assert.equal(v.steps, undefined);
-    assert.equal(v.cat, undefined);
-    st.a.readPts = data.config.read.levels[1];
-    v = E.visibleIntent(st);
-    assert.equal(v.cat, it.cat);
-    assert.equal(v.steps, undefined);
-    st.a.readPts = data.config.read.levels[2];
-    v = E.visibleIntent(st);
-    assert.deepEqual(v.steps, it.steps.map((x) => x.id));
+    assert.ok(it.cats[it.cat] > 0);
+    assert.deepEqual(E.visibleIntent(st).steps, it.steps.map((x) => x.id));
+    const atk = it.steps.filter((x) => ["strike", "feint"].includes(E.defOf(st, x.id).kind)).length;
+    assert.ok(atk <= data.config.planMax + 1, "short enough to read at a glance");
   }
+});
+
+test("the hinted answers are the ones that work against the plan", () => {
+  let st = fresh();
+  st.range = 1;
+  intent(st, ["cross", "lowkick"]);
+  let a = E.answers(st);
+  assert.deepEqual([a.guard, a.slip, a.check, a.sprawl, a.retreat], [true, true, true, false, true]);
+  st = fresh();
+  st.range = 1;
+  intent(st, ["feint", "cross"]);
+  assert.equal(E.answers(st).slip, false, "the feint comes first and would bait the slip away");
+  assert.equal(E.answers(st).guard, true);
+  st = fresh();
+  st.range = 1;
+  intent(st, ["advance", "cross"]);
+  assert.equal(E.answers(st).retreat, false, "he follows");
+  st = fresh();
+  intent(st, ["cross"]);
+  a = E.answers(st);
+  assert.equal(a.slip || a.guard || a.retreat, false, "from far away the punch does not reach");
+  assert.equal(E.forecast(st)[0].reach, false);
 });
 
 test("the leader never plans more than he can pay for", () => {
