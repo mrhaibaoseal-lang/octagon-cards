@@ -9,8 +9,14 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const SCHOOL = { punch: "拳", kick: "踢", grap: "摔", def: "防" };
 const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏" };
+const KW_TEXT = { guard: "對手必須先打這張", slip: "躲掉打向它的第一下", flurry: "一次出手打兩下", sweep: "同時打到目標左右兩張", sub: "打到誰就直接破解誰" };
+const WHEN = { start: "開場", hit: "命中", play: "上場", buy: "成長", break: "破解時", win: "獲勝" };
+// Clash playback pace. 1 is the original tempo; the default is the slow one so each exchange can be read.
+const SPEEDS = [0.45, 0.9, 1.8], SPEED_NAME = ["慢", "普通", "快"];
+const saved = (() => { try { return Number(localStorage.getItem("bg.speed")) || 0; } catch { return 0; } })();
+let speedIx = saved in SPEEDS ? saved : 0;
 
-let data, st, speed = params.has("fast") ? 0 : 1, choice = { a: null, b: null }, sel = null, runId = 0;
+let data, st, speed = params.has("fast") ? 0 : SPEEDS[speedIx], choice = { a: null, b: null }, sel = null, runId = 0;
 const frame = $("#frame");
 const sleep = (ms) => new Promise((r) => setTimeout(r, speed === 0 ? 0 : ms / speed));
 const scale = () => Math.min(innerWidth / 844, innerHeight / 390);
@@ -70,12 +76,60 @@ function card(c, o = {}) {
   const d = data.skills[c.id], m = c.gold ? data.config.golden : 1;
   const atk = c.atk ?? d.atk, hp = c.hp ?? d.hp, kw = c.kw ? Object.keys(c.kw) : d.kw;
   const up = (v, base) => (v > base * m ? "up" : v < base * m ? "down" : "");
-  return `<div class="sk ${d.school} ${c.gold ? "gold" : ""} ${o.small ? "s" : ""} ${c.dead ? "dead" : ""} ${o.cls || ""}" ${o.attr || ""}>
+  const when = [...new Set(d.fx.map((f) => WHEN[f.when]).filter(Boolean))].map((w) => `<em class="fx">${w}</em>`).join("");
+  const stun = c.stun ? "<em class='bad'>被壓制</em>" : "";
+  return `<div class="sk ${d.school} ${c.gold ? "gold" : ""} ${o.small ? "s" : ""} ${c.dead ? "dead" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
     <i class="g">${SCHOOL[d.school]}</i><b class="nm">${esc(d.name)}</b><span class="tier">${"●".repeat(d.tier)}</span>
-    ${kw.length ? `<div class="kws">${kw.map((k) => `<em>${KW[k]}</em>`).join("")}${c.stun ? "<em class='bad'>被壓制</em>" : ""}</div>` : c.stun ? `<div class="kws"><em class="bad">被壓制</em></div>` : ""}
-    ${o.small ? "" : `<small>${esc(o.note || (d.fx.length || !kw.length ? d.text : ""))}</small>`}
+    ${kw.length || when || stun ? `<div class="kws">${kw.map((k) => `<em>${KW[k]}</em>`).join("")}${when}${stun}</div>` : ""}
+    ${o.small || !o.note ? "" : `<small>${esc(o.note)}</small>`}
     <span class="atk ${up(atk, d.atk)}">${atk}</span><span class="hp ${up(hp, d.hp)}">${Math.max(0, hp)}</span></div>`;
 }
+
+// ---------- card details: mouse over a card, or press and hold on touch ----------
+let tipEl = null, tipAt = null, mouse = null, holdT = 0, held = false, downAt = null;
+const cardAt = (t) => (t instanceof Element ? t.closest(".sk[data-id]") : null);
+function showTip(node) {
+  const d = data.skills[node.dataset.id], kws = node.dataset.kw ? node.dataset.kw.split(",") : [], gold = "gold" in node.dataset;
+  if (!tipEl) { tipEl = document.createElement("div"); tipEl.id = "tip"; }
+  tipEl.className = d.school;
+  tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級${gold ? "・金卡" : ""}</span>
+    <div class="st"><i class="atk">${node.dataset.atk}</i>攻擊<i class="hp">${node.dataset.hp}</i>耐力</div>
+    ${d.fx.length ? `<p>${esc(d.text)}</p>` : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${KW_TEXT[k]}</p>`).join("")}
+    ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
+    ${gold ? `<p class="dim">金卡：數值與效果的數字都加倍。</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
+  if (tipEl.parentNode !== frame) frame.appendChild(tipEl);
+  const p = pos(node), h = node.offsetHeight / 2, w = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  let y = p.y - h - th - 6;
+  if (y < 4) y = Math.min(p.y + h + 6, 390 - th - 4);
+  tipEl.style.left = Math.max(6, Math.min(844 - w - 6, p.x - w / 2)) + "px";
+  tipEl.style.top = y + "px";
+  tipAt = node;
+}
+function hideTip() { if (tipEl) tipEl.remove(); tipAt = null; }
+frame.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse") { if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 12) { clearTimeout(holdT); if (held) hideTip(); } return; }
+  mouse = { x: e.clientX, y: e.clientY };
+  const c = cardAt(e.target);
+  if (c !== tipAt) c ? showTip(c) : hideTip();
+});
+frame.addEventListener("pointerleave", () => { mouse = null; hideTip(); });
+frame.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "mouse") return;
+  const c = cardAt(e.target);
+  clearTimeout(holdT); held = false; downAt = { x: e.clientX, y: e.clientY };
+  if (c) holdT = setTimeout(() => { held = true; if (c.isConnected) showTip(c); }, 350);
+});
+for (const t of ["pointerup", "pointercancel"]) frame.addEventListener(t, (e) => { if (e.pointerType === "mouse") return; clearTimeout(holdT); downAt = null; if (held) hideTip(); });
+// A press that showed the details is not a buy / select.
+frame.addEventListener("click", (e) => { if (held) { held = false; e.stopPropagation(); e.preventDefault(); } }, true);
+frame.addEventListener("contextmenu", (e) => { if (cardAt(e.target)) e.preventDefault(); });
+// The screen redraws under a still cursor: follow whatever card is there now.
+new MutationObserver(() => {
+  if (!tipAt || tipAt.isConnected) return;
+  const c = mouse && cardAt(document.elementFromPoint(mouse.x, mouse.y));
+  c ? showTip(c) : hideTip();
+}).observe(frame, { childList: true, subtree: true });
+
 const empty = (o = {}, text = "空位") => `<div class="sk empty ${o.small ? "s" : ""}" ${o.attr || ""}><span>${text}</span></div>`;
 
 // ---------- screens ----------
@@ -123,7 +177,7 @@ function shopScreen(msg = "") {
       <button id="tier" class="${E.canTier(st, "a") && sh.gold >= sh.upCost ? "" : "no"}">${E.canTier(st, "a") ? `升級商店<small>${sh.upCost} 金</small>` : "商店已最高級"}</button></div></div>
     <div id="mine"><h4>你的牌<small>${sel == null ? "牌 3 金。點一張選起來，再點另一格換位置" : "再點一格換位置，或賣掉"}</small>${sel != null ? `<button id="sell">賣掉 +${cfg.sell} 金</button>` : ""}</h4>
       <div class="row">${F.board.map((c, i) => (c ? card(c, { cls: sel === i ? "sel" : "", attr: `data-slot="${i}"` }) : empty({ attr: `data-slot="${i}"` }))).join("")}</div></div>
-    <div id="foot"><span class="msg">${esc(msg) || "由左到右輪流出手。左下是攻擊、右下是耐力。"}</span><button id="fight">開打</button></div>`;
+    <div id="foot"><span class="msg">${esc(msg) || "由左到右輪流出手。左下攻擊、右下耐力。滑鼠指著牌（手機按住）看效果。"}</span><button id="fight">開打</button></div>`;
   frame.querySelectorAll("[data-offer]").forEach((el) => (el.onclick = () => {
     const i = Number(el.dataset.offer), id = sh.offers[i];
     if (E.buy(st, "a", i)) { sel = null; shopScreen(`買了${data.skills[id].name}`); }
@@ -173,9 +227,10 @@ function float(at, text, cls) {
   const f = document.createElement("div");
   f.className = "float " + cls;
   f.textContent = text;
-  f.style.left = at.x + "px"; f.style.top = at.y + "px";
+  const ms = Math.min(1600, 900 / (speed || 1));
+  f.style.left = at.x + "px"; f.style.top = at.y + "px"; f.style.animationDuration = ms + "ms";
   frame.appendChild(f);
-  setTimeout(() => f.remove(), 900);
+  setTimeout(() => f.remove(), ms);
 }
 function say(text, cls = "", small = "") { const b = $("#say"), c = $("#cap"); if (b) b.innerHTML = `<b class="${cls}">${esc(text)}</b>`; if (c) c.textContent = small; }
 const unitOf = (v, uid) => { for (const s of ["a", "b"]) for (const u of v[s]) if (u && u.uid === uid) return u; return null; };
@@ -185,14 +240,14 @@ const sideOf = (v, uid) => (v.a.some((u) => u && u.uid === uid) ? "a" : "b");
 /** Play one engine event on screen. Returns the time to hold it (ms). */
 async function showEvent(e, prev) {
   switch (e.t) {
-    case "clash": rows(e.view); say("開打！", "", `第 ${st.round} 回合・第 ${st.clash} 段`); return 500;
+    case "clash": rows(e.view); say("開打！", "", `第 ${st.round} 回合・第 ${st.clash} 段`); return 700;
     case "fx": {
       const from = e.from ? el(e.from) : null;
       if (from) { from.classList.add("cast"); }
       rows(e.view);
       if (e.to) { float(el(e.to) && pos(el(e.to)), e.dmg ? `−${e.dmg}` : "閃開", "dmg"); act(sideOf(e.view, e.to), e.dmg ? "hit" : "slip"); }
       for (const uid of e.buff || []) float(el(uid) && pos(el(uid)), "強化", "buff");
-      return 260;
+      return 340;
     }
     case "attack": {
       const a = el(e.from), t = el(e.to), u = unitOf(prev, e.from);
@@ -200,19 +255,19 @@ async function showEvent(e, prev) {
       if (a && t && speed !== 0) {
         const pa = pos(a), pt = pos(t);
         a.style.zIndex = 5;
-        await a.animate([{ transform: "none" }, { transform: `translate(${(pt.x - pa.x) * 0.12}px,${(pt.y - pa.y) * 0.14}px) scale(1.1)`, filter: "brightness(1.5)" }, { transform: "none" }], { duration: 280 / speed, easing: "ease-in-out" }).finished;
+        await a.animate([{ transform: "none" }, { transform: `translate(${(pt.x - pa.x) * 0.12}px,${(pt.y - pa.y) * 0.14}px) scale(1.1)`, filter: "brightness(1.5)" }, { transform: "none" }], { duration: 320 / speed, easing: "ease-in-out" }).finished;
         a.style.zIndex = "";
       }
       say(`${nameOf(prev, e.from)} → ${nameOf(prev, e.to)}`, e.s === "a" ? "good" : "bad", e.s === "a" ? "你出手" : "他出手");
       return 0;
     }
-    case "dmg": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "hit"); float(p, `−${e.dmg}`, "dmg"); const m = el(e.uid); if (m) m.classList.add("shake"); return 150; }
-    case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "slip"); float(p, "閃開！", "buff"); return 220; }
-    case "sub": float(el(e.uid) && pos(el(e.uid)), "降伏！", "dmg"); return 200;
-    case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "攻擊下降", "dmg"); return 160;
-    case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 160;
+    case "dmg": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "hit"); float(p, `−${e.dmg}`, "dmg"); const m = el(e.uid); if (m) m.classList.add("shake"); return 280; }
+    case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "slip"); float(p, "閃開！", "buff"); return 300; }
+    case "sub": float(el(e.uid) && pos(el(e.uid)), "降伏！", "dmg"); return 280;
+    case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "攻擊下降", "dmg"); return 240;
+    case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 240;
     case "stunned": float(el(e.uid) && pos(el(e.uid)), "出不了手", "dmg"); rows(e.view); return 300;
-    case "break": { const n = el(e.uid), p = n && pos(n); float(p, "破解", "break"); rows(e.view); return 200; }
+    case "break": { const n = el(e.uid), p = n && pos(n); float(p, "破解", "break"); rows(e.view); return 280; }
     case "react": say(e.grade === "miss" ? "慢了" : e.grade === "perfect" ? "完美！" : "好！", e.grade === "miss" ? "bad" : "good"); return 250;
     case "clashend": {
       setHp(e.hp);
@@ -265,8 +320,8 @@ async function clash(id) {
     <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
   pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
-  const sp = $("#speed"), label = () => (sp.textContent = `速度 ×${speed || 1}`);
-  sp.onclick = () => { speed = speed >= 3 ? 1 : speed + 1; label(); };
+  const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);
+  sp.onclick = () => { speedIx = speed === 0 ? 0 : (speedIx + 1) % SPEEDS.length; speed = SPEEDS[speedIx]; try { localStorage.setItem("bg.speed", speedIx); } catch {} label(); };
   label();
   let from = st.log.length, prev = null;
   E.startClash(st);

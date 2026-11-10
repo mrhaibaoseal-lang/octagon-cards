@@ -161,3 +161,16 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 .box.wide{width:780px}
 .box .row.s{flex-wrap:wrap;height:auto;row-gap:6px}
 .box .row.s .sk{height:56px}
+
+/* 牌上的效果時機小標、滑鼠指到／長按才出現的說明 */
+.sk{touch-action:manipulation;-webkit-touch-callout:none}
+.sk .kws em.fx{background:none;border-style:dashed;color:color-mix(in srgb,var(--c) 55%,#fff)}
+#tip{position:absolute;z-index:30;width:max-content;max-width:214px;padding:7px 10px 8px;border-radius:9px;pointer-events:none;
+  background:#0b0f17f7;border:1px solid color-mix(in srgb,var(--c) 60%,#283042);box-shadow:0 8px 22px #000c;font-size:11.5px;line-height:1.5}
+#tip.punch{--c:var(--punch)} #tip.kick{--c:var(--kick)} #tip.grap{--c:var(--grap)} #tip.def{--c:var(--def)}
+#tip b{font-size:14px;margin-right:6px} #tip span{font-size:10.5px;color:var(--dim)}
+#tip .st{display:flex;align-items:center;gap:4px;margin:3px 0 2px;font-size:10.5px;color:var(--dim)}
+#tip .st i{font-style:normal;font-weight:800;font-size:12px;color:#fff;min-width:20px;text-align:center;border-radius:8px;padding:0 4px}
+#tip .st .atk{background:#b26a00} #tip .st .hp{background:#a52c25;margin-left:6px}
+#tip p{color:#dfe5f0;margin-top:2px} #tip p.dim{color:var(--dim)} #tip p.note{color:var(--gold);font-weight:700}
+#tip em{font-style:normal;font-weight:700;font-size:10.5px;padding:0 5px;margin-right:5px;border-radius:7px;background:color-mix(in srgb,var(--c) 30%,#0b0e13);border:1px solid color-mix(in srgb,var(--c) 70%,#000)}
