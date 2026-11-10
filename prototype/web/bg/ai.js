@@ -6,17 +6,14 @@ export const W = { base: 3, stuck: 1 };
 const has = (list, k) => list.filter((c) => c && c.kw[k]).length;
 /** What a keyword is worth to side s: ground tools need a takedown, takedown defence needs a wrestler across the cage, combos need company. */
 function kwWorth(st, s, c, k) {
-  const B = st[s].board, foe = st[s === "a" ? "b" : "a"].shown, G = st.cfg.ground;
+  const B = st[s].board, foe = st[s === "a" ? "b" : "a"].shown;
   if (k === "flurry") return c.atk;
   if (k === "reach") return 1.5 + c.atk / 2;
   if (k === "combo") return 1 + Math.min(3, has(B, "combo"));
   if (k === "takedown") return 2 + 1.5 * (has(B, "ground") + has(B, "sub"));
   if (k === "ground") return has(B, "takedown") ? 4 : 1;
   if (k === "sub") return has(B, "takedown") ? 6 : 1;
-  if (k === "sprawl" || k === "getup") {
-    const stuck = B.filter((x) => x && (G.schoolMul[E.defOf(st, x).school] ?? 1) === 0).length; // my cards that are useless on the ground
-    return has(foe, "takedown") && !has(B, k) ? W.base + W.stuck * stuck : 0.5;
-  }
+  if (k === "sprawl" || k === "getup") return has(foe, "takedown") && !has(B, k) ? W.base : 0.5;
   return KW[k] || 0;
 }
 function cardWorth(st, c, d, s) {
@@ -79,17 +76,57 @@ export function fight(st, o, skill = st[o.s].f.ai?.skill ?? 1) {
   let best = null;
   for (const u of o.units) for (const t of o.targets) {
     const dmg = E.power(st, u), back = u.kw.reach ? 0 : E.power(st, t);
-    const kills = !t.kw.slip && (dmg >= t.hp || (u.kw.sub && c.ground)), dies = !u.kw.slip && back >= u.hp;
+    const kills = !t.kw.slip && dmg >= t.hp, dies = !u.kw.slip && back >= u.hp;
     let v = t.kw.slip ? 4 - u.atk : kills ? 8 + 2 * t.atk + t.hp : Math.min(dmg, t.hp);
     v -= dies ? 5 + u.atk + u.hp : back * 0.5;
-    if (u.kw.takedown && (!c.ground || c.ground.top !== o.s)) v += tools ? 5 : 2;
+    if (u.kw.takedown) v += tools ? 5 : 2;
     if (u.kw.combo) v += 1;
-    if (u.kw.getup && c.ground && c.ground.top !== o.s) v += 4;
-    if (!c.ground && t.kw.takedown) v += kills ? 4 : st.cfg.ground.catch.includes(E.defOf(st, u).school) ? -8 : 0; // stop the shot before it comes; a kick he survives gets caught
+    if (t.kw.takedown) v += kills ? 4 : st.cfg.ground.catch.includes(E.defOf(st, u).school) ? -8 : 0; // stop the shot before it comes; a kick he survives gets caught
     if (!best || v > best[0]) best = [v, u.uid, t.uid];
   }
   return [best[1], best[2]];
 }
+
+// ---------- the ground game: how the opponent picks its move ----------
+const SIDES = ["a", "b"];
+const count = (st, s, kw) => st.c[s].filter((u) => u && u.hp > 0 && u.kw[kw]).length;
+/** The chance side s picks each of its moves this beat, as { move: 0..1 }. This is also the table the screen shows, so the numbers are the real ones. */
+export function groundWeights(st, s) {
+  const c = st.c, G = st.cfg.ground, A = G.ai, g = c.ground, f = st[s].f, foe = s === "a" ? "b" : "a", last = c.glast?.[foe];
+  const mine = E.groundMoves(st, s), theirs = E.groundMoves(st, foe), w = {};
+  for (const m of mine) {
+    const def = G.moves[m], kw = def.hit?.cardKw || def.cardKw;
+    let x = A.base[m] * (f.ai?.ground?.[m] ?? 1);
+    x *= Math.max(0.2, 1 + (A.layerLean[m] || 0) * (g.layer - 1));
+    if (def.gain && g.layer >= G.layers) x *= 0.3; // already as deep as it goes
+    if (kw) x *= 1 + A.cardBoost * count(st, s, kw);
+    if (last && G.beat[m] === last) x *= 1 + A.react; // leans toward what beat his last move
+    if (theirs.some((y) => (G.moves[y].hit?.base ?? 0) >= A.bigHit && G.beat[m] === y)) x *= 1 + A.threat; // he can finish: cover it
+    w[m] = x;
+  }
+  const sum = Object.values(w).reduce((n, v) => n + v, 0);
+  for (const m of mine) w[m] = (1 - A.flat) * (w[m] / sum) + A.flat / mine.length; // never fully predictable
+  return w;
+}
+const draw = (st, w) => { let r = E.rand(st); for (const [m, p] of Object.entries(w)) if ((r -= p) <= 0) return m; return Object.keys(w)[0]; };
+/** The opponent's move: drawn from its own table. */
+export const groundPick = (st, s) => draw(st, groundWeights(st, s));
+/** The best answer to what the other side is likely to do (what a player who reads the table does). Ties go to the first. */
+export function groundRead(st, s) {
+  const G = st.cfg.ground, foe = s === "a" ? "b" : "a", q = groundWeights(st, foe), val = (m) => G.moves[m].hit?.base ?? (G.moves[m].gain ? 2 : 1);
+  let best = null;
+  for (const m of E.groundMoves(st, s)) {
+    let ev = 0;
+    for (const [y, p] of Object.entries(q)) ev += p * (G.beat[m] === y ? val(m) : G.beat[y] === m ? -val(y) : 0);
+    if (!best || ev > best[0]) best = [ev, m];
+  }
+  return best[1];
+}
+/** Pure guessing: any move that is allowed, equally likely. */
+export const groundGuess = (st, s) => { const ok = E.groundMoves(st, s); return ok[Math.floor(E.rand(st) * ok.length)]; };
+/** How side a plays the ground in the simulation: read the table, or guess blind. Side b always plays its own table. */
+export const grounders = { read: (st, s) => (s === "a" ? groundRead(st, s) : groundPick(st, s)), guess: (st, s) => (s === "a" ? groundGuess(st, s) : groundPick(st, s)) };
+
 export function cornerPick(st, s) { return st[s].hp <= st.cfg.hp - st.cfg.corner.heal - 3 ? "heal" : "discover"; }
 
 export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {} };
@@ -97,7 +134,7 @@ export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(
 export const fighters = { sharp: (st, o) => fight(st, o, o.s === "a" ? 1 : undefined), blind: (st, o) => (o.s === "a" ? null : fight(st, o)) };
 
 /** A whole bout: side a shops with `shopper`, side b with its own AI; timing(st, p) grades each timing bar. */
-export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp) {
+export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp, gpick = grounders.read) {
   const st = E.createGame(data, aId, bId, seed);
   let guard = 0;
   while (!st.over && guard++ < 60) {
@@ -105,7 +142,7 @@ export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing =
     if (st.a.discover && shopper === shoppers.none) E.pick(st, "a", 0);
     shopper(st);
     shop(st, "b");
-    if (!E.playClash(st, timing, pick)) break;
+    if (!E.playClash(st, timing, pick, gpick)) break;
   }
   return st;
 }

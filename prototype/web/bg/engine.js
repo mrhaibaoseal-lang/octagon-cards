@@ -2,7 +2,8 @@
 // A bout is rounds x clashes turns. Each turn both sides shop (their own shop), then the two boards clash:
 // the sides take turns, each picking one of its cards (once per pass) and a target for it; the side left standing damages the
 // other FIGHTER's hp. hp 0 = KO; otherwise the rounds are scored 10-9 by clashes won.
-// A takedown puts the clash on the ground for a while (who is on top, which cards can strike and how hard changes);
+// A takedown that lands pauses the cards and starts a ground game: a few beats of hidden-move guessing (rules/bg ground.moves / beat)
+// on three layers of position; the winner of a beat moves deeper, hits the fighter, or breaks free. Then the cards fight on.
 // combo cards hit harder in a row; lasting weakens stay on the real card until the round ends.
 // All numbers and card properties come from rules/bg/*.json; the engine never compares card ids.
 
@@ -183,7 +184,7 @@ export function startClash(st) {
   if (st.phase !== "shop" || st.a.discover || st.b.discover) return false;
   st.phase = "clash";
   let uid = 0;
-  const c = (st.c = { n: 0, turn: null, pending: null, opt: null, ace: null, reacted: false, ground: null, chain: { a: 0, b: 0 }, a: [], b: [] });
+  const c = (st.c = { n: 0, turn: null, pending: null, opt: null, ace: null, reacted: false, ground: null, grounds: 0, ko: null, gchoice: null, glast: { a: null, b: null }, chain: { a: 0, b: 0 }, a: [], b: [] });
   for (const s of SIDES) {
     st[s].shown = st[s].board.map((x) => (x ? { ...x, kw: { ...x.kw } } : null));
     c[s] = st[s].board.map((x, slot) => (x ? { ...x, kw: { ...x.kw }, uid: ++uid, slot, side: s, acted: false, stun: false, swings: 0 } : null));
@@ -217,7 +218,6 @@ function harm(st, t, dmg, from) {
   if (dmg <= 0 || t.hp <= 0) return 0;
   if (t.kw.slip) { delete t.kw.slip; ev(st, "slip", { uid: t.uid }); return 0; }
   t.hp -= dmg;
-  if (from && from.kw.sub && st.c.ground && t.hp > 0) { t.hp = 0; ev(st, "sub", { uid: t.uid, from: from.uid }); }
   return dmg;
 }
 function reap(st) {
@@ -233,33 +233,27 @@ function reap(st) {
     if (!any) break;
   }
 }
-/** A unit's attack right now. On the ground some schools cannot strike, the side underneath hits softer, and ground cards on top hit harder. */
-export function power(st, u) {
-  const g = st.c?.ground, G = st.cfg.ground;
-  if (!u) return 0;
-  if (!g) return u.atk;
-  let m = G.schoolMul[defOf(st, u).school] ?? 1;
-  if (u.kw.ground) { if (g.top === u.side) m *= G.topMul; } else if (g.top !== u.side) m *= G.bottomMul;
-  return Math.ceil(u.atk * m);
-}
-/** u landed a takedown: a sprawl on the other side stops it once; on the ground it reverses who is on top. */
+/** A unit's attack right now (the ground game is played with moves, not cards, so nothing changes down there). */
+export const power = (st, u) => (u ? u.atk : 0);
+/** u landed a takedown: a sprawl on the other side stops it; otherwise the ground game starts with u's side on top. */
 function takedown(st, u) {
   const c = st.c, s = u.side;
-  if (c.ground) { if (c.ground.top !== s) { c.ground.top = s; ev(st, "reverse", { s, uid: u.uid }); } return; }
+  if (c.ground || c.grounds >= st.cfg.ground.perClash) return; // one ground game a clash: after that a takedown is just a hit
   const stop = alive(c[other(s)]).find((x) => x.kw.sprawl);
   if (stop) { ev(st, "stuffed", { s: other(s), uid: stop.uid, from: u.uid }); return; }
-  c.ground = { top: s, left: st.cfg.ground.attacks };
+  c.ground = { top: s, layer: st.cfg.ground.start, beat: 1 };
+  c.grounds++;
   ev(st, "ground", { s, uid: u.uid });
 }
 function standUp(st, s = null, uid = null) { st.c.ground = null; ev(st, "standup", { s, uid }); }
 const canHit = (st, u) => u && u.hp > 0 && power(st, u) > 0;
-/** Whose attack is next and what may be chosen: { s, units, targets } (clash units), or null when the clash is over.
+/** Whose attack is next and what may be chosen: { s, units, targets } (clash units), or null when the clash is over or the ground game is on.
  *  Each card attacks once per pass through its side; a stunned card loses that turn; a guard must be hit first. */
 export function options(st) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return null;
   if (c.opt) return c.opt;
-  if (!alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
+  if (c.ko || c.ground || !alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
   for (let tries = 0; tries < 4; tries++) {
     const s = c.turn, mine = alive(c[s]);
     const sitOut = () => { let n = 0; for (const x of mine) if (x.stun && !x.acted) { x.stun = false; x.acted = true; n++; ev(st, "stunned", { uid: x.uid }); } if (n) c.chain[s] = 0; return n; };
@@ -271,9 +265,7 @@ export function options(st) {
       return (c.opt = { s, units, targets: guards.length ? guards : foes });
     }
     c.turn = other(s); // nobody on this side can attack right now: the other side goes
-    if (c.ground && --c.ground.left <= 0) { standUp(st); return options(st); } // a turn spent stuck underneath still runs the clock
   }
-  if (c.ground) { standUp(st); return options(st); } // nobody can strike down here: back to the feet
   return null;
 }
 /** Pick the attacker and the target for the next attack (by unit uid). False when that is not allowed. */
@@ -288,7 +280,7 @@ export function choose(st, uid, tid) {
 /** The next attack: the one chosen, or by default the leftmost free card at a random legal target. */
 export function upcoming(st) {
   const c = st.c;
-  if (st.phase !== "clash" || !c) return null;
+  if (st.phase !== "clash" || !c || c.ground) return null;
   if (c.pending) return c.pending;
   const o = options(st);
   if (!o) return null;
@@ -297,7 +289,7 @@ export function upcoming(st) {
 /** Is the next attack the one the timing bar is for? (the ace's first swing, once a clash) */
 export function needsReact(st) {
   const p = upcoming(st), c = st.c;
-  if (!p || c.reacted || p.u.uid !== c.ace || p.u.swings > 0) return null;
+  if (!p || c.ground || c.reacted || p.u.uid !== c.ace || p.u.swings > 0) return null;
   return p;
 }
 function swing(st, u, t, mul) {
@@ -328,18 +320,17 @@ function swing(st, u, t, mul) {
   else if (got && t.hp > 0 && t.kw.takedown && !c.ground && G.catch.includes(defOf(st, u).school)) takedown(st, t); // he caught the kick
   reap(st);
 }
-/** Resolve the next attack. grade (perfect | good | miss) applies when needsReact() said so. */
+/** Resolve the next attack (or, on the ground, the next beat). grade (perfect | good | miss) applies when needsReact() said so. */
 export function step(st, grade = null) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return false;
+  if (c.ground) { runBeat(st); return true; }
   const react = grade ? needsReact(st) : null, p = upcoming(st);
   if (!p) { endClash(st); return true; }
   c.pending = null; c.opt = null; c.n++;
   const { s, u } = p, R = st.cfg.react;
   u.acted = true;
   c.turn = other(s);
-  const down = !!c.ground;
-  if (down && c.ground.top !== s && u.kw.getup) standUp(st, s, u.uid);
   let mul = 1;
   if (u.uid === c.ace && u.swings === 0) {
     c.reacted = true;
@@ -349,18 +340,75 @@ export function step(st, grade = null) {
     }
   }
   swing(st, u, p.t, mul);
-  if (u.kw.flurry && u.hp > 0) { const foes = alive(c[other(s)]), g = foes.filter((x) => x.kw.guard); if (foes.length) swing(st, u, p.t.hp > 0 ? p.t : pickOne(st, g.length ? g : foes), 1); }
-  if (down && c.ground && --c.ground.left <= 0) standUp(st); // the referee stands them up
+  if (u.kw.flurry && u.hp > 0 && !c.ground) { const foes = alive(c[other(s)]), g = foes.filter((x) => x.kw.guard); if (foes.length) swing(st, u, p.t.hp > 0 ? p.t : pickOne(st, g.length ? g : foes), 1); }
   return true;
+}
+
+// ---------- the ground game ----------
+/** The moves side s may pick this beat: its role's moves, minus any that need a deeper layer than the position has reached. */
+export function groundMoves(st, s) {
+  const c = st.c, g = c?.ground, G = st.cfg.ground;
+  if (!g) return [];
+  const role = g.top === s ? "top" : "bottom";
+  return Object.keys(G.moves).filter((id) => {
+    const m = G.moves[id];
+    if (m.role !== role) return false;
+    if (m.layer == null) return true;
+    return g.layer >= (m.cardKw && alive(c[s]).some((u) => u.kw[m.cardKw]) ? m.cardLayer : m.layer);
+  });
+}
+/** What the ground game looks like right now: { top, layer, beat, max, moves: { a, b }, last } or null. */
+export function groundOptions(st) {
+  const c = st.c, g = c?.ground;
+  if (st.phase !== "clash" || !g || c.ko) return null;
+  return { top: g.top, layer: g.layer, beat: g.beat, max: st.cfg.ground.beats, moves: { a: groundMoves(st, "a"), b: groundMoves(st, "b") }, last: c.glast };
+}
+/** Side s picks its move for this beat (hidden until both have). False when it is not allowed. */
+export function chooseGround(st, s, move) {
+  if (!groundOptions(st) || !groundMoves(st, s).includes(move)) return false;
+  (st.c.gchoice ||= {})[s] = move;
+  return true;
+}
+/** Damage a hitting move does for side s: its base plus a bonus for each of that side's cards with the move's keyword. */
+export function groundDamage(st, s, id) {
+  const h = st.cfg.ground.moves[id]?.hit;
+  if (!h) return 0;
+  return h.base + (h.cardKw ? h.perCard * alive(st.c[s]).filter((u) => u.kw[h.cardKw]).reduce((n, u) => n + mulOf(st, u), 0) : 0);
+}
+function runBeat(st) {
+  const c = st.c, mv = {};
+  for (const s of SIDES) { const ok = groundMoves(st, s); mv[s] = c.gchoice?.[s] && ok.includes(c.gchoice[s]) ? c.gchoice[s] : pickOne(st, ok); }
+  c.gchoice = null;
+  groundBeat(st, mv);
+}
+function groundBeat(st, mv) {
+  const c = st.c, G = st.cfg.ground, g = c.ground, top = g.top, bot = other(top), mt = G.moves[mv[top]], mb = G.moves[mv[bot]];
+  const res = G.beat[mv[top]] === mv[bot] ? "top" : G.beat[mv[bot]] === mv[top] ? "bottom" : "tie";
+  let dmg = 0, drop = 0, flip = false;
+  if (res === "top") {
+    if (mt.gain) g.layer = Math.min(G.layers, g.layer + mt.gain);
+    dmg = groundDamage(st, top, mv[top]);
+  } else if (res === "bottom") {
+    const has = (kw) => kw && alive(c[bot]).some((u) => u.kw[kw]);
+    if (has(mb.flip)) flip = true;
+    else { drop = 1 + (has(mb.extra) ? G.extra : 0); g.layer -= drop; }
+  }
+  c.glast = { ...mv };
+  if (flip) g.top = bot;
+  if (dmg) { st[bot].hp = Math.max(0, st[bot].hp - dmg); st[top].stats.dmg += dmg; }
+  const n = g.beat++; // the beat just played; the position shows the next one
+  ev(st, "gbeat", { top, moves: mv, res, dmg, drop, flip, layer: g.layer, beat: n });
+  if (st[bot].hp <= 0) { c.ko = bot; c.ground = null; return; } // finished on the mat
+  if (g.layer < 1 || g.beat > G.beats) standUp(st);
 }
 
 function endClash(st) {
   const c = st.c, cfg = st.cfg, na = alive(c.a).length, nb = alive(c.b).length;
-  const w = na && !nb ? "a" : nb && !na ? "b" : null;
+  const w = c.ko ? other(c.ko) : na && !nb ? "a" : nb && !na ? "b" : null;
   let dmg = 0;
   if (w) {
     const l = other(w);
-    dmg = Math.min(cfg.damage.caps[st.round - 1] ?? 99, alive(c[w]).reduce((n, u) => n + defOf(st, u).tier, 0) + st[w].shop.tier);
+    dmg = c.ko ? 0 : Math.min(cfg.damage.caps[st.round - 1] ?? 99, alive(c[w]).reduce((n, u) => n + defOf(st, u).tier, 0) + st[w].shop.tier);
     st[l].hp = Math.max(0, st[l].hp - dmg);
     st[w].stats.won++; st[w].stats.dmg += dmg;
     st.wins[w]++;
@@ -407,11 +455,13 @@ export function corner(st, s, id) {
   return true;
 }
 
-/** Run a whole clash with no pauses (simulation). timing(st, p) grades the timing bar; pick(st, o) returns [attacker uid, target uid] for a side (default: leftmost card, random target). */
-export function playClash(st, timing = () => "miss", pick = null) {
+/** Run a whole clash with no pauses (simulation). timing(st, p) grades the timing bar; pick(st, o) returns [attacker uid, target uid] for a side
+ *  (default: leftmost card, random target); gpick(st, side) returns that side's ground move (default: random). */
+export function playClash(st, timing = () => "miss", pick = null, gpick = null) {
   if (!startClash(st)) return false;
   let guard = 0;
   while (st.phase === "clash" && guard++ < 1000) {
+    if (st.c.ground) { if (gpick) for (const s of SIDES) { const m = gpick(st, s); if (m) chooseGround(st, s, m); } step(st); continue; }
     const o = options(st), ch = o && pick ? pick(st, o) : null;
     if (ch) choose(st, ch[0], ch[1]);
     const p = o ? needsReact(st) : null;

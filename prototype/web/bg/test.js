@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadData } from "./load.node.js";
 import * as E from "./engine.js";
-import { shop, shoppers, runGame } from "./ai.js";
+import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders } from "./ai.js";
 
 const data = loadData();
 const fresh = (a = "holloway", b = "makhachev", seed = 3) => E.createGame(data, a, b, seed);
@@ -118,7 +118,7 @@ test("clash: cards trade blows until one side is gone; the winner's survivors hi
   assert.equal(st.b.lostLast, true, "the loser gets the extra gold next turn");
 });
 
-test("clash keywords: guard is hit first, slip soaks one hit, submission breaks whatever it damages on the ground only", () => {
+test("clash keywords: guard is hit first, slip soaks one hit, a standing submission card is just a card", () => {
   let st = fresh();
   put(st, "a", ["cross"]); put(st, "b", ["jab", "highguard", "jab"]);
   E.startClash(st);
@@ -134,40 +134,116 @@ test("clash keywords: guard is hit first, slip soaks one hit, submission breaks 
   st.b.board[0].kw = { guard: true };
   E.startClash(st);
   E.step(st);
-  assert.equal(evs(st, "sub").length, 0, "standing: no submission");
-  st = fresh();
-  put(st, "a", ["rnc"]); put(st, "b", ["champheart"]);
-  st.b.board[0].kw = { guard: true };
-  E.startClash(st);
-  st.c.ground = { top: "a", left: 99 };
-  for (let i = 0; i < 3 && st.phase === "clash"; i++) E.step(st);
-  assert.equal(evs(st, "sub").length, 1);
+  assert.ok(st.c.b[0].hp > 0, "a choke does not break a card by itself any more");
 });
 
 const G = data.config.ground;
 const wall = (st) => { st.b.board[0].kw.guard = true; }; // make b's first card the one that gets hit
+/** Start a clash with a takedown already landed: side "top" is on top at layer. */
+const down = (a, b, top = "a", layer = 1, who = ["poirier", "makhachev"]) => { const st = fresh(...who); put(st, "a", a); put(st, "b", b); E.startClash(st); st.c.ground = { top, layer, beat: 1 }; return st; };
+const beat = (st, ma, mb) => { assert.ok(E.chooseGround(st, "a", ma), "a may play " + ma); assert.ok(E.chooseGround(st, "b", mb), "b may play " + mb); E.step(st); return evs(st, "gbeat").at(-1); };
 
-test("ground: a takedown that lands puts the clash on the ground; kicks cannot strike, the bottom hits softer, ground cards on top hit harder; then they are stood up", () => {
+test("ground: a takedown that lands pauses the cards and starts the guessing game on the first layer, the taker on top", () => {
   const st = fresh();
   put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "highkick"]);
   E.startClash(st);
   assert.equal(E.upcoming(st).s, "a", "the side with more cards goes first");
   E.step(st);
   const g = evs(st, "ground")[0];
-  assert.ok(g && g.s === "a" && st.c.ground.top === "a");
-  const [, elbows] = st.c.a, [iron, kick] = st.c.b;
-  assert.equal(E.power(st, kick), Math.ceil(kick.atk * G.schoolMul.kick));
-  assert.equal(E.power(st, kick), 0, "a kick cannot be thrown from the ground");
-  assert.equal(E.power(st, iron), Math.ceil(iron.atk * G.bottomMul));
-  assert.equal(E.power(st, elbows), Math.ceil(elbows.atk * G.topMul));
-  const at = st.log.indexOf(g);
-  for (let i = 0; i < 40 && st.phase === "clash" && st.c.ground; i++) E.step(st);
-  const up = st.log.findIndex((e, i) => i > at && e.t === "standup");
-  if (up >= 0) assert.ok(st.log.slice(at, up).filter((e) => e.t === "attack").length <= G.attacks);
-  else assert.equal(st.phase, "shop", "or the clash ended down there");
+  assert.ok(g && g.s === "a");
+  assert.deepEqual({ top: st.c.ground.top, layer: st.c.ground.layer, beat: st.c.ground.beat }, { top: "a", layer: G.start, beat: 1 });
+  assert.equal(E.options(st), null, "no card attacks while they grapple");
+  const o = E.groundOptions(st);
+  assert.deepEqual(o.moves.a, ["press", "strike"], "the top man cannot go for the finish on the first layer");
+  assert.deepEqual(o.moves.b, ["guard", "rise", "turn"]);
 });
 
-test("ground: a sprawl stops takedowns while it stands; a get-up card stands its side back up; a takedown from underneath reverses", () => {
+test("ground: the six moves form one ring; each beats the next, loses to the one before, draws with the opposite", () => {
+  const top = Object.keys(G.moves).filter((m) => G.moves[m].role === "top"), bot = Object.keys(G.moves).filter((m) => G.moves[m].role === "bottom");
+  for (const t of top) {
+    const win = bot.filter((b) => G.beat[t] === b), lose = bot.filter((b) => G.beat[b] === t);
+    assert.equal(win.length, 1, t + " beats exactly one");
+    assert.equal(lose.length, 1, t + " loses to exactly one");
+    assert.equal(bot.length - win.length - lose.length, 1, t + " draws with the last");
+  }
+  for (const [t, b, res] of [["press", "guard", "top"], ["press", "rise", "bottom"], ["press", "turn", "tie"], ["strike", "rise", "top"], ["strike", "turn", "bottom"], ["strike", "guard", "tie"]]) {
+    const st = down(["cross"], ["cross"], "a", 2);
+    assert.equal(beat(st, t, b).res, res, `${t} against ${b}`);
+  }
+});
+
+test("ground: the top man pressing a layer deeper, striking the fighter, or finishing; the bottom man escaping a layer, or flipping with a takedown card", () => {
+  let st = down(["cross"], ["cross"], "a", 1);
+  assert.equal(beat(st, "press", "guard").dmg, 0);
+  assert.equal(st.c.ground.layer, 2);
+  assert.equal(st.c.ground.beat, 2);
+
+  st = down(["cross"], ["cross"], "a", 2);
+  const e = beat(st, "strike", "rise");
+  assert.equal(e.dmg, G.moves.strike.hit.base);
+  assert.equal(st.b.hp, data.config.hp - e.dmg);
+  assert.equal(st.a.stats.dmg, e.dmg);
+  assert.equal(st.c.ground.layer, 2, "a strike does not move the position");
+
+  st = down(["elbows", "groundpound"], ["cross"], "a", 2);
+  assert.equal(beat(st, "strike", "rise").dmg, G.moves.strike.hit.base + 2 * G.moves.strike.hit.perCard, "each ground card adds to the strike");
+
+  st = down(["cross"], ["cross"], "a", 3);
+  assert.ok(E.groundMoves(st, "a").includes("sub"), "the finish opens on the deepest layer");
+  assert.equal(beat(st, "sub", "turn").dmg, G.moves.sub.hit.base);
+
+  st = down(["cross"], ["cross"], "a", 2);
+  assert.ok(!E.groundMoves(st, "a").includes("sub"));
+  st = down(["rnc"], ["cross"], "a", 2);
+  assert.ok(E.groundMoves(st, "a").includes("sub"), "a submission card opens it one layer sooner");
+
+  st = down(["cross"], ["cross"], "a", 3);
+  assert.equal(beat(st, "press", "guard").dmg, 0);
+  assert.equal(st.c.ground.layer, G.layers, "nothing deeper than the last layer");
+
+  st = down(["cross"], ["cross"], "a", 3);
+  beat(st, "press", "rise");
+  assert.equal(st.c.ground.layer, 2, "the bottom man wins: one layer out");
+
+  st = down(["cross"], ["shrimp"], "a", 3);
+  beat(st, "press", "rise");
+  assert.equal(st.c.ground.layer, 3 - 1 - G.extra, "a get-up card escapes an extra layer with the stand-up move");
+
+  st = down(["cross"], ["doubleleg"], "a", 2);
+  const f = beat(st, "strike", "turn");
+  assert.equal(f.res, "bottom");
+  assert.equal(f.flip, true);
+  assert.equal(st.c.ground.top, "b", "a takedown card turns the position over");
+  assert.equal(st.c.ground.layer, 2, "and the layer stays");
+});
+
+test("ground: it ends when the bottom man gets out of the first layer, after the last beat, or on a knockout; then the cards carry on", () => {
+  let st = down(["cross"], ["cross"], "a", 1);
+  beat(st, "press", "rise");
+  assert.equal(st.c.ground, null);
+  assert.equal(evs(st, "standup").length, 1);
+  assert.ok(E.options(st), "back to the cards");
+
+  st = down(["cross"], ["cross"], "a", 1);
+  for (let i = 0; i < G.beats; i++) beat(st, "press", "turn");
+  assert.equal(st.c.ground, null, "the referee stands them up");
+  assert.equal(evs(st, "gbeat").length, G.beats);
+
+  st = down(["cross"], ["cross"], "a", 3);
+  st.b.hp = 3;
+  beat(st, "sub", "turn");
+  assert.equal(st.b.hp, 0);
+  assert.equal(st.c.ground, null);
+  E.step(st);
+  assert.equal(st.over.winner, "a");
+  assert.equal(st.over.how, "KO");
+
+  st = down(["cross"], ["cross"], "a", 1);
+  E.step(st);
+  assert.equal(evs(st, "gbeat").length, 1, "an unanswered beat plays itself with random moves");
+});
+
+test("ground: a sprawl stops a takedown while it stands; a kick that lands on a takedown card gets caught", () => {
   let st = fresh();
   put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "sprawl"]);
   E.startClash(st); E.step(st);
@@ -175,28 +251,30 @@ test("ground: a sprawl stops takedowns while it stands; a get-up card stands its
   assert.equal(evs(st, "ground").length, 0);
   assert.equal(st.c.ground, null);
 
-  st = fresh();
-  put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "shrimp"]);
-  E.startClash(st);
-  for (let i = 0; i < 6 && !evs(st, "standup").length; i++) E.step(st);
-  const up = evs(st, "standup")[0];
-  assert.ok(up && up.s === "b" && up.uid === st.c.b[1].uid, "the get-up card did it on its turn");
-
   st = fresh("poirier", "makhachev");
-  put(st, "a", ["doubleleg", "highguard", "highguard"]); put(st, "b", ["doubleleg"]); wall(st);
-  E.startClash(st);
-  for (let i = 0; i < 8 && !evs(st, "reverse").length && st.phase === "clash"; i++) E.step(st);
-  assert.equal(evs(st, "ground")[0].s, "a");
-  assert.equal(evs(st, "reverse")[0].s, "b");
-  assert.equal(evs(st, "reverse")[0].view.ground.top, "b");
-});
-
-test("ground: a kick that lands on a takedown card gets caught", () => {
-  const st = fresh("poirier", "makhachev");
   put(st, "a", ["lowkick", "highguard", "highguard"]); put(st, "b", ["doubleleg"]); wall(st);
   E.startClash(st); E.step(st);
   assert.ok(G.catch.includes(data.skills.lowkick.school));
   assert.equal(evs(st, "ground")[0].s, "b", "the kicker ends up underneath");
+});
+
+test("ground AI: the table sums to one over the moves it may play, leans toward the counter of your last move, and covers a finish", () => {
+  let st = down(["cross"], ["cross"], "b", 1);
+  let w = groundWeights(st, "b");
+  assert.deepEqual(Object.keys(w).sort(), ["press", "strike"]);
+  assert.ok(Math.abs(Object.values(w).reduce((n, v) => n + v, 0) - 1) < 1e-9);
+  const before = groundWeights(st, "a");
+  st.c.glast = { a: "guard", b: "press" };
+  const after = groundWeights(st, "b");
+  assert.ok(after.press > w.press || after.strike < w.strike, "he leans toward what beat your last move");
+  assert.ok(groundWeights(st, "a").rise > before.rise * 0.99);
+
+  st = down(["cross"], ["cross"], "b", 3);
+  const covered = groundWeights(st, "a"), plain = down(["cross"], ["cross"], "b", 1);
+  assert.ok(covered.guard > groundWeights(plain, "a").guard, "the bottom man guards against the finish when it is on");
+  assert.ok(E.groundMoves(st, "b").includes(groundPick(st, "b")));
+  assert.ok(E.groundMoves(st, "a").includes(groundRead(st, "a")));
+  assert.ok(E.groundMoves(st, "a").includes(grounders.guess(st, "a")));
 });
 
 test("combo cards hit harder in a row; a long-range strike is not hit back", () => {

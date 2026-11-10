@@ -1,6 +1,6 @@
 // Octagon Cards — one-on-one board battler, browser front end. Rules live in engine.js / ai.js; this file draws and forwards clicks.
 import * as E from "./engine.js";
-import { shop as aiShop, fight as aiFight, cornerPick } from "./ai.js";
+import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead } from "./ai.js";
 
 const params = new URLSearchParams(location.search);
 const load = async (n) => (await fetch(`rules/bg/${n}.json`)).json();
@@ -9,14 +9,13 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const SCHOOL = { punch: "拳", kick: "踢", grap: "摔", def: "防" };
 const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏", takedown: "抱摔", sprawl: "防摔", getup: "起身", ground: "地面技", combo: "連段", reach: "長距離" };
-const pct = (m) => (m > 1 ? `+${Math.round((m - 1) * 100)}%` : `−${Math.round((1 - m) * 100)}%`);
 const KW_TEXT = {
   guard: () => "對手必須先打這張", slip: () => "躲掉打向它的第一下", flurry: () => "一次出手打兩下", sweep: () => "同時打到目標左右兩張",
-  sub: () => "只在地面有效：打到誰就直接破解誰",
-  takedown: (c) => `打中就把這一段帶到地面，你在上位（${c.ground.attacks} 次出手後站起來）。已經被壓在下面時：翻到上位`,
+  sub: (c) => `地面猜拳：有這張，降伏在${c.ground.layerNames[c.ground.moves.sub.cardLayer - 1]}就能出（原本要${c.ground.layerNames[c.ground.moves.sub.layer - 1]}）`,
+  takedown: (c) => `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
   sprawl: () => "只要這張還在場上，對手的抱摔都不成功",
-  getup: () => "被壓在下面時，輪到它出手就站回來",
-  ground: (c) => `在上位時攻擊 ${pct(c.ground.topMul)}；在下位也不減弱`,
+  getup: (c) => `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
+  ground: (c) => `地面猜拳：你每有一張，砸擊多 ${c.ground.moves.strike.hit.perCard} 傷害`,
   combo: (c) => `前一張出手的也是連段牌：這一下 +${c.combo.atk} 攻擊，可累積到 +${c.combo.atk * c.combo.max}`,
   reach: () => "這張出手時不會被反擊",
 };
@@ -198,7 +197,7 @@ function pickScreen() {
   const btn = (s, id) => { const f = data.fighters[id]; return `<button data-s="${s}" data-id="${id}" class="${choice[s] === id ? "on" : ""}"><b>${esc(f.name)}</b><small>${esc(f.style)}｜${esc(f.power.text)}</small></button>`; };
   frame.innerHTML = `<div class="bgart"></div><div class="over solid"><div class="box">
     <h2>Octagon Cards</h2>
-    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方<b>輪流出手</b>：輪到你時，把你的一張牌<b>拖到</b>要打的那張牌上（他有架擋就得先打架擋）；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。<b>抱摔</b>打中會把這一段帶到地面：踢出不了手、被壓在下面的打得比較輕。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
+    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方<b>輪流出手</b>：輪到你時，把你的一張牌<b>拖到</b>要打的那張牌上（他有架擋就得先打架擋）；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。<b>抱摔</b>打中會把這一段帶到地面，改成最多三拍的<b>猜拳</b>：每拍雙方暗選一招同時翻開，上位贏了壓進一層或打人，下位贏了脫出一層。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
     <h3>你的選手</h3><div class="pick you">${ids.map((id) => btn("a", id)).join("")}</div>
     <h3>對手</h3><div class="pick foe">${ids.map((id) => btn("b", id)).join("")}</div>
     <button class="go" id="go">進商店</button></div></div>`;
@@ -291,9 +290,14 @@ function rows(v) {
   setGround(v.ground);
 }
 function setGround(g) {
-  const was = ground, b = $("#gnd");
+  const was = ground, b = $("#gnd"), G = st.cfg.ground;
   ground = g || null;
-  if (b) { b.className = ground ? (ground.top === "a" ? "good" : "bad") : ""; b.textContent = ground ? `地面・${ground.top === "a" ? "你在上位" : "你被壓在下面"}・再 ${ground.left} 下站起來` : ""; }
+  frame.classList.toggle("gmode", !!ground);
+  if (!ground) { $("#gpanel")?.remove(); $("#gtend")?.remove(); }
+  if (b) {
+    b.className = ground ? (ground.top === "a" ? "good" : "bad") : "";
+    b.innerHTML = ground ? `<span>${ground.top === "a" ? "你在上位" : "你被壓在下面"}</span><span class="lad">${G.layerNames.map((n, i) => `<i class="${i + 1 === ground.layer ? "on" : ""}">${n}</i>`).join("")}</span><small>第 ${Math.min(ground.beat, G.beats)}／${G.beats} 拍</small>` : "";
+  }
   if ((was && was.top) !== (ground && ground.top)) for (const s of ["a", "b"]) if ($("#f" + s)?.dataset.pose !== "down" || was) pose(s, "idle");
 }
 const el = (uid) => $(`[data-uid="${uid}"]`);
@@ -342,8 +346,8 @@ async function showEvent(e, prev) {
     case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "slip"); float(p, "閃開！", "buff"); return 300; }
     case "sub": float(el(e.uid) && pos(el(e.uid)), "降伏！", "dmg"); return 280;
     case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), e.lasting ? "腿傷：攻擊下降" : "攻擊下降", "dmg"); return 240;
-    case "ground": rows(e.view); act(e.s, "attack", "grap"); float(el(e.uid) && pos(el(e.uid)), "抱摔成功", "buff"); say(e.s === "a" ? "帶到地面！你在上位" : "被帶到地面！你在下面", e.s === "a" ? "good" : "bad", "地面上：踢出不了手，下面的人打得比較輕，降伏生效"); return 1100;
-    case "reverse": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "翻身", "buff"); say(e.s === "a" ? "翻身！換你在上位" : "被翻過去了！", e.s === "a" ? "good" : "bad"); return 900;
+    case "ground": float(el(e.uid) && pos(el(e.uid)), "抱摔成功", "buff"); act(e.s, "attack", "grap"); rows(e.view); say(e.s === "a" ? "帶到地面！你在上位" : "被帶到地面！你在下面", e.s === "a" ? "good" : "bad", "地面猜拳：每拍暗選一招，同時翻開"); return 1200;
+    case "gbeat": return gbeat(e);
     case "stuffed": float(el(e.uid) && pos(el(e.uid)), "防摔！", "buff"); say(e.s === "a" ? "你擋下了抱摔" : "他擋下了抱摔", e.s === "a" ? "good" : "bad", "防摔牌還在場上，抱摔就不會成功"); return 700;
     case "standup": rows(e.view); if (e.uid) float(el(e.uid) && pos(el(e.uid)), "起身", "buff"); say(e.uid ? (e.s === "a" ? "你站回來了" : "他站回來了") : "站起來了", "", e.uid ? "" : "回到站立"); return 800;
     case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 240;
@@ -351,6 +355,7 @@ async function showEvent(e, prev) {
     case "break": { const n = el(e.uid), p = n && pos(n); float(p, "破解", "break"); rows(e.view); return 280; }
     case "react": say(e.grade === "miss" ? "慢了" : e.grade === "perfect" ? "完美！" : "好！", e.grade === "miss" ? "bad" : "good"); return 250;
     case "clashend": {
+      setGround(null);
       setHp(e.hp);
       const o = e.s ? E.other(e.s) : null;
       if (e.s) { $("#hud" + o).classList.add("hurt"); act(e.s, "attack", "punch"); act(o, e.hp[o] <= 0 ? "down" : "hit"); float(fighterPos(o), `−${e.dmg}`, "dmg"); say(e.s === "a" ? `這一段你贏了：他耐久 −${e.dmg}` : `這一段他贏了：你耐久 −${e.dmg}`, e.s === "a" ? "good" : "bad", "剩下的牌打在選手身上"); }
@@ -417,12 +422,59 @@ function pickAttack(o) {
   });
 }
 
+// ---------- the ground game ----------
+const GN = (id) => st.cfg.ground.moves[id].name;
+/** Show one revealed beat: both moves, who won, and what it did. */
+async function gbeat(e) {
+  const G = st.cfg.ground, mv = e.moves, bot = E.other(e.top), w = e.res === "top" ? e.top : e.res === "bottom" ? bot : null;
+  const names = G.layerNames;
+  let what = "";
+  if (e.res === "tie") what = "互相抵消，位置不變";
+  else if (e.res === "top") what = e.dmg ? `打在${bot === "a" ? "你" : "他"}身上 −${e.dmg}` : e.layer ? `推進到${names[e.layer - 1]}` : "";
+  else what = e.flip ? "翻身，換到上位" : e.layer >= 1 ? `脫出一層，回到${names[e.layer - 1]}` : "脫出了，站起來";
+  rows(e.view);
+  say(`你出${GN(mv.a)}　他出${GN(mv.b)}`, w === "a" ? "good" : w === "b" ? "bad" : "", `${w ? (w === "a" ? "你贏了這一拍：" : "他贏了這一拍：") : "平手："}${what}`);
+  $("#gpanel")?.querySelectorAll(".gm").forEach((n) => n.classList.toggle("won", n.dataset.m === mv.a && w === "a"));
+  if (e.dmg) { setHp(e.hp); $("#hud" + bot)?.classList.add("hurt"); act(e.top, "attack", "grap"); act(bot, e.hp[bot] <= 0 ? "down" : "hit"); float(fighterPos(bot), `−${e.dmg}`, "dmg"); }
+  else if (w) act(w, "attack", "grap");
+  return 1900;
+}
+/** The player's move: pick one of the lit cards, then press Fight (or tap it again). The opponent's table is shown beside the fighters. */
+function pickGround(o) {
+  if (speed === 0) return Promise.resolve(groundRead(st, "a"));
+  const G = st.cfg.ground, top = o.top === "a", role = top ? "top" : "bottom", ids = Object.keys(G.moves).filter((m) => G.moves[m].role === role), foeIds = Object.keys(G.moves).filter((m) => G.moves[m].role !== role);
+  const w = groundWeights(st, "b"), beats = (m) => G.beat[m], beaten = (m) => Object.keys(G.beat).find((k) => G.beat[k] === m);
+  const hasKw = (kw) => st.c.a.some((u) => u && u.hp > 0 && u.kw[kw]);
+  const need = (m) => { const d = G.moves[m]; return d.layer == null ? 1 : hasKw(d.cardKw) ? d.cardLayer : d.layer; };
+  return new Promise((res) => {
+    let sel = null, done = false;
+    const last = o.last?.a ? `你上一拍出${GN(o.last.a)}，他出${GN(o.last.b)}` : "";
+    const stage = $("#stage");
+    $("#gtend")?.remove(); $("#gpanel")?.remove();
+    stage.insertAdjacentHTML("beforeend", `<div id="gtend"><h5>他這一拍的傾向</h5>${foeIds.map((m) => `<div class="tr ${w[m] ? "" : "na"}"><span>${G.moves[m].name}</span><i><b style="width:${Math.round((w[m] || 0) * 100)}%"></b></i><em>${w[m] ? Math.round(w[m] * 100) + "%" : "—"}</em></div>`).join("")}${last ? `<small>${last}</small>` : ""}</div>`);
+    const draw = () => {
+      let p = $("#gpanel");
+      if (!p) { p = document.createElement("div"); p.id = "gpanel"; frame.appendChild(p); }
+      p.className = done ? "done" : "";
+      p.innerHTML = ids.map((m) => {
+        const d = G.moves[m], ok = o.moves.a.includes(m), dmg = d.hit ? E.groundDamage(st, "a", m) : 0;
+        return `<button class="gm ${role} ${ok ? "" : "lock"} ${sel === m ? "sel" : ""}" data-m="${m}"><b>${d.name}</b><span>${ok ? d.text + (dmg ? `（−${dmg}）` : "") : `要到${G.layerNames[need(m) - 1]}才能出`}</span><em><u>壓過${GN(beats(m))}</u><s>被${GN(beaten(m))}破</s></em></button>`;
+      }).join("") + `<button class="gfight">出招</button>`;
+      p.querySelectorAll(".gm").forEach((n) => (n.onclick = () => { if (done || n.classList.contains("lock")) return; if (sel === n.dataset.m) return go(); sel = n.dataset.m; say("選好了就按出招", "", `你選了${GN(sel)}，再點一次或按右邊的出招`); draw(); }));
+      p.querySelector(".gfight").onclick = () => (sel ? go() : say("先選一招", "bad", "點下面的一張招式卡"));
+    };
+    const go = () => { if (done || !sel) return; done = true; draw(); res(sel); };
+    say(`地面第 ${o.beat}／${o.max} 拍：${top ? "你在上位" : "你在下位"}`, top ? "good" : "bad", "選一招，雙方同時翻開");
+    draw();
+  });
+}
+
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
     <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
     <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
-  ground = null;
+  ground = null; frame.classList.remove("gmode");
   pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
   const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);
@@ -441,6 +493,15 @@ async function clash(id) {
   };
   await flush();
   while (id === runId && st.phase === "clash") {
+    const go = E.groundOptions(st);
+    if (go) {
+      const m = await pickGround(go);
+      if (id !== runId) return;
+      E.chooseGround(st, "a", m); E.chooseGround(st, "b", groundPick(st, "b"));
+      E.step(st);
+      await flush();
+      continue;
+    }
     const o = E.options(st);
     await flush(); // cards that sit a turn out show it before the choice
     if (id !== runId) return;
@@ -475,4 +536,5 @@ function finish() {
   $("#again").onclick = pickScreen;
 }
 
+if (params.has("debug")) window.__bg = { E, get st() { return st; } }; // ?debug: poke the game from the console (set boards, jump ahead)
 boot();
