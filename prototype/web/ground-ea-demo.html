@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EA 式地面草圖</title>
+<style>
+/* EA 式地面（猜方向＋體力＋連鎖）草圖：只畫畫面，不接引擎。數字是範例。
+   預設：四個畫面直排，每個 844×390。網址加 #f1 … #f4 或 ?f=1…4 只顯示單一畫面（截圖用）。
+   選手圖來自 gitignore 的 assets/private；沒有時用色塊假人。 */
+:root{
+  --bg:#0a0d12; --panel:#141923; --line:#283042; --text:#f1f4f9; --dim:#8d97aa;
+  --blue:#4c8dff; --red:#f0524f; --gold:#f5c542; --green:#3ecf8e; --sta:#35d0a0;
+  --pass:#4c8dff; --pound:#f0524f; --sub:#b06cff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#040507;color:var(--text);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
+body{padding:16px 0 40px}
+.shot{width:844px;margin:0 auto 22px}
+.shot h3{font-size:14px;margin:0 0 6px;color:#cfd7e6}
+.shot h3 small{font-weight:400;color:var(--dim);margin-left:8px;font-size:12px}
+body.solo{padding:0}
+body.solo .shot:not(.pick){display:none}
+body.solo .shot.pick h3{display:none}
+body.solo .shot.pick{margin:0}
+
+.frame{position:relative;width:844px;height:390px;background:var(--bg);overflow:hidden;border-radius:8px;box-shadow:0 0 0 1px var(--line)}
+.frame::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(42% 46% at 50% 60%,#2b3653 0%,transparent 72%),
+  radial-gradient(40% 34% at 0% 0%,#1d3a7a66 0%,transparent 70%),
+  radial-gradient(40% 34% at 100% 0%,#7a1d1d66 0%,transparent 70%),
+  linear-gradient(#0b0f17,#06080c)}
+.frame>*{position:absolute}
+.you{--c:var(--blue)} .foe{--c:var(--red)}
+.m-pass{--m:var(--pass)} .m-pound{--m:var(--pound)} .m-sub{--m:var(--sub)}
+
+/* 上方：轉播計分條（耐久＋體力） */
+.sb{top:0;height:44px;width:300px;display:flex;align-items:center;gap:8px;padding:0 10px}
+.sb.you{left:0;background:linear-gradient(90deg,#16346e,#16346e00)}
+.sb.foe{right:0;flex-direction:row-reverse;background:linear-gradient(270deg,#6e1a18,#6e1a1800)}
+.face{width:34px;height:34px;border-radius:6px;background:color-mix(in srgb,var(--c) 45%,#10141c);box-shadow:0 0 0 2px var(--c);overflow:hidden;flex:none}
+.face img{width:100%;height:100%;object-fit:cover;object-position:50% 12%}
+.nmx{line-height:1.15;min-width:0}.sb.foe .nmx{text-align:right}
+.nmx b{display:block;font-size:13px;font-weight:800;letter-spacing:.03em;font-style:italic;white-space:nowrap}
+.nmx small{font-size:10.5px;font-weight:700;color:color-mix(in srgb,var(--c) 60%,#fff)}
+.hp{min-width:38px;height:28px;line-height:28px;text-align:center;font-size:18px;font-weight:800;border-radius:8px;background:linear-gradient(#e2574c,#a52c25);box-shadow:0 2px 0 #5d1410;flex:none}
+.sta{display:flex;align-items:center;gap:5px;flex:none}
+.sb.foe .sta{flex-direction:row-reverse}
+.sta i{display:block;width:54px;height:9px;border-radius:5px;background:#10261f;box-shadow:0 0 0 1px #1f5a47 inset;overflow:hidden}
+.sta i b{display:block;height:100%;background:linear-gradient(90deg,#1e9e78,var(--sta))}
+.sta i b.low{background:linear-gradient(90deg,#b8401f,#ff8a4c)}
+.sta em{font-style:normal;font-size:11px;font-weight:800;color:var(--sta);white-space:nowrap}
+.sta em.low{color:#ff9a6a}
+.mid{left:300px;width:244px;top:3px;text-align:center;line-height:1.2}
+.mid b{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.12em;background:#f5c542;color:#1d1500;padding:1px 10px;border-radius:4px;transform:skewX(-10deg)}
+.mid span{display:block;font-size:12px;color:#cfd7e6;margin-top:3px}
+
+/* 位置三層 */
+.lad{left:196px;width:452px;top:48px;height:33px;display:flex;gap:3px}
+.lad div{flex:1;transform:skewX(-12deg);background:#151b27;border:1px solid var(--line);color:#6f7a90;font-size:12px;font-weight:700;text-align:center;line-height:15px;padding-top:2px;position:relative}
+.lad div>*{display:inline-block;transform:skewX(12deg)}
+.lad small{display:block;font-size:9.5px;font-weight:600;line-height:12px;opacity:.85;white-space:nowrap}
+.lad .out{flex:.8;border-style:dashed}
+.lad .on{background:linear-gradient(#f5c542,#c98f0c);border-color:#ffe08a;color:#1d1500}
+.lad .tag{position:absolute;right:2px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:#fff;color:#111;font-weight:800}
+
+/* 兩側 */
+.side{top:88px;width:236px;height:228px;padding:8px 10px;border-radius:10px;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 14%,#10141d),#0e121a);border:1px solid color-mix(in srgb,var(--c) 45%,#283042)}
+.side.you{left:10px;border-left:4px solid var(--c)}
+.side.foe{right:10px;border-right:4px solid var(--c)}
+.side h4{font-size:12px;font-weight:800;display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.side h4 i{font-style:normal;font-size:11px;padding:0 7px;line-height:17px;border-radius:4px;background:var(--c);color:#fff}
+.side h4 small{font-weight:400;color:var(--dim);font-size:11px;margin-left:auto}
+.row{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:6px;color:#cfd7e6}
+.row b{font-weight:800}
+.space{display:flex;gap:4px}
+.space i{width:16px;height:16px;border-radius:50%;box-shadow:0 0 0 2px #3ecf8e inset;display:block}
+.space i.on{background:#3ecf8e}
+.costs{margin-top:8px;font-size:11.5px;line-height:1.6;color:#aab4c7}
+.costs b{color:var(--sta)}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chips span{font-size:11px;line-height:18px;padding:0 7px;border-radius:9px;background:#2a2410;border:1px solid #7a6114;color:var(--gold);font-weight:700}
+.chips u{text-decoration:none;font-weight:400;color:#e6d9a8;margin-left:4px}
+.warn{margin-top:8px;font-size:11.5px;line-height:1.35;padding:4px 7px;border-radius:6px;background:#3a1512;border:1px solid #8a2c24;color:#ffb3a8}
+.warn b{color:#ff7a6a}
+
+/* 對手的表（真實數字） */
+.tbl{border-radius:7px;background:#241d06;border:1px solid #6a5310;padding:6px 8px}
+.tbl h5{font-size:10.5px;font-weight:700;color:#c9b77a;margin-bottom:4px}
+.tr{display:flex;align-items:center;gap:6px;height:22px;font-size:12px}
+.tr span{width:62px;white-space:nowrap}
+.tr span em{font-style:normal;color:var(--m);font-weight:800;margin-right:3px}
+.tr i{flex:1;height:8px;border-radius:4px;background:#1b2230;overflow:hidden}
+.tr i b{display:block;height:100%;background:var(--m)}
+.tr strong{width:34px;text-align:right;font-weight:800;color:var(--gold)}
+.why{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+.why span{font-size:11px;line-height:1.3;padding:2px 7px;border-radius:5px;background:#1c2331;color:#cfd7e6}
+.why span b{color:var(--gold)}
+
+/* 中間：墊子＋拖曳方向 */
+.cen{left:252px;width:340px;top:88px;height:228px}
+.mat{position:absolute;left:30px;right:30px;top:96px;height:62px;clip-path:polygon(22% 0,78% 0,100% 30%,100% 70%,78% 100%,22% 100%,0 70%,0 30%);background:radial-gradient(closest-side,#4a5674,#262f45 75%,#1a2133)}
+.fz{position:absolute;top:44px;height:104px;display:flex;align-items:flex-end;justify-content:center;width:130px}
+.fz img{max-height:104px;max-width:150px;image-rendering:pixelated}
+.fz.flip img,.fz.flip .dm{transform:scaleX(-1)}
+.fz .dm{display:none;border-radius:12px;background:linear-gradient(var(--c) 40%,color-mix(in srgb,var(--c) 45%,#000) 40%)}
+.fz.noimg img{display:none}.fz.noimg .dm{display:block}
+.fz.up .dm{width:34px;height:70px;transform:rotate(38deg) translateY(8px)}
+.fz.dn .dm{width:84px;height:26px}
+.pad .ar{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;width:92px;height:46px;border-radius:10px;background:color-mix(in srgb,var(--m) 22%,#0d111a);border:2px solid var(--m);color:#fff;line-height:1.15;text-align:center;box-shadow:0 3px 0 #0008}
+.pad .ar b{font-size:14px;font-weight:800}.pad .ar small{font-size:10.5px;color:#d6dcea}
+.pad .ar .k{font-size:15px;font-weight:800;color:var(--m)}
+.pad .up{left:124px;top:0}
+.pad .lf{left:0;top:118px}
+.pad .rt{right:0;top:118px}
+.pad .ar.sel{background:var(--m);box-shadow:0 0 0 3px #fff,0 0 18px var(--m)}
+.pad .ar.dim{opacity:.35}
+.drag{position:absolute;left:150px;top:96px;width:34px;height:34px;border-radius:50%;background:#ffffffdd;box-shadow:0 0 0 6px #ffffff33,0 0 20px #fff8}
+.trail{position:absolute;height:6px;border-radius:3px;background:linear-gradient(90deg,#fff0,#fffc);transform-origin:100% 50%}
+.cap{position:absolute;left:-10px;right:-10px;bottom:0;text-align:center;font-size:12.5px;color:#dfe6f3;line-height:1.3}
+.cap b{color:var(--gold)} .cap.red b{color:#ff7a76}
+.stamp{position:absolute;left:50%;top:36px;transform:translateX(-50%) rotate(-7deg);border:3px solid var(--gold);color:var(--gold);background:#2a2208e6;font-size:26px;font-weight:800;letter-spacing:.08em;padding:0 14px;border-radius:8px;white-space:nowrap;z-index:3;text-align:center;line-height:1.25}
+.stamp small{display:block;font-size:12px;letter-spacing:0;font-weight:700;color:#ffe9a8}
+.reveal{position:absolute;left:0;right:0;top:122px;display:flex;justify-content:space-between;padding:0 6px;z-index:2}
+.reveal span{font-size:12px;font-weight:800;padding:3px 9px;border-radius:12px;background:#0a0d12d9;box-shadow:0 0 0 2px var(--m)}
+
+/* 降伏攻防：時機條 */
+.qte{position:absolute;left:12px;right:12px;top:60px;padding:10px 12px;border-radius:12px;background:#120c1ee6;box-shadow:0 0 0 2px var(--sub),0 10px 30px #000}
+.qte h5{font-size:13px;font-weight:800;color:#e3c8ff;display:flex;justify-content:space-between}
+.qte h5 small{font-weight:600;color:#bfa6e0}
+.track{position:relative;height:18px;margin-top:10px;background:#1d2533;border:1px solid var(--line);border-radius:9px}
+.track .z{position:absolute;top:0;bottom:0;border-radius:8px}
+.track .esc{background:#3ecf8e88}
+.track .mark{position:absolute;top:-5px;bottom:-5px;width:6px;margin-left:-3px;border-radius:3px;background:#fff;box-shadow:0 0 0 2px #000}
+.stages{display:flex;gap:6px;margin-top:10px;justify-content:center}
+.stages i{width:46px;height:8px;border-radius:4px;background:#2b2140;display:block}
+.stages i.done{background:var(--sub)}
+.stages i.now{background:#e3c8ff}
+.qte p{margin-top:8px;font-size:11.5px;color:#d6c8ee;line-height:1.4;text-align:center}
+.qte p b{color:var(--gold)}
+
+/* 下方 */
+.foot{left:10px;right:10px;top:326px;height:56px;display:flex;align-items:center;gap:10px}
+.last{flex:1;height:100%;border-radius:8px;background:#121722;border:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;padding:0 12px;font-size:12px;color:#cfd7e6;line-height:1.45}
+.last b{font-weight:800}
+.last em{font-style:normal;font-weight:800;color:var(--gold)}
+.hint{width:290px;height:100%;border-radius:8px;background:linear-gradient(#1a2440,#121a2f);border:1px solid #2c3d6e;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13px;font-weight:700;color:#cfe0ff;line-height:1.35;padding:0 10px}
+.hint.tap{background:linear-gradient(#e2574c,#a52c25);border:0;color:#fff;font-size:17px;font-weight:800;letter-spacing:.06em;box-shadow:0 3px 0 #0009}
+</style>
+</head>
+<body>
+<script>
+// 草圖資料：四個靜態畫面。這裡沒有規則邏輯，數字都是寫死的範例。
+const P = "assets/private/";
+const F = { mak: { id: "makhachev", name: "MAKHACHEV" }, poi: { id: "poirier", name: "POIRIER" } };
+const sta = (n, max = 20) => `<span class="sta"><i><b class="${n <= 5 ? "low" : ""}" style="width:${(n / max) * 100}%"></b></i><em class="${n <= 5 ? "low" : ""}">體力 ${n}</em></span>`;
+const LAYERS = [["站起來", "脫出半防守"], ["半防守", "降伏要撐 4 關"], ["側壓", "降伏要撐 3 關"], ["騎乘", "降伏要撐 2 關"]];
+const MV = { pass: ["↑", "過腿"], pound: ["→", "砸擊"], sub: ["←", "降伏"] }, DF = { pass: ["↑", "擋過腿"], pound: ["→", "護頭"], sub: ["←", "防降伏"] };
+
+function frame(d) {
+  const you = F[d.you], foe = F[d.foe], youTop = d.role === "top";
+  const lad = LAYERS.map(([n, r], i) => `<div class="${i ? "" : "out"} ${i === d.layer ? "on" : ""}"><span>${n}<small>${r}</small></span>${i === d.layer ? `<span class="tag">第 ${d.beat}／6 拍</span>` : ""}</div>`).join("");
+  const top = youTop ? you : foe, bot = youTop ? foe : you;
+  const fz = (f, who, pose, cls, x) => `<div class="fz ${who} ${cls}" style="left:${x}px"><img src="${P}${f.id}/${pose}.png" alt="" onerror="this.parentNode.classList.add('noimg')"><div class="dm"></div></div>`;
+  const stage = youTop ? fz(bot, "foe", "down", "dn flip", 128) + fz(top, "you", "shoot", "up", 84) : fz(bot, "you", "down", "dn", 82) + fz(top, "foe", "shoot", "up flip", 128);
+  const names = youTop ? MV : DF, cost = { pass: 2, pound: 1, sub: 3 };
+  const pad = d.pad ? `<div class="pad">${[["pass", "up"], ["sub", "lf"], ["pound", "rt"]].map(([m, pos]) => `<div class="ar m-${m} ${pos} ${d.pad.sel === m ? "sel" : d.pad.sel ? "dim" : ""}"><b><span class="k">${names[m][0]}</span> ${names[m][1]}</b><small>${youTop ? `花 ${cost[m]} 體力` : m === "pass" ? "擋住得 1 格空間" : m === "pound" ? "擋住得 1 格空間" : "擋住得 1 格空間"}</small></div>`).join("")}
+    ${d.pad.drag ? `<div class="trail" style="left:${d.pad.drag[0]}px;top:${d.pad.drag[1]}px;width:${d.pad.drag[2]}px;transform:rotate(${d.pad.drag[3]}deg)"></div><div class="drag" style="left:${d.pad.drag[4]}px;top:${d.pad.drag[5]}px"></div>` : ""}</div>` : "";
+  const reveal = d.reveal ? `<div class="reveal"><span class="m-${d.reveal[0]}">你 ${names[d.reveal[0]][0]} ${names[d.reveal[0]][1]}</span><span class="m-${d.reveal[1]}">他 ${(youTop ? DF : MV)[d.reveal[1]][0]} ${(youTop ? DF : MV)[d.reveal[1]][1]}</span></div>` : "";
+  const tbl = d.him.tbl ? `<div class="tbl"><h5>${d.him.tblHead}</h5>${d.him.tbl.map(([m, p]) => `<div class="tr m-${m}"><span><em>${(youTop ? DF : MV)[m][0]}</em>${(youTop ? DF : MV)[m][1]}</span><i><b style="width:${p}%"></b></i><strong>${p}%</strong></div>`).join("")}</div>` : "";
+  return `<section class="shot" id="${d.id}"><h3>${d.title}<small>${d.sub}</small></h3><div class="frame">
+    <div class="sb you"><div class="face"><img src="${P}${you.id}/portrait.png" alt="" onerror="this.remove()"></div><div class="nmx"><b>${you.name}</b><small>你・${youTop ? "上位" : "下位"}</small></div><span class="hp">${d.hp[0]}</span>${sta(d.sta[0])}</div>
+    <div class="sb foe"><div class="face"><img src="${P}${foe.id}/portrait.png" alt="" onerror="this.remove()"></div><div class="nmx"><b>${foe.name}</b><small>對手・${youTop ? "下位" : "上位"}</small></div><span class="hp">${d.hp[1]}</span>${sta(d.sta[1])}</div>
+    <div class="mid"><b>R2　GROUND</b><span>${d.head}</span></div>
+    <div class="lad">${lad}</div>
+    <div class="side you"><h4><i>你</i>${youTop ? "上位・進攻" : "下位・防守"}<small>${d.me.left || ""}</small></h4>${d.me.html}</div>
+    <div class="cen"><div class="mat"></div>${stage}${pad}${reveal}${d.stamp ? `<div class="stamp">${d.stamp}</div>` : ""}${d.qte || ""}<div class="cap ${d.capCls || ""}">${d.cap}</div></div>
+    <div class="side foe"><h4><i>他</i>${youTop ? "下位・防守" : "上位・進攻"}<small>${d.him.left || ""}</small></h4>${tbl}${d.him.why ? `<div class="why">${d.him.why.map((w) => `<span>${w}</span>`).join("")}</div>` : ""}${d.him.html || ""}</div>
+    <div class="foot"><div class="last"><div>${d.last}</div></div><div class="hint ${d.hintCls || ""}"><div>${d.hint}</div></div></div>
+  </div></section>`;
+}
+
+const space = (n) => `<div class="row">他的空間 <span class="space">${[0, 1].map((i) => `<i class="${i < n ? "on" : ""}"></i>`).join("")}</span><small style="color:var(--dim)">滿 2 格他就脫出一層</small></div>`;
+const FRAMES = [
+  { id: "f1", title: "1　上位・選方向：往一個方向拖", sub: "三個方向兩邊一樣：↑ 過腿　→ 砸擊　← 降伏。右邊是他這一拍真的會怎麼擋（含原因）",
+    you: "mak", foe: "poi", role: "top", hp: [38, 37], sta: [14, 9], layer: 2, beat: 3, head: "你在側壓，選一個方向",
+    me: { left: "輪到你", html: `${space(1)}<div class="costs">過腿 <b>2</b>・砸擊 <b>1</b>・降伏 <b>3</b> 體力<br>被他擋住：再多扣 <b>2</b></div><div class="chips"><span>地面肘擊<u>砸擊 +1</u></span><span>裸絞<u>降伏少一關</u></span></div>` },
+    him: { left: "同時決定", tblHead: "他這一拍怎麼擋（真實數字）", tbl: [["pass", 22], ["pound", 55], ["sub", 23]], why: ["你剛<b>砸中他</b>：他想護頭", "他體力 9：防降伏變弱"] },
+    pad: { sel: "sub", drag: [96, 138, 60, 0, 96, 122] },
+    cap: "他一半以上在護頭：<b>打擊開出降伏</b>",
+    last: "上一拍：你 <b>→ 砸擊</b>，他 <b>↑ 擋過腿</b> → <em>砸中 −3，他體力 −2</em>", hint: "放開手指＝出招<br><small style=\"font-weight:400;color:#9fb3e6\">拖到箭頭上，雙方同時翻開</small>" },
+  { id: "f2", title: "2　揭曉：方向不一樣＝打中", sub: "你往 ← 降伏，他往 → 護頭 → 降伏打中，進入降伏攻防",
+    you: "mak", foe: "poi", role: "top", hp: [38, 37], sta: [11, 9], layer: 2, beat: 3, head: "打中了！",
+    me: { left: "", html: `${space(1)}<div class="costs">這拍花了 <b>3</b> 體力（降伏）</div>` },
+    him: { left: "", tblHead: "他剛剛的表", tbl: [["pass", 22], ["pound", 55], ["sub", 23]], why: ["他押了護頭（55% 那個）"] },
+    reveal: ["sub", "pound"], stamp: "降伏打中！<small>進入降伏攻防・側壓要撐 3 關</small>",
+    cap: "方向一樣＝<b>擋住</b>（你多扣 2、他得 1 格空間）；不一樣＝<b>打中</b>",
+    last: "要是他也往 ← 擋：<em>你多扣 2 體力，他得 1 格空間</em>", hint: "繼續" },
+  { id: "f3", title: "3　降伏攻防：時機條", sub: "沿用現在的時機條。他每一關有一次逃脫機會，體力越少機會越小；你按中＝收緊，這關他更難逃",
+    you: "mak", foe: "poi", role: "top", hp: [38, 37], sta: [11, 9], layer: 2, beat: 3, head: "降伏攻防",
+    me: { left: "", html: `<div class="costs">撐過 2 關＝<b style="color:var(--gold)">降伏，比賽結束</b><br>他逃掉＝他多掉 2 體力，回到地面</div><div class="chips"><span>裸絞<u>本來 3 關，現在 2 關</u></span></div>` },
+    him: { left: "", tblHead: "他這一關的逃脫機會（真實數字）", tbl: [["sub", 53]], why: ["0.3 ＋ 0.5 ×（體力 9／20）＝ 53%", "你按中時機條：<b>再少 15%</b>"] },
+    qte: `<div class="qte"><h5>收緊！ <small>第 2 關／共 2 關</small></h5><div class="track"><div class="z esc" style="left:30%;width:34%"></div><div class="z" style="left:43%;width:8%;background:var(--gold)"></div><div class="mark" style="left:47%"></div></div><div class="stages"><i class="done"></i><i class="now"></i></div><p>游標停在<b>金色</b>時按下＝收緊</p></div>`,
+    cap: "要先把他<b>打累、壓到深處</b>，降伏才鎖得住",
+    last: "第 1 關：他 <b>沒逃掉</b>", hint: "按！", hintCls: "tap" },
+  { id: "f4", title: "4　下位・猜他往哪拖，就往同一邊擋", sub: "擋住 2 次就脫出一層。他會記得你上一拍擋了什麼，換別的打",
+    you: "poi", foe: "mak", role: "bottom", hp: [41, 38], sta: [7, 13], layer: 1, beat: 4, head: "你被壓在半防守，猜他的方向",
+    me: { left: "輪到你", html: `<div class="row">你的空間 <span class="space"><i class="on"></i><i></i></span><small style="color:var(--dim)">再擋 1 次就站起來</small></div><div class="costs">擋不花體力<br>被砸中：<b>−2 體力</b>；體力越少越擋不住降伏</div><div class="warn">體力只剩 <b>7</b>：被降伏打中很危險</div>` },
+    him: { left: "同時決定", tblHead: "他這一拍怎麼打（真實數字）", tbl: [["pass", 24], ["pound", 31], ["sub", 45]], why: ["你上一拍<b>擋掉他的過腿</b>：他少用過腿", "你體力低：他想<b>降伏</b>", "摔角手：愛過腿（基本傾向）"] },
+    pad: { sel: "sub", drag: [96, 138, 60, 0, 96, 122] },
+    cap: "他 45% 想降伏：<b>擋 ← 最穩</b>，但他也可能砸你",
+    last: "上一拍：他 <b>↑ 過腿</b>，你 <b>↑ 擋過腿</b> → <em>擋住！你得 1 格空間</em>", hint: "放開手指＝擋<br><small style=\"font-weight:400;color:#9fb3e6\">和他同方向就擋住</small>" },
+];
+document.body.insertAdjacentHTML("afterbegin", FRAMES.map(frame).join(""));
+// 只為了截圖：網址 #f1…#f4 或 ?f=1…4 時只顯示單一畫面
+const m = location.hash.match(/f(\d)/) || location.search.match(/f=(\d)/), el = m && document.getElementById("f" + m[1]);
+if (el) { document.body.classList.add("solo"); el.classList.add("pick"); }
+</script>
+</body>
+</html>
