@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>地面 21 點草圖</title>
 <style>
-/* 地面「21 點」草圖：只畫畫面，不接引擎。數字是範例。
-   預設：五個畫面直排，每個 844×390。網址加 #f1 … #f5 只顯示單一畫面（截圖用）。 */
+/* 地面「21 點」草圖 v2（格鬥轉播風）：只畫畫面，不接引擎。數字是範例。
+   預設：五個畫面直排，每個 844×390。網址加 #f1 … #f5 或 ?f=1…5 只顯示單一畫面（截圖用）。
+   選手圖來自 gitignore 的 assets/private；沒有時用色塊假人。 */
 :root{
   --bg:#0a0d12; --panel:#141923; --line:#283042; --text:#f1f4f9; --dim:#8d97aa;
   --blue:#4c8dff; --red:#f0524f; --gold:#f5c542; --green:#3ecf8e;
-  --top:#e0804f; --bot:#3fb596;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#040507;color:var(--text);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
@@ -25,345 +25,214 @@ body.solo .shot.pick{margin:0}
 
 .frame{position:relative;width:844px;height:390px;background:var(--bg);overflow:hidden;border-radius:8px;box-shadow:0 0 0 1px var(--line)}
 .frame::before{content:"";position:absolute;inset:0;background:
-  radial-gradient(60% 45% at 50% 52%,#232d45 0%,transparent 72%),
-  linear-gradient(#0b0f17,#07090d)}
+  radial-gradient(42% 46% at 50% 56%,#2b3653 0%,transparent 72%),
+  radial-gradient(40% 34% at 0% 0%,#1d3a7a66 0%,transparent 70%),
+  radial-gradient(40% 34% at 100% 0%,#7a1d1d66 0%,transparent 70%),
+  linear-gradient(#0b0f17,#06080c)}
 .frame>*{position:absolute}
+.you{--c:var(--blue)} .foe{--c:var(--red)}
 
-/* 上方：血量與標題 */
-.hud{left:0;right:0;top:0;height:36px;display:flex;align-items:center;padding:0 12px;gap:8px}
-.hp{width:38px;height:28px;line-height:28px;text-align:center;font-size:18px;font-weight:800;border-radius:8px;background:linear-gradient(#e2574c,#a52c25);box-shadow:0 2px 0 #5d1410}
-.nm{font-size:13px;font-weight:700}
-.hud .t{flex:1;text-align:center;font-size:14px;font-weight:700}
-.hud .t i{font-style:normal;padding:2px 10px;border-radius:10px;font-size:13px}
-.hud .t i.top{background:#4a2a1a;color:#ffb48a;box-shadow:0 0 0 1px var(--top)}
-.hud .t i.bot{background:#133a30;color:#8be0c3;box-shadow:0 0 0 1px var(--bot)}
-.hud .r{margin-left:auto;display:flex;align-items:center;gap:8px}
+/* 上方：轉播計分條 */
+.sb{top:0;height:42px;width:300px;display:flex;align-items:center;gap:8px;padding:0 10px}
+.sb.you{left:0;background:linear-gradient(90deg,#16346e,#16346e00)}
+.sb.foe{right:0;flex-direction:row-reverse;background:linear-gradient(270deg,#6e1a18,#6e1a1800)}
+.face{width:34px;height:34px;border-radius:6px;background:color-mix(in srgb,var(--c) 45%,#10141c);box-shadow:0 0 0 2px var(--c);overflow:hidden;flex:none}
+.face img{width:100%;height:100%;object-fit:cover;object-position:50% 12%}
+.nmx{line-height:1.15}.sb.foe .nmx{text-align:right}
+.nmx b{display:block;font-size:15px;font-weight:800;letter-spacing:.06em;font-style:italic}
+.nmx small{font-size:11px;font-weight:700;color:color-mix(in srgb,var(--c) 60%,#fff)}
+.hp{min-width:40px;height:30px;line-height:30px;text-align:center;font-size:19px;font-weight:800;border-radius:8px;background:linear-gradient(#e2574c,#a52c25);box-shadow:0 2px 0 #5d1410;flex:none}
+.mid{left:300px;width:244px;top:3px;text-align:center;line-height:1.2}
+.mid b{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.12em;background:#f5c542;color:#1d1500;padding:1px 10px;border-radius:4px;transform:skewX(-10deg)}
+.mid span{display:block;font-size:12px;color:#cfd7e6;margin-top:3px}
 
-/* 位置條 */
-.pos{left:156px;width:532px;top:38px;height:38px;display:flex;gap:4px}
-.pos div{flex:1;border-radius:7px;background:#161c28;border:1px solid var(--line);color:#6f7a90;font-size:12px;text-align:center;line-height:1.25;padding-top:3px;position:relative}
-.pos div b{display:block;font-size:13px}
-.pos div.stand{flex:.75;border-style:dashed}
-.pos div.on{color:#fff;border-color:var(--c);background:color-mix(in srgb,var(--c) 30%,#141923);box-shadow:0 0 0 1px var(--c)}
-.pos div.from{color:#9aa6bb;border-style:dashed;border-color:#6f7a90}
-.pos div .tag{position:absolute;right:4px;top:-8px;font-size:10px;background:var(--c);color:#fff;padding:0 6px;border-radius:7px;font-weight:700;line-height:15px}
-.hint{top:46px;font-size:12px;color:var(--dim);line-height:1.2;width:140px}
-.hint.l{left:12px;text-align:left}.hint.r{right:12px;text-align:right}
+/* 位置三層 */
+.lad{left:212px;width:420px;top:53px;height:30px;display:flex;gap:3px}
+.lad div{flex:1;transform:skewX(-12deg);background:#151b27;border:1px solid var(--line);color:#6f7a90;font-size:12px;font-weight:700;text-align:center;line-height:28px;position:relative}
+.lad div>*{display:inline-block;transform:skewX(12deg)}
+.lad div u{text-decoration:none;font-weight:400;margin-left:4px}
+.lad .out{flex:.8;border-style:dashed}
+.lad .on{background:linear-gradient(#f5c542,#c98f0c);border-color:#ffe08a;color:#1d1500}
+.lad .was{border-style:dashed;border-color:#8d97aa;color:#aab4c7}
+.lad .tag{position:absolute;right:2px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:#fff;color:#111;font-weight:800}
 
-/* 左：場上的牌 */
-.mods{left:12px;top:84px;width:146px;height:226px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 9px}
-.mods h4,.rule h4{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.06em;margin-bottom:6px}
-.mod{display:flex;flex-direction:column;gap:1px;padding:6px 0;border-top:1px solid #222a3a}
-.mod b{font-size:13px;display:flex;align-items:center;gap:5px}
-.mod span{font-size:11px;color:#b6c0d3}
-.mod em{font-style:normal;font-size:10px;font-weight:700;border-radius:6px;padding:0 5px;line-height:15px}
-.mod em.me{background:#1d3a6e;color:#9cc3ff}.mod em.foe{background:#6a2422;color:#ffaaa7}
-.mod.off{opacity:.38}
-.mod.on b{color:var(--gold)}
+/* 兩側：自己與對手的牌 */
+.side{top:90px;width:268px;height:226px;padding:8px 10px;border-radius:10px;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 14%,#10141d),#0e121a);border:1px solid color-mix(in srgb,var(--c) 45%,#283042)}
+.side.you{left:10px;border-left:4px solid var(--c)}
+.side.foe{right:10px;border-right:4px solid var(--c)}
+.side h4{font-size:12px;font-weight:800;display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.side h4 i{font-style:normal;font-size:11px;padding:0 7px;line-height:17px;border-radius:4px;background:var(--c);color:#fff}
+.side h4 small{font-weight:400;color:var(--dim);font-size:11px;margin-left:auto}
+.cards{display:flex;gap:5px;height:62px;align-items:center}
+.card{position:relative;width:42px;height:60px;border-radius:6px;flex:none;
+  background:linear-gradient(160deg,#2a3246,#161b27);border:1px solid #55617c;border-top:5px solid var(--c);
+  color:#fff;font-size:28px;font-weight:800;font-style:italic;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #0009}
+.card.down{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--c) 38%,#10141c) 0 5px,color-mix(in srgb,var(--c) 20%,#10141c) 5px 10px);color:#ffffffcc;font-style:normal}
+.card.new{box-shadow:0 0 0 2px var(--gold),0 2px 0 #0009}
+.card.new::after{content:"新";position:absolute;top:-11px;right:-6px;font-size:10px;font-weight:800;font-style:normal;background:var(--gold);color:#251c00;border-radius:7px;padding:0 5px;line-height:14px}
+.card.hide::after{content:"蓋著";position:absolute;bottom:2px;left:2px;right:2px;font-size:10px;font-weight:700;font-style:normal;color:#dfe6f3;background:#000a;border-radius:3px;line-height:13px;text-align:center}
+.bonus{width:38px;height:60px;border-radius:6px;border:2px dashed var(--gold);color:var(--gold);font-size:18px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;flex:none}
+.bonus small{font-size:9.5px;font-weight:700}
 
-/* 中：雙方的手 */
-.hand{left:170px;width:500px;height:100px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:12px;background:#10151f;border:1px solid var(--line);border-left:5px solid var(--c)}
-.hand.foe{top:80px}.hand.me{top:212px}
-.hand.top{--c:var(--top)}.hand.bot{--c:var(--bot)}
-.who{width:46px;flex:none;line-height:1.25}
-.who b{display:block;font-size:15px}.who small{font-size:11px;color:var(--c);font-weight:700}
-.cards{flex:1;display:flex;gap:6px;align-items:center}
-.card{position:relative;width:48px;height:70px;border-radius:7px;background:linear-gradient(#fbfcff,#dfe5f1);color:#1b2233;font-size:30px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #0008}
-.card.down{background:repeating-linear-gradient(45deg,#26335a 0 5px,#1c2745 5px 10px);color:#8da0d8;box-shadow:0 2px 0 #0008,0 0 0 2px #3b4c82 inset}
-.card.new{box-shadow:0 2px 0 #0008,0 0 0 3px var(--gold)}
-.card.new::after{content:"新";position:absolute;top:-8px;right:-6px;font-size:10px;font-weight:700;background:var(--gold);color:#251c00;border-radius:7px;padding:0 5px;line-height:15px}
-.card.hide{box-shadow:0 2px 0 #0008,0 0 0 2px #6f7a90}
-.card.hide::after{content:"他看不到";position:absolute;bottom:3px;left:2px;right:2px;font-size:9.5px;font-weight:700;color:#e6ebf5;background:#3a4560;border-radius:4px;line-height:14px;text-align:center;white-space:nowrap}
-.bonus{width:40px;height:70px;border-radius:7px;border:2px dashed var(--gold);color:var(--gold);font-size:19px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
-.bonus small{font-size:10px;font-weight:600}
-.sep{width:1px;height:50px;background:#2a3346;flex:none}
-.tot{width:104px;flex:none;text-align:center;line-height:1.1}
-.tot b{display:block;font-size:40px;font-weight:800}
-.tot b.q{font-size:28px;color:#aab4c7}
-.tot b.bad{color:var(--red)}
-.tot b.win{color:var(--gold)}
-.line{display:inline-block;margin-top:3px;font-size:11px;padding:1px 8px;border-radius:9px;background:#1c2331;color:#aab4c7}
-.line.v22{background:#143a2d;color:var(--green);box-shadow:0 0 0 1px var(--green);font-weight:700}
-.line.over{background:#4a1a19;color:#ff9d9b;box-shadow:0 0 0 1px var(--red);font-weight:700}
+/* 總和：大數字＋量條（刻度到爆牌線） */
+.sum{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+.sum b{font-size:34px;font-weight:800;font-style:italic;line-height:1}
+.sum b.q{font-size:28px;color:#c3ccdb}
+.sum b.win{color:var(--gold)} .sum b.bad{color:var(--red)}
+.sum span{font-size:12px;color:var(--dim)}
+.sum em{font-style:normal;margin-left:auto;font-size:11px;font-weight:700;padding:1px 8px;border-radius:4px;background:#1c2331;color:#aab4c7}
+.sum em.v22{background:#143a2d;color:var(--green);box-shadow:0 0 0 1px var(--green)}
+.sum em.over{background:#4a1a19;color:#ff9d9b;box-shadow:0 0 0 1px var(--red)}
+.gauge{position:relative;height:12px;margin-top:5px;background:#0b0e14;border:1px solid #2d3649;border-radius:3px}
+.gauge .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 60%,#000),var(--c));border-radius:2px}
+.gauge .unk{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,#ffffff38 0 4px,transparent 4px 8px)}
+.gauge .bust{position:absolute;top:-3px;bottom:-3px;width:2px;background:#ff5b57}
+.gauge .red{position:absolute;right:0;top:0;bottom:0;background:#ff5b5733}
+.gauge .th{position:absolute;top:-5px;bottom:-5px;width:3px;background:var(--gold);box-shadow:0 0 0 1px #000}
+.gl{position:relative;height:14px;font-size:10px;color:var(--dim)}
+.gl i{position:absolute;top:1px;font-style:normal;transform:translateX(-50%);white-space:nowrap}
+.gl i.b{color:#ff8f8b}.gl i.t{color:var(--gold);font-weight:700}
 
-/* 中間狀態列 */
-.status{left:170px;width:500px;top:182px;height:28px;text-align:center;line-height:28px;font-size:13px;color:#cfd7e6}
-.status b{color:var(--gold)}
+/* 對手的規則（真實數字）與場上的牌 */
+.tell{margin-top:4px;padding:3px 8px;border-radius:6px;background:#241d06;border:1px solid #6a5310;font-size:12px;line-height:20px;white-space:nowrap;overflow:hidden}
+.tell b{font-size:17px;font-weight:800;font-style:italic;color:var(--gold)}
+.tell small{font-size:10.5px;color:#c9b77a;margin-left:6px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.chips span{font-size:11px;line-height:18px;padding:0 7px;border-radius:9px;background:#2a2410;border:1px solid #7a6114;color:var(--gold);font-weight:700}
+.chips span u{text-decoration:none;font-weight:400;color:#e6d9a8;margin-left:4px}
+.chips span.none{background:none;border:1px dashed #3a4459;color:#6f7a90;font-weight:400}
+.say1{margin-top:7px;font-size:11.5px;color:#aab4c7;line-height:1.4}
+.say1 b{color:var(--gold)}
 
-/* 右：對手的規則 */
-.rule{right:12px;top:84px;width:146px;height:226px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 9px;text-align:center}
-.rule h4{text-align:left}
-.rule .big{font-size:64px;font-weight:800;line-height:1;color:var(--gold);margin-top:6px}
-.rule .txt{font-size:13px;line-height:1.4;margin-top:6px;color:#e6ebf5}
-.rule .txt b{color:var(--gold)}
-.rule .sub{font-size:11px;color:var(--dim);line-height:1.4;margin-top:8px;border-top:1px solid #222a3a;padding-top:6px}
-.rule .sub b{color:#cfd7e6}
+/* 中間：八角籠與兩位選手 */
+.cage{left:284px;width:276px;top:88px;height:228px}
+.mat{position:absolute;left:8px;right:8px;bottom:26px;height:92px;clip-path:polygon(22% 0,78% 0,100% 30%,100% 70%,78% 100%,22% 100%,0 70%,0 30%);
+  background:radial-gradient(closest-side,#4a5674,#262f45 75%,#1a2133)}
+.mat::after{content:"";position:absolute;inset:5px;clip-path:polygon(22% 0,78% 0,100% 30%,100% 70%,78% 100%,22% 100%,0 70%,0 30%);background:radial-gradient(closest-side,#394562,#222a3e 80%)}
+.fence{position:absolute;left:30px;right:30px;bottom:110px;height:46px;opacity:.5;
+  background:repeating-linear-gradient(60deg,#5a678844 0 1px,transparent 1px 9px),repeating-linear-gradient(-60deg,#5a678844 0 1px,transparent 1px 9px);border-top:3px solid #3a4560;border-radius:3px}
+.fz{position:absolute;bottom:48px;height:150px;display:flex;align-items:flex-end;justify-content:center;width:150px}
+.fz img{max-height:150px;max-width:190px;image-rendering:pixelated}
+.fz.flip img,.fz.flip .dm{transform:scaleX(-1)}
+.fz .dm{display:none;border-radius:16px;background:linear-gradient(var(--c) 40%,color-mix(in srgb,var(--c) 45%,#000) 40%)}
+.fz.noimg img{display:none}.fz.noimg .dm{display:block}
+.fz.up .dm{width:46px;height:96px;transform:rotate(38deg) translateY(10px)}
+.fz.dn .dm{width:110px;height:34px}
+.cap{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:12.5px;color:#dfe6f3;line-height:1.3}
+.cap b{color:var(--gold)} .cap.red b{color:#ff7a76}
+.roleU,.roleD{position:absolute;top:2px;font-size:11px;font-weight:800;padding:0 8px;line-height:18px;border-radius:4px;background:var(--c);color:#fff;transform:skewX(-10deg)}
+.stamp{position:absolute;left:50%;top:58px;transform:translateX(-50%) rotate(-8deg);border:3px solid var(--red);color:#ff7a76;font-size:30px;font-weight:800;letter-spacing:.12em;background:#2a0e0dd9;padding:0 14px;border-radius:8px;white-space:nowrap;z-index:3}
+.stamp.good{border-color:var(--green);color:#6df0b4;background:#0b2118d9}
+.stamp.gold{border-color:var(--gold);color:var(--gold);background:#2a2208d9}
 
 /* 下方：操作 */
-.act{left:170px;width:500px;top:320px;height:62px;display:flex;gap:12px}
-.btn{flex:1;border-radius:12px;border:0;color:#fff;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.25;text-align:center;box-shadow:0 3px 0 #0009}
-.btn b{font-size:19px}.btn small{font-size:12px;opacity:.85}
-.btn.hit{background:linear-gradient(#4c8dff,#2c5fcf)}
+.act{left:150px;width:544px;top:322px;height:60px;display:flex;gap:10px}
+.btn{flex:1;border-radius:8px;border:0;color:#fff;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;text-align:center;box-shadow:0 3px 0 #0009;transform:skewX(-6deg)}
+.btn>*{transform:skewX(6deg)}
+.btn b{font-size:20px;font-weight:800;letter-spacing:.06em}.btn small{font-size:12px;opacity:.9}
+.btn.hit{background:linear-gradient(#e2574c,#a52c25)}
 .btn.stand{background:linear-gradient(#566178,#394358)}
 .btn.cash{background:linear-gradient(#e9b52f,#b27a0c);color:#241a00}
-.btn.deep{background:linear-gradient(#e0804f,#a94a22)}
-.btn.go{background:linear-gradient(#4c8dff,#2c5fcf);flex:.6}
-.btn.wide{flex:1}
-.act.left-note{}
-.note{font-size:11px;color:var(--dim);line-height:1.35}
-.note.l{left:12px;top:320px;width:150px}
-.note.r{right:12px;top:320px;width:150px;text-align:right}
-
-/* 結果印章 */
-.stamp{left:430px;top:262px;width:112px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:10px;z-index:3;transform:rotate(-8deg);
-  border:3px solid var(--red);color:#ff7a76;font-size:28px;font-weight:800;letter-spacing:.12em;background:#2a0e0dcc}
-.status.red{color:#ffb0ad}.status.red b{color:#ff7a76}
+.btn.deep{background:linear-gradient(#e2574c,#8f1f1a)}
+.btn.go{background:linear-gradient(#4c8dff,#2c5fcf)}
+.note{top:326px;width:130px;font-size:11px;color:var(--dim);line-height:1.4}
+.note.l{left:12px}.note.r{right:12px;text-align:right}
 </style>
 </head>
 <body>
-
-<section class="shot" id="f1">
-  <h3>1　上位・要牌或收手<small>你先決定，他之後才動。他的牌你只看得到 1 張；他的規則是真實數字</small></h3>
-  <div class="frame">
-    <div class="hud"><span class="hp">38</span><span class="nm">你</span><span class="t">地面・<i class="top">你在上位</i></span><span class="r"><span class="nm">對手</span><span class="hp">41</span></span></div>
-    <div class="pos">
-      <div class="stand"><b>站起來</b></div>
-      <div class="on" style="--c:var(--top)"><b>半防守</b>×1<span class="tag">你在這</span></div>
-      <div><b>側壓</b>×2</div>
-      <div><b>騎乘</b>×4</div>
-    </div>
-    <div class="hint r">往深一層 ▶<br>（贏了才能選）</div>
-
-    <div class="mods">
-      <h4>場上的牌</h4>
-      <div class="mod on"><b>地面技 ×1 <em class="me">你</em></b><span>上位起手 +1</span></div>
-      <div class="mod on"><b>降伏 <em class="me">你</em></b><span>上位 20 也算降伏</span></div>
-      <div class="mod off"><b>起身 —</b><span>下位爆牌線 22</span></div>
-    </div>
-
-    <div class="hand foe bot">
-      <div class="who"><b>他</b><small>下位</small></div>
-      <div class="cards"><div class="card down">?</div><div class="card">8</div></div>
-      <div class="sep"></div>
-      <div class="tot"><b class="q">8＋？</b><span class="line">爆牌線 21</span></div>
-    </div>
-    <div class="status">他蓋著 1 張，你看得到另 1 張</div>
-    <div class="hand me top">
-      <div class="who"><b>你</b><small>上位</small></div>
-      <div class="cards"><div class="card">7</div><div class="card hide">6</div><div class="bonus">+1<small>地面技</small></div></div>
-      <div class="sep"></div>
-      <div class="tot"><b>14</b><span class="line">爆牌線 21</span></div>
-    </div>
-
-    <div class="rule">
-      <h4>他的規則</h4>
-      <div class="big">15</div>
-      <div class="txt">下位總和 <b>低於 15</b><br>就會要牌，否則收手</div>
-      <div class="sub">實際每次 <b>±1</b> 抖動<br>他最多再要 3 張</div>
-    </div>
-
-    <div class="note l">你的牌：他看得到 1 張，另 1 張蓋給他</div>
-    <div class="act">
-      <button class="btn hit"><b>要牌</b><small>還能要 3 張</small></button>
-      <button class="btn stand"><b>收手</b><small>停在 14</small></button>
-    </div>
-  </div>
-</section>
-
-<section class="shot" id="f2">
-  <h3>2　上位・贏了：兌現或往深一層再賭<small>先比大小；贏的上位二選一</small></h3>
-  <div class="frame">
-    <div class="hud"><span class="hp">38</span><span class="nm">你</span><span class="t">地面・<i class="top">你在上位</i></span><span class="r"><span class="nm">對手</span><span class="hp">41</span></span></div>
-    <div class="pos">
-      <div class="stand"><b>站起來</b></div>
-      <div><b>半防守</b>×1</div>
-      <div class="on" style="--c:var(--top)"><b>側壓</b>×2<span class="tag">你在這</span></div>
-      <div><b>騎乘</b>×4</div>
-    </div>
-    <div class="hint r">往深一層 ▶<br>（騎乘只能兌現）</div>
-
-    <div class="mods">
-      <h4>場上的牌</h4>
-      <div class="mod on"><b>地面技 ×1 <em class="me">你</em></b><span>上位起手 +1</span></div>
-      <div class="mod on"><b>降伏 <em class="me">你</em></b><span>上位 20 也算降伏</span></div>
-      <div class="mod off"><b>起身 —</b><span>下位爆牌線 22</span></div>
-    </div>
-
-    <div class="hand foe bot">
-      <div class="who"><b>他</b><small>下位</small></div>
-      <div class="cards"><div class="card">8</div><div class="card">7</div></div>
-      <div class="sep"></div>
-      <div class="tot"><b>15</b><span class="line">收手</span></div>
-    </div>
-    <div class="status"><b>20 對 15　你贏，差距 5</b></div>
-    <div class="hand me top">
-      <div class="who"><b>你</b><small>上位</small></div>
-      <div class="cards"><div class="card">7</div><div class="card">6</div><div class="card new">6</div><div class="bonus">+1<small>地面技</small></div></div>
-      <div class="sep"></div>
-      <div class="tot"><b class="win">20</b><span class="line">收手</span></div>
-    </div>
-
-    <div class="rule">
-      <h4>怎麼算</h4>
-      <div class="txt" style="text-align:left;margin-top:4px;font-size:12px">
-        差距 <b>5</b><br>÷2 進位 → <b>3</b><br>× 側壓 <b>2</b><br>＝ <b>6</b> 點傷害
-      </div>
-      <div class="sub" style="text-align:left">傷害上限 12<br>剛好 21 且他不是 21＝<b>降伏</b>，傷害 10</div>
-    </div>
-
-    <div class="act">
-      <button class="btn cash"><b>兌現　打他 6</b><small>落袋為安，結束這段地面</small></button>
-      <button class="btn deep"><b>再賭一手　→ 騎乘 ×4</b><small>輸了全沒、站起來</small></button>
-    </div>
-  </div>
-</section>
-
-<section class="shot" id="f3">
-  <h3>3　下位・要牌或收手<small>他（上位）已經收手；你只看得到他 1 張牌。你有「起身」牌，爆牌線是 22</small></h3>
-  <div class="frame">
-    <div class="hud"><span class="hp">41</span><span class="nm">你</span><span class="t">地面・<i class="bot">你被壓在下位</i></span><span class="r"><span class="nm">對手</span><span class="hp">38</span></span></div>
-    <div class="pos">
-      <div class="stand"><b>站起來</b></div>
-      <div><b>半防守</b>×1</div>
-      <div class="on" style="--c:var(--bot)"><b>側壓</b>×2<span class="tag">你在這</span></div>
-      <div><b>騎乘</b>×4</div>
-    </div>
-    <div class="hint l">◀ 脫出一層<br>（贏了或他爆牌）</div>
-
-    <div class="mods">
-      <h4>場上的牌</h4>
-      <div class="mod on"><b>地面技 ×1 <em class="foe">他</em></b><span>上位起手 +1</span></div>
-      <div class="mod off"><b>降伏 —</b><span>上位 20 也算降伏</span></div>
-      <div class="mod on"><b>起身 <em class="me">你</em></b><span>下位爆牌線 22</span></div>
-    </div>
-
-    <div class="hand foe top">
-      <div class="who"><b>他</b><small>上位</small></div>
-      <div class="cards"><div class="card down">?</div><div class="card">9</div><div class="card new">4</div><div class="bonus">+1<small>地面技</small></div></div>
-      <div class="sep"></div>
-      <div class="tot"><b class="q">14＋？</b><span class="line">已收手</span></div>
-    </div>
-    <div class="status"><b>他收手了</b>　他的總和大約在 16 以上</div>
-    <div class="hand me bot">
-      <div class="who"><b>你</b><small>下位</small></div>
-      <div class="cards"><div class="card">9</div><div class="card hide">5</div></div>
-      <div class="sep"></div>
-      <div class="tot"><b>14</b><span class="line v22">爆牌線 22</span></div>
-    </div>
-
-    <div class="rule">
-      <h4>他的規則</h4>
-      <div class="big">16</div>
-      <div class="txt">上位總和 <b>低於 16</b><br>就會要牌，否則收手</div>
-      <div class="sub">他收手了，所以現在<br><b>約 16 以上</b>（±1 抖動）</div>
-    </div>
-
-    <div class="note l">你要贏過他的總和，才能脫出一層</div>
-    <div class="act">
-      <button class="btn hit"><b>要牌</b><small>還能要 3 張</small></button>
-      <button class="btn stand"><b>收手</b><small>停在 14</small></button>
-    </div>
-  </div>
-</section>
-
-<section class="shot" id="f4">
-  <h3>4　下位・爆牌<small>超過爆牌線＝他自動贏這手，差距算 10，不用比大小</small></h3>
-  <div class="frame">
-    <div class="hud"><span class="hp">41</span><span class="nm">你</span><span class="t">地面・<i class="bot">你被壓在下位</i></span><span class="r"><span class="nm">對手</span><span class="hp">38</span></span></div>
-    <div class="pos">
-      <div class="stand"><b>站起來</b></div>
-      <div><b>半防守</b>×1</div>
-      <div class="on" style="--c:var(--bot)"><b>側壓</b>×2<span class="tag">你在這</span></div>
-      <div><b>騎乘</b>×4</div>
-    </div>
-    <div class="hint l">◀ 脫出一層<br>（這手沒機會了）</div>
-
-    <div class="mods">
-      <h4>場上的牌</h4>
-      <div class="mod on"><b>地面技 ×1 <em class="foe">他</em></b><span>上位起手 +1</span></div>
-      <div class="mod off"><b>降伏 —</b><span>上位 20 也算降伏</span></div>
-      <div class="mod on"><b>起身 <em class="me">你</em></b><span>下位爆牌線 22</span></div>
-    </div>
-
-    <div class="hand foe top">
-      <div class="who"><b>他</b><small>上位</small></div>
-      <div class="cards"><div class="card down">?</div><div class="card">9</div><div class="card">4</div><div class="bonus">+1<small>地面技</small></div></div>
-      <div class="sep"></div>
-      <div class="tot"><b class="q">14＋？</b><span class="line">已收手</span></div>
-    </div>
-    <div class="hand me bot">
-      <div class="who"><b>你</b><small>下位</small></div>
-      <div class="cards"><div class="card">9</div><div class="card">5</div><div class="card new">9</div></div>
-      <div class="sep"></div>
-      <div class="tot"><b class="bad">23</b><span class="line over">超過 22　爆牌</span></div>
-    </div>
-    <div class="status red"><b>爆牌！</b>他自動贏這手（差距算 10），由他選兌現或再賭</div>
-    <div class="stamp">爆牌</div>
-
-    <div class="rule">
-      <h4>他的規則</h4>
-      <div class="big">16</div>
-      <div class="txt">上位總和 <b>低於 16</b><br>就會要牌，否則收手</div>
-      <div class="sub">沒有起身牌的話<br>你 22 就已經爆了</div>
-    </div>
-
-    <div class="act"><button class="btn go wide" style="flex:1"><b>繼續</b><small>看他怎麼選</small></button></div>
-  </div>
-</section>
-
-<section class="shot" id="f5">
-  <h3>5　下位・脫出<small>你的總和比他大（或他爆牌）＝往淺一層；半防守再脫出＝站起來。同點＝裁判叫停，站起來</small></h3>
-  <div class="frame">
-    <div class="hud"><span class="hp">41</span><span class="nm">你</span><span class="t">地面・<i class="bot">你脫出了</i></span><span class="r"><span class="nm">對手</span><span class="hp">38</span></span></div>
-    <div class="pos">
-      <div class="stand"><b>站起來</b></div>
-      <div class="on" style="--c:var(--bot)"><b>半防守</b>×1<span class="tag">脫出到這</span></div>
-      <div class="from"><b>側壓</b>×2<span class="tag" style="background:#6f7a90">原本</span></div>
-      <div><b>騎乘</b>×4</div>
-    </div>
-    <div class="hint l">◀ 脫出一層</div>
-
-    <div class="mods">
-      <h4>場上的牌</h4>
-      <div class="mod on"><b>地面技 ×1 <em class="foe">他</em></b><span>上位起手 +1</span></div>
-      <div class="mod off"><b>降伏 —</b><span>上位 20 也算降伏</span></div>
-      <div class="mod on"><b>起身 <em class="me">你</em></b><span>下位爆牌線 22</span></div>
-    </div>
-
-    <div class="hand foe top">
-      <div class="who"><b>他</b><small>上位</small></div>
-      <div class="cards"><div class="card">3</div><div class="card">9</div><div class="card">4</div><div class="bonus">+1<small>地面技</small></div></div>
-      <div class="sep"></div>
-      <div class="tot"><b>17</b><span class="line">收手</span></div>
-    </div>
-    <div class="status"><b>19 對 17　你贏</b>　（他爆牌也一樣脫出）</div>
-    <div class="hand me bot">
-      <div class="who"><b>你</b><small>下位</small></div>
-      <div class="cards"><div class="card">9</div><div class="card">5</div><div class="card new">5</div></div>
-      <div class="sep"></div>
-      <div class="tot"><b class="win">19</b><span class="line v22">爆牌線 22</span></div>
-    </div>
-
-    <div class="rule">
-      <h4>接下來</h4>
-      <div class="txt" style="text-align:left;margin-top:4px;font-size:12px">
-        位置：側壓 → <b>半防守</b><br>
-        地面還在，雙方再發一手新牌
-      </div>
-      <div class="sub" style="text-align:left">在半防守再贏＝<b>站起來</b><br>他在半防守爆牌或輸＝同樣站起來</div>
-    </div>
-
-    <div class="act"><button class="btn go wide" style="flex:1"><b>繼續</b><small>下一手</small></button></div>
-  </div>
-</section>
-
 <script>
+// 草圖資料：五個靜態畫面。這裡沒有規則邏輯，數字都是寫死的範例。
+const P = "assets/private/";
+const F = { mak: { id: "makhachev", name: "MAKHACHEV" }, poi: { id: "poirier", name: "POIRIER" } };
+const SCALE = 24; // 量條畫到 24
+const pc = (n) => (n / SCALE * 100).toFixed(1) + "%";
+
+function cards(list, bonus) {
+  return `<div class="cards">${list.map((c) => {
+    const [v, k] = String(c).split(":");
+    return v === "?" ? `<div class="card down">?</div>` : `<div class="card ${k || ""}">${v}</div>`;
+  }).join("")}${bonus ? `<div class="bonus">+${bonus}<small>地面技</small></div>` : ""}</div>`;
+}
+// g: { known, unk (未知那張 1~10 的範圍), bust (21/22), th (對手門檻), cls, text, tag }
+function sum(g) {
+  const big = g.unk ? `<b class="q">${g.known}＋？</b>` : `<b class="${g.cls || ""}">${g.known}</b>`;
+  const tagCls = g.over ? "over" : g.bust === 22 ? "v22" : "";
+  const fill = Math.min(g.known, SCALE);
+  return `<div class="sum">${big}<span>${g.text || ""}</span><em class="${tagCls}">${g.tag || "爆牌線 " + g.bust}</em></div>
+  <div class="gauge"><div class="red" style="left:${pc(g.bust)}"></div><div class="fill" style="width:${pc(fill)}"></div>
+    ${g.unk ? `<div class="unk" style="left:${pc(g.known + 1)};width:${pc(Math.min(9, SCALE - g.known - 1))}"></div>` : ""}
+    <div class="bust" style="left:${pc(g.bust)}"></div>${g.th ? `<div class="th" style="left:${pc(g.th)}"></div>` : ""}</div>
+  <div class="gl">${g.th ? `<i class="t" style="left:${pc(g.th)}">${g.th}</i>` : ""}<i class="b" style="left:${pc(g.bust)}">爆 ${g.bust}</i></div>`;
+}
+const chips = (list) => `<div class="chips">${list.length ? list.map(([n, d]) => `<span>${n}<u>${d}</u></span>`).join("") : `<span class="none">沒有地面牌</span>`}</div>`;
+
+function frame(d) {
+  const you = F[d.you], foe = F[d.foe], youTop = d.role === "top";
+  const lad = ["站起來", "半防守", "側壓", "騎乘"].map((n, i) => {
+    const mul = ["", "×1", "×2", "×4"][i], cls = i === d.layer ? "on" : i === d.was ? "was" : "";
+    const tag = i === d.layer ? `<span class="tag">${d.layerTag || "現在"}</span>` : i === d.was ? `<span class="tag" style="background:#8d97aa">原本</span>` : "";
+    return `<div class="${i ? cls : "out " + cls}"><span>${n}<u>${mul}</u></span>${tag}</div>`;
+  }).join("");
+  const top = youTop ? you : foe, bot = youTop ? foe : you;
+  // 你永遠在左（藍角），對手在右（紅角）；上位那個人疊在上面
+  const fz = (f, who, pose, cls, x) => `<div class="fz ${who} ${cls}" style="left:${x}px"><img src="${P}${f.id}/${pose}.png" alt="" onerror="this.parentNode.classList.add('noimg')"><div class="dm"></div></div>`;
+  const stage = d.standing
+    ? fz(you, "you", "idle", "up", 20) + fz(foe, "foe", "idle", "up flip", 106)
+    : youTop
+      ? fz(bot, "foe", "down", "dn flip", 86) + fz(top, "you", "shoot", "up", 40)
+      : fz(bot, "you", "down", "dn", 40) + fz(top, "foe", "shoot", "up flip", 86);
+  return `<section class="shot" id="${d.id}"><h3>${d.title}<small>${d.sub}</small></h3><div class="frame">
+    <div class="sb you"><div class="face"><img src="${P}${you.id}/portrait.png" alt="" onerror="this.remove()"></div><div class="nmx"><b>${you.name}</b><small>你・${youTop ? "上位" : "下位"}</small></div><span class="hp">${d.hp[0]}</span></div>
+    <div class="sb foe"><div class="face"><img src="${P}${foe.id}/portrait.png" alt="" onerror="this.remove()"></div><div class="nmx"><b>${foe.name}</b><small>對手・${youTop ? "下位" : "上位"}</small></div><span class="hp">${d.hp[1]}</span></div>
+    <div class="mid"><b>R2　GROUND</b><span>${d.head}</span></div>
+    <div class="lad">${lad}</div>
+    <div class="side you"><h4><i>你</i>${youTop ? "上位・壓制" : "下位・掙脫"}<small>${d.me.left || ""}</small></h4>${cards(d.me.cards, d.me.bonus)}${sum(d.me.sum)}${chips(d.me.chips)}${d.me.say ? `<div class="say1">${d.me.say}</div>` : ""}</div>
+    <div class="cage"><div class="fence"></div><div class="mat"></div>${stage}${d.stamp ? `<div class="stamp ${d.stamp[1] || ""}">${d.stamp[0]}</div>` : ""}<div class="cap ${d.capCls || ""}">${d.cap}</div></div>
+    <div class="side foe"><h4><i>他</i>${youTop ? "下位・掙脫" : "上位・壓制"}<small>${d.him.left || ""}</small></h4>${cards(d.him.cards, d.him.bonus)}${sum(d.him.sum)}${d.him.tell ? `<div class="tell">他${d.him.tell[1]}<small>${d.him.tell[2]}</small></div>` : ""}${chips(d.him.chips)}</div>
+    ${d.noteL ? `<div class="note l">${d.noteL}</div>` : ""}${d.noteR ? `<div class="note r">${d.noteR}</div>` : ""}
+    <div class="act">${d.btns.map(([c, b, s]) => `<button class="btn ${c}"><b>${b}</b><small>${s}</small></button>`).join("")}</div>
+  </div></section>`;
+}
+
+const GS = [["地面技 ×1", "起手 +1"]], SUB = ["降伏", "20 也算降伏"], UP = ["起身", "爆牌線 22"];
+const FRAMES = [
+  { id: "f1", title: "1　上位・加壓或穩住", sub: "要牌＝加壓，收手＝穩住。雙方各蓋 1 張；對手的門檻是真實數字，畫在他的量條上",
+    you: "mak", foe: "poi", role: "top", hp: [38, 41], layer: 1, head: "你在上位，你先決定",
+    me: { cards: [7, "6:hide"], bonus: 1, left: "還能要 3 張", sum: { known: 14, bust: 21, text: "壓制" }, chips: [...GS, SUB] },
+    him: { cards: ["?", 8], left: "之後才動", sum: { known: 8, unk: true, bust: 21, th: 15, text: "掙脫" }, tell: [15, "低於 <b>15</b> 會再掙扎", "真實數字 ±1"], chips: [] },
+    cap: "半防守：壓得越接近 21 越穩，<b>超過就被他滑出去</b>",
+    btns: [["hit", "加壓", "要牌・再抽 1 張"], ["stand", "穩住", "收手・停在 14"]] },
+  { id: "f2", title: "2　上位・壓住了：砸下去，還是過腿往深一層", sub: "兌現＝砸下去；再賭＝過腿到下一層再比一手，輸了全沒",
+    you: "mak", foe: "poi", role: "top", hp: [38, 41], layer: 2, head: "20 對 15　你壓住了",
+    me: { cards: [7, 6, "6:new"], bonus: 1, left: "已收手", sum: { known: 20, bust: 21, cls: "win", text: "壓制", tag: "贏 5" }, chips: [...GS, SUB] },
+    him: { cards: [8, 7], left: "已收手", sum: { known: 15, bust: 21, text: "掙脫", tag: "輸 5" }, chips: [] },
+    stamp: ["壓住了", "gold"], cap: "差距 5 ÷2 進位 <b>3</b> × 側壓 <b>2</b> ＝ <b>6</b>",
+    noteL: "傷害上限 12。剛好 21 且他不是 21＝降伏，傷害 10", noteR: "到了騎乘只能砸，不能再過腿",
+    btns: [["cash", "砸下去　打他 6", "兌現・結束這段地面"], ["deep", "過腿　→ 騎乘 ×4", "再賭一手・輸了全沒、站起來"]] },
+  { id: "f3", title: "3　下位・掙扎或撐住", sub: "他已經穩住；你看不到他蓋著的那張。你有「起身」牌，爆牌線是 22",
+    you: "poi", foe: "mak", role: "bot", hp: [41, 38], layer: 2, head: "你被壓在下位，輪到你",
+    me: { cards: [9, "5:hide"], left: "還能要 3 張", sum: { known: 14, bust: 22, text: "掙脫" }, chips: [UP] },
+    him: { cards: ["?", 9, "4:new"], bonus: 1, left: "已收手", sum: { known: 14, unk: true, bust: 21, th: 16, text: "壓制" }, tell: [16, "低於 <b>16</b> 會再加壓", "他停了＝約 16 以上"], chips: GS },
+    cap: "側壓：你的總和<b>贏過他</b>才能脫出一層",
+    btns: [["hit", "掙扎", "要牌・再抽 1 張"], ["stand", "撐住", "收手・停在 14"]] },
+  { id: "f4", title: "4　下位・爆牌＝力氣放盡", sub: "超過爆牌線，他自動贏這手（差距算 10），不用比大小",
+    you: "poi", foe: "mak", role: "bot", hp: [41, 38], layer: 2, head: "你爆牌了",
+    me: { cards: [9, 5, "9:new"], left: "", sum: { known: 23, bust: 22, cls: "bad", text: "掙脫", over: true, tag: "超過 22" }, chips: [UP] },
+    him: { cards: ["?", 9, 4], bonus: 1, left: "已收手", sum: { known: 14, unk: true, bust: 21, th: 16, text: "壓制" }, tell: [16, "低於 <b>16</b> 會再加壓", "真實數字 ±1"], chips: GS },
+    stamp: ["力氣放盡"], capCls: "red", cap: "<b>他自動贏這手</b>（差距算 10），由他選砸下去或過腿",
+    btns: [["go", "繼續", "看他怎麼選"]] },
+  { id: "f5", title: "5　下位・脫出一層", sub: "你的總和比他大（或他爆牌）＝往淺一層，地面繼續、再發一手；半防守再脫出＝站起來。同點＝裁判叫停",
+    you: "poi", foe: "mak", role: "bot", hp: [41, 38], layer: 1, was: 2, layerTag: "脫出到這", head: "19 對 17　你脫出一層",
+    me: { cards: [9, 5, "5:new"], left: "已收手", sum: { known: 19, bust: 22, cls: "win", text: "掙脫", tag: "贏 2" }, chips: [UP] },
+    him: { cards: [3, 9, 4], bonus: 1, left: "已收手", sum: { known: 17, bust: 21, text: "壓制", tag: "輸 2" }, chips: GS },
+    stamp: ["脫出！", "good"], cap: "側壓 → <b>半防守</b>，地面繼續，再發一手",
+    noteL: "他爆牌（壓過頭）也一樣脫出一層", noteR: "在半防守再贏一次＝站起來",
+    btns: [["go", "繼續", "下一手"]] },
+];
+document.body.insertAdjacentHTML("afterbegin", FRAMES.map(frame).join(""));
 // 只為了截圖：網址 #f1…#f5 或 ?f=1…5 時只顯示單一畫面
-(function () {
-  var m = (location.hash.match(/f(\d)/) || location.search.match(/f=(\d)/));
-  var el = m && document.getElementById("f" + m[1]);
-  if (el) { document.body.classList.add("solo"); el.classList.add("pick"); }
-})();
+const m = location.hash.match(/f(\d)/) || location.search.match(/f=(\d)/), el = m && document.getElementById("f" + m[1]);
+if (el) { document.body.classList.add("solo"); el.classList.add("pick"); }
 </script>
 </body>
 </html>
