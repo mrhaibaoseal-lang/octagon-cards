@@ -531,7 +531,7 @@ function draw21(g) {
     const cls = !res || hide ? "" : over ? "bad" : res.win === s ? "win" : "";
     const cards = cs.map((v, i) => (hide && i === 1 ? `<div class="c down">?</div>` : `<div class="c ${me && i === 1 && !open ? "hid" : ""} ${G21.fresh === s && i === cs.length - 1 && i > 1 ? "new" : ""}">${v}</div>`)).join("") + (I.bonus[s] ? `<div class="bonus">+${I.bonus[s]}<small>${KW[X.startKw]}</small></div>` : "");
     const lim = I.hits?.[s] ?? X.hits, rest = lim - g.hits[s], five = X.fiveWin && lim >= X.hits; // pinned in side control he may take fewer, and cannot reach five
-    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? (five ? (rest === 1 ? "再 1 張不爆就贏" : `還能要 ${rest} 張・滿 ${X.hits + 2} 張不爆就贏`) : `還能要 ${rest} 張`) : role === "bottom" ? "之後才動" : "";
+    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? (five ? (rest === 1 ? "再 1 張不爆就贏" : `還能要 ${rest} 張・滿 ${X.hits + 2} 張不爆就贏`) : `還能要 ${rest} 張`) : role !== E.g21First(st) ? "之後才動" : "";
     const tag = over ? `<em class="ovr">超過 ${bust}</em>` : res && !hide && res.win && res.gap ? `<em class="${res.win === s ? "won" : ""}">${res.win === s ? "贏" : "輸"} ${res.gap}</em>` : `<em class="${bust > X.bust ? "v22" : ""}">爆牌線 ${bust}</em>`;
     // the opponent's real number: what you show him changes it when he is underneath
     let tell = "", th = 0;
@@ -561,7 +561,8 @@ function g21Event(e) {
     case "g21deal":
       Object.assign(G21, { open: false, fresh: null, res: null, stamp: null, capCls: "", cap: e.top === "a" ? `${names[e.layer - 1]}：越接近 ${X.bust} 越穩，<b>超過就被他滑出去</b>` : `${names[e.layer - 1]}：你的總和<b>贏過他</b>才能脫出一層` });
       rows(e.view); draw21(g);
-      say(e.top === "a" ? "你在上位，你先決定" : "你被壓在下位，他先決定", e.top === "a" ? "good" : "bad");
+      { const meFirst = (e.top === "a") === (E.g21First(st) === "top"); // whoever is underneath moves first when the top man answers (topLast)
+        say(`${e.top === "a" ? "你在上位" : "你被壓在下位"}，${meFirst ? "你先決定" : "他先決定，你看完再動"}`, e.top === "a" ? "good" : "bad"); }
       return 900;
     case "g21hit": {
       const role = g.top === e.s ? "top" : "bottom";

@@ -315,6 +315,7 @@ test("ground AI: the table sums to one over the moves it may play, leans toward 
 
 // ---------- the blackjack ground game (ground.mode "21") ----------
 const d21 = loadData(); d21.config.ground.mode = "21";
+d21.config.ground21.topLast = false; // these tests follow the first order (the top man first); the default order (topLast) has its own test below
 const X = d21.config.ground21;
 /** A clash already on the ground in 21 mode with the hands stacked: h = { a: [..], b: [..] }. */
 const down21 = (a, b, h, top = "a", layer = 1, who = ["poirier", "makhachev"]) => {
@@ -344,7 +345,9 @@ test("21 ground: a takedown deals two numbers a side, the top man decides first,
 });
 
 test("21 ground: the higher total wins; the top man cashes the gap in (half, rounded up, times the layer, capped) and stays on top for another hand", () => {
-  for (const [layer, ha, hb, dmg] of [[1, [10, 9], [10, 4], 3], [2, [10, 9], [10, 4], 6], [3, [10, 9], [10, 4], 12], [3, [10, 9], [1, 1], X.cap]]) {
+  const pay = (gap, layer) => Math.min(X.cap, Math.ceil(gap / X.div) * X.layerMul[layer - 1]); // the rule, written out
+  for (const [layer, ha, hb] of [[1, [10, 9], [10, 4]], [2, [10, 9], [10, 4]], [3, [10, 9], [10, 4]], [3, [10, 9], [1, 1]]]) {
+    const dmg = pay(19 - hb[0] - hb[1], layer);
     const st = down21(["cross"], ["cross"], { a: ha, b: hb }, "a", layer), hp = st.b.hp;
     act(st, "a", "stand"); act(st, "b", "stand");
     const e = last(st, "g21end");
@@ -367,7 +370,7 @@ test("21 ground: the higher total wins; the top man cashes the gap in (half, rou
   assert.equal(st.c.ground, null);
   assert.equal(evs(st, "standup").length, 1);
   // with stay off a cash always ends it (the first version)
-  const off = loadData(); off.config.ground.mode = "21"; off.config.ground21.stay = false;
+  const off = loadData(); off.config.ground.mode = "21"; off.config.ground21.stay = false; off.config.ground21.topLast = false;
   const s2 = E.createGame(off, "poirier", "makhachev", 3); put(s2, "a", ["cross"]); put(s2, "b", ["cross"]); E.startClash(s2);
   s2.c.ground = { top: "a", layer: 1, beat: 1, hands: { a: [10, 9], b: [10, 4] }, hits: { a: 0, b: 0 }, stood: { a: false, b: false }, phase: "top", gap: 0 };
   act(s2, "a", "stand"); act(s2, "b", "stand"); act(s2, "a", "cash");
@@ -497,7 +500,7 @@ test("21 ground: a full hand that has not gone over wins outright, whatever the 
   assert.equal(g21Threshold(st, "b", "top", 0, X.hits), A.hitBelow.top);
   assert.equal(g21Threshold(st, "b", "bottom", 17, X.hits + 1), Math.max(19, A.fiveBelow));
   // with the rule off the last card just ends his turn
-  const off = loadData(); off.config.ground.mode = "21"; off.config.ground21.fiveWin = false;
+  const off = loadData(); off.config.ground.mode = "21"; off.config.ground21.fiveWin = false; off.config.ground21.topLast = false;
   st = E.createGame(off, "poirier", "makhachev", 3); put(st, "a", ["cross"]); put(st, "b", ["cross"]); E.startClash(st);
   st.c.ground = { top: "a", layer: 2, beat: 1, hands: { a: [1, 1, 1, 1], b: [10, 10] }, hits: { a: X.hits - 1, b: 0 }, stood: { a: false, b: false }, phase: "top", gap: 0 };
   act(st, "a", "hit");
@@ -679,4 +682,34 @@ test("rounds: three clashes make a round scored by clashes won; corner options a
 test("the engine never looks at card ids", () => {
   const src = readFileSync(new URL("./engine.js", import.meta.url), "utf8");
   for (const id of Object.keys(data.skills)) assert.ok(!new RegExp(`["'\`]${id}["'\`]`).test(src), id);
+});
+
+test("21 ground, default order (topLast): the bottom man decides first and the top man answers; the second man chases what he can see", () => {
+  const dd = loadData();
+  assert.equal(dd.config.ground.mode, "21"); assert.equal(dd.config.ground21.topLast, true);
+  const st = E.createGame(dd, "makhachev", "poirier", 3);
+  put(st, "a", ["doubleleg", "cross"]); put(st, "b", ["cross"]);
+  E.startClash(st);
+  for (let i = 0; i < 10 && !st.c.ground; i++) { const o = E.options(st); if (o?.s === "a") E.choose(st, o.units.find((u) => u.kw.takedown)?.uid ?? o.units[0].uid, o.targets[0].uid); E.step(st); }
+  assert.ok(st.c.ground && st.c.ground.top === "a", "a takedown put a on top");
+  let o = E.g21Options(st);
+  assert.deepEqual({ phase: o.phase, turn: o.turn }, { phase: "bottom", turn: "b" }, "the bottom man goes first");
+  assert.equal(E.chooseGround(st, "a", "stand"), false, "the top man waits");
+  assert.ok(E.chooseGround(st, "b", "stand")); E.step(st);
+  o = E.g21Options(st);
+  assert.deepEqual({ phase: o.phase, turn: o.turn }, { phase: "top", turn: "a" }, "then the top man answers");
+  // the published numbers: the man who moves first plays his own number, the man who answers chases what he sees (shown + 2)
+  const A = { ...dd.config.ground21.ai, ...dd.fighters.makhachev.ai.ground21 }, B = { ...dd.config.ground21.ai, ...dd.fighters.poirier.ai.ground21 };
+  assert.equal(g21Threshold(st, "a", "top", 17), Math.min(A.standCap, Math.max(A.hitBelow.top, 19)));
+  assert.equal(g21Threshold(st, "a", "top", 3), A.hitBelow.top);
+  assert.equal(g21Threshold(st, "b", "bottom", 17), B.hitBelow.bottom, "the first man does not chase");
+  assert.ok(["hit", "stand"].includes(g21Smart(st, "a")));
+  assert.ok(["hit", "stand"].includes(g21Pick(st, "a")));
+  // a whole bout plays through in this order
+  for (const k of Object.keys(grounders21)) {
+    const g = runGame(dd, "makhachev", "poirier", 31, shoppers.smart, undefined, undefined, grounders21[k]);
+    assert.ok(g.over && ["KO", "DEC"].includes(g.over.how), k);
+    const first = g.log.find((e) => e.t === "g21stand" || e.t === "g21hit");
+    if (first) assert.notEqual(first.s, first.view.ground.top, "the first decision of a hand is the bottom man's");
+  }
 });
