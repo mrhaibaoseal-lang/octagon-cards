@@ -19,7 +19,7 @@ function kwWorth(st, s, c, k) {
 function cardWorth(st, c, d, s) {
   let v = c.atk + c.hp + (c.gold ? 2 : 0);
   for (const k of Object.keys(c.kw)) v += kwWorth(st, s, c, k);
-  return v + d.fx.filter((x) => x.when !== "play").length * 2;
+  return v + d.fx.filter((x) => x.when !== "play" && x.when !== "ground").length * 2;
 }
 /** What an offered card is worth to side s right now. */
 function offerWorth(st, s, id) {
@@ -234,6 +234,86 @@ export const g21Fixed = (n) => (st, s) => { const v = E.g21View(st, s); return !
 const vs21 = (mine) => (st, s) => (s === "a" ? mine(st, s) : g21Pick(st, s));
 export const grounders21 = { smart: vs21(g21Smart), random: vs21(g21Random), fixed17: vs21(g21Fixed(17)) };
 
+// ---------- the Texas hold'em ground game (ground.mode "poker") ----------
+const otherOf = (s) => (s === "a" ? "b" : "a");
+/** The opponent's published style: the config defaults, overridden by the fighter's ai.poker. These numbers are what the screen shows. */
+export const pokerStyle = (st, s) => ({ ...st.cfg.groundPoker.ai, ...(st[s].f.ai?.poker || {}) });
+/** The chance of each action for a man of this style holding a hand of class `cls` (0..8), given what he may do: { facing (a bet to answer), canRaise, canAllin }.
+ *  The opponent plays by drawing from this, and a reader uses the same table as the odds of what he saw: one source for both. */
+export function pokerDist(style, cls, ctx) {
+  if (ctx.canAllin && cls >= style.allin) return { allin: 1 };
+  const pr = ctx.canRaise ? (cls >= style.raise ? 1 : style.bluff) : 0, rest = 1 - pr;
+  if (ctx.facing) return cls >= style.call ? { raise: pr, call: rest } : { raise: pr, fold: rest };
+  return { raise: pr, call: rest };
+}
+const drawFrom = (st, dist) => { let r = E.rand(st); for (const [a, p] of Object.entries(dist)) if (p > 0 && (r -= p) < 0) return a; return Object.keys(dist).find((a) => dist[a] > 0); };
+/** Swap the lower hole card when the hand is nothing. Returns "keep" | "swap0" | "swap1". */
+const pokerSwap = (v) => (v.mine.hand.cls === 0 ? `swap${E.cardRank(v.mine.cards[0]) <= E.cardRank(v.mine.cards[1]) ? 0 : 1}` : "keep");
+const pokerDecide = (st, s, v) => (v.actions.includes("deeper") && v.cash < pokerStyle(st, s).deepBelow ? "deeper" : "cash");
+/** The opponent's move: drawn from its own table. */
+export function pokerPick(st, s) {
+  const v = E.pokerView(st, s);
+  if (!v || v.turn !== s) return null;
+  if (v.phase === "decide") return pokerDecide(st, s, v);
+  if (v.phase === "swap") return pokerSwap(v);
+  return drawFrom(st, pokerDist(pokerStyle(st, s), v.mine.hand.cls, { facing: v.owe > 0, canRaise: v.raise > 0, canAllin: v.allin > 0 }));
+}
+/** A fixed line: bet by the class of the hand, never bluff. */
+const FIXED = { raise: 2, bluff: 0, call: 1, allin: 3, deepBelow: 3 };
+export function pokerFixed(st, s) {
+  const v = E.pokerView(st, s);
+  if (!v || v.turn !== s) return null;
+  if (v.phase === "decide") return pokerDecide(st, s, v);
+  if (v.phase === "swap") return pokerSwap(v);
+  return drawFrom(st, pokerDist(FIXED, v.mine.hand.cls, { facing: v.owe > 0, canRaise: v.raise > 0, canAllin: v.allin > 0 }));
+}
+/** Any legal move at random (a free fold is not offered: nobody folds for nothing). */
+export function pokerRandom(st, s) {
+  const v = E.pokerView(st, s);
+  if (!v || v.turn !== s) return null;
+  const ok = v.actions.filter((a) => a !== "peek" && !(a === "fold" && v.owe === 0));
+  return ok[Math.floor(E.rand(st) * ok.length)];
+}
+/** Chance side s wins the showdown against the cards the opponent may hold, given what it did this hand and his published style (Monte Carlo, N samples). */
+export function pokerEquity(st, s, v, N = 140) {
+  const foe = otherOf(s), style = pokerStyle(st, foe), mine = v.mine.cards, board = v.board, seen = new Set([...mine, ...board, ...v.foe.cards.filter((c) => c != null)]);
+  const unseen = Array.from({ length: 52 }, (_, i) => i).filter((c) => !seen.has(c));
+  let x = ((st.rng ^ (v.foe.put * 97 + v.mine.put * 31 + board.length)) >>> 0) || 1; // a private random stream: the game's own is not touched
+  const rnd = () => { x = (x + 0x6d2b79f5) >>> 0; let t = Math.imul(x ^ (x >>> 15), x | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  let num = 0, den = 0;
+  for (let n = 0; n < N; n++) {
+    const pool = unseen.slice(), take = () => pool.splice(Math.floor(rnd() * pool.length), 1)[0], hole = [];
+    for (const c of v.foe.cards) { if (c != null) hole.push(c); }
+    while (hole.length < 2) hole.push(take());
+    let w = 1;
+    for (const e of v.log) if (e.s === foe) {
+      const b = board.slice(0, e.round === 1 ? 3 : 5), cls = E.evalHand([...hole, ...b]).cls;
+      w *= Math.max(0.02, pokerDist(style, cls, e)[e.act] ?? 0);
+    }
+    const full = board.slice();
+    while (full.length < 5) full.push(take());
+    const a = E.evalHand([...mine, ...full]).score, b = E.evalHand([...hole, ...full]).score;
+    num += w * (a > b ? 1 : a === b ? 0.5 : 0); den += w;
+  }
+  return num / den;
+}
+/** A player who reads: peeks when it can, works out its chance against what the opponent's style makes of his betting, and bets by that. */
+export function pokerRead(st, s) {
+  const v = E.pokerView(st, s);
+  if (!v || v.turn !== s) return null;
+  if (v.phase === "decide") return pokerDecide(st, s, v);
+  if (v.phase === "swap") return pokerSwap(v);
+  if (v.actions.includes("peek")) return "peek";
+  const eq = pokerEquity(st, s, v), pot = v.pot;
+  if (v.owe > 0 && eq < v.owe / (pot + v.owe)) return "fold"; // the odds the call is offered at
+  const kill = v.role === "top" && v.foe.stam <= v.allin; // he cannot cover an all-in: if it wins he is drained, and drained in side control or deeper is a submission
+  if (v.allin > 0 && (eq >= 0.8 || (kill && eq >= 0.55))) return "allin";
+  if (v.raise > 0 && eq >= 0.6) return "raise";
+  return "call";
+}
+const vsPoker = (mine) => (st, s) => (s === "a" ? mine(st, s) : pokerPick(st, s));
+export const groundersPoker = { reader: vsPoker(pokerRead), fixed: vsPoker(pokerFixed), random: vsPoker(pokerRandom) };
+
 export function cornerPick(st, s) { return st[s].hp <= st.cfg.hp - st.cfg.corner.heal - 3 ? "heal" : "discover"; }
 
 export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {} };
@@ -243,7 +323,7 @@ export const fighters = { sharp: (st, o) => fight(st, o, o.s === "a" ? 1 : undef
 /** A whole bout: side a shops with `shopper`, side b with its own AI; timing(st, p) grades each timing bar. */
 export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp, gpick = null) {
   const st = E.createGame(data, aId, bId, seed);
-  gpick ||= st.cfg.ground.mode === "21" ? grounders21.smart : grounders.read;
+  gpick ||= st.cfg.ground.mode === "poker" ? groundersPoker.reader : st.cfg.ground.mode === "21" ? grounders21.smart : grounders.read;
   let guard = 0;
   while (!st.over && guard++ < 60) {
     if (st.phase === "corner") { E.corner(st, "a", shopper === shoppers.none ? "heal" : cornerPick(st, "a")); E.corner(st, "b", cornerPick(st, "b")); continue; }

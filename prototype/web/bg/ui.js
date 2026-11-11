@@ -1,6 +1,6 @@
 // Octagon Cards — one-on-one board battler, browser front end. Rules live in engine.js / ai.js; this file draws and forwards clicks.
 import * as E from "./engine.js";
-import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead, g21Threshold, g21Pick, g21Smart } from "./ai.js";
+import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead, g21Threshold, g21Pick, g21Smart, pokerStyle, pokerPick, pokerRead } from "./ai.js";
 
 const params = new URLSearchParams(location.search);
 const load = async (n) => (await fetch(`rules/bg/${n}.json`)).json();
@@ -11,11 +11,11 @@ const SCHOOL = { punch: "拳", kick: "踢", grap: "摔", def: "防" };
 const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏", takedown: "抱摔", sprawl: "防摔", getup: "起身", ground: "地面技", combo: "連段", reach: "長距離" };
 const KW_TEXT = {
   guard: () => "對手必須先打這張", slip: () => "躲掉打向它的第一下", flurry: () => "一次出手打兩下", sweep: () => "同時打到目標左右兩張",
-  sub: (c) => c.ground.mode === "21" ? `地面：你在上位時，總和 ${c.ground21.subAt} 就算降伏（本來要剛好 ${c.ground21.bust}），傷害 ${c.ground21.submit}` : `地面猜拳：降伏傷害依位置 ${c.ground.moves.sub.hit.byLayer.join(" / ")}（${c.ground.layerNames.join(" / ")}）；你有這張時算深一層`,
-  takedown: (c) => c.ground.mode === "21" ? "打中就把這一段帶到地面，你在上位，開始比點數（一段一次）" : `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
+  sub: (c) => c.ground.mode === "poker" ? "地面撲克：側壓以上，攤牌贏的牌型夠大就降伏，比賽結束（要多大看這張牌自己的地面效果）" : c.ground.mode === "21" ? `地面：你在上位時，總和 ${c.ground21.subAt} 就算降伏（本來要剛好 ${c.ground21.bust}），傷害 ${c.ground21.submit}` : `地面猜拳：降伏傷害依位置 ${c.ground.moves.sub.hit.byLayer.join(" / ")}（${c.ground.layerNames.join(" / ")}）；你有這張時算深一層`,
+  takedown: (c) => c.ground.mode === "poker" ? "打中就把這一段帶到地面，你在上位，開始撲克地面：體力當籌碼（一段一次）" : c.ground.mode === "21" ? "打中就把這一段帶到地面，你在上位，開始比點數（一段一次）" : `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
   sprawl: () => "只要這張還在場上，對手的抱摔都不成功",
-  getup: (c) => c.ground.mode === "21" ? `地面：你在下位時，爆牌線 +${c.ground21.upAdd}` : `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
-  ground: (c) => c.ground.mode === "21" ? `地面：你在上位時，每有一張起手總和 +1（最多 +${c.ground21.startCap}）` : `地面猜拳：你每有一張，砸擊多 ${c.ground.moves.strike.hit.perCard} 傷害`,
+  getup: (c) => c.ground.mode === "poker" ? "地面撲克：沒有單獨的效果，看這張牌自己的地面效果" : c.ground.mode === "21" ? `地面：你在下位時，爆牌線 +${c.ground21.upAdd}` : `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
+  ground: (c) => c.ground.mode === "poker" ? "地面撲克：沒有單獨的效果，看這張牌自己的地面效果" : c.ground.mode === "21" ? `地面：你在上位時，每有一張起手總和 +1（最多 +${c.ground21.startCap}）` : `地面猜拳：你每有一張，砸擊多 ${c.ground.moves.strike.hit.perCard} 傷害`,
   combo: (c) => `前一張出手的也是連段牌：這一下 +${c.combo.atk} 攻擊，可累積到 +${c.combo.atk * c.combo.max}`,
   reach: () => "這張出手時不會被反擊",
 };
@@ -35,7 +35,7 @@ addEventListener("resize", fit);
 async function boot() {
   const [config, skills, fighters] = await Promise.all([load("config"), load("skills"), load("fighters")]);
   data = E.prepare({ config, skills: strip(skills), fighters: strip(fighters) });
-  if (params.has("ground")) data.config.ground.mode = params.get("ground") === "21" ? "21" : "rps"; // ?ground=21 / ?ground=rps picks the ground game
+  if (params.has("ground")) data.config.ground.mode = ["21", "poker"].includes(params.get("ground")) ? params.get("ground") : "rps"; // ?ground=21 / rps / poker picks the ground game
   const ids = Object.keys(data.fighters);
   choice = { a: params.get("a") || ids[0], b: params.get("b") || ids[1] };
   fit();
@@ -90,7 +90,7 @@ function card(c, o = {}) {
   const d = data.skills[c.id], m = c.gold ? data.config.golden : 1;
   const atk = c.pow ?? c.atk ?? d.atk, hp = c.hp ?? d.hp, kw = c.kw ? Object.keys(c.kw) : d.kw, off = c.pow === 0 && c.atk > 0;
   const up = (v, base) => (v > base * m ? "up" : v < base * m ? "down" : "");
-  const when = [...new Set(d.fx.map((f) => WHEN[f.when]).filter(Boolean))].map((w) => `<em class="fx">${w}</em>`).join("");
+  const when = [...new Set(d.fx.map((f) => (f.when === "ground" ? (data.config.ground.mode === "poker" ? "地面" : null) : WHEN[f.when])).filter(Boolean))].map((w) => `<em class="fx">${w}</em>`).join("");
   const stun = (c.stun ? "<em class='bad'>被壓制</em>" : "") + (off ? "<em class='bad'>地面出不了手</em>" : "") + (c.worn ? `<em class="bad">腿傷 −${c.worn}</em>` : "");
   return `<div class="sk ${d.school} ${c.gold ? "gold" : ""} ${o.small ? "s" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
     <i class="g">${SCHOOL[d.school]}</i><b class="nm">${esc(d.name)}</b><span class="tier">${"●".repeat(d.tier)}</span>
@@ -108,7 +108,7 @@ function showTip(node) {
   tipEl.className = d.school;
   tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級${gold ? "・金卡" : ""}</span>
     <div class="st"><i class="atk">${node.dataset.atk}</i>攻擊<i class="hp">${node.dataset.hp}</i>耐力</div>
-    ${d.fx.length ? `<p>${esc(d.text)}</p>` : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${KW_TEXT[k](data.config)}</p>`).join("")}
+    ${d.fx.some((f) => f.when !== "ground") ? `<p>${esc(d.text)}</p>` : ""}${data.config.ground.mode === "poker" ? d.fx.filter((f) => f.when === "ground").map((f) => `<p><em>地面</em>${esc(f.text)}</p>`).join("") : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${KW_TEXT[k](data.config)}</p>`).join("")}
     ${node.dataset.worn ? `<p class="dim">腿傷：攻擊 −${node.dataset.worn}，這回合結束才恢復。</p>` : ""}
     ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
     ${gold ? `<p class="dim">金卡：數值與效果的數字都加倍。</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
@@ -241,11 +241,23 @@ function pickScreen() {
   $("#go").onclick = async () => { await loadArt([choice.a, choice.b]); st = E.createGame(data, choice.a, choice.b, Number(params.get("seed")) || (Date.now() % 2147483647)); sel = null; shopScreen(); };
 }
 
+const pokerOn = () => st.cfg.ground.mode === "poker";
 function hud(hp = { a: st.a.hp, b: st.b.hp }) {
-  const side = (s) => `<div class="hud ${s}" id="hud${s}"><div class="hpn">${hp[s]}</div><div class="hb"><div class="who"><b>${s === "a" ? "你" : "對手"}</b><small>${esc(st[s].f.short)}・${esc(st[s].f.power.text)}</small></div>
-    <div class="bar"><b style="width:${(hp[s] / st.cfg.hp) * 100}%"></b></div></div></div>`;
+  // in the poker ground the stamina (the chips) sits under the durability bar
+  const sta = (s) => (pokerOn() ? `<div class="bar sta" data-s="${s}"><b class="${st[s].stam <= 5 ? "low" : ""}" style="width:${(st[s].stam / st.cfg.groundPoker.stamina) * 100}%"></b></div>` : "");
+  const side = (s) => `<div class="hud ${s}" id="hud${s}"><div class="hpn">${hp[s]}</div><div class="hb"><div class="who"><b>${s === "a" ? "你" : "對手"}</b><small>${esc(st[s].f.short)}・${esc(st[s].f.power.text)}</small>${pokerOn() ? `<small class="stn" data-s="${s}">體力 ${st[s].stam}</small>` : ""}</div>
+    <div class="bar"><b style="width:${(hp[s] / st.cfg.hp) * 100}%"></b></div>${sta(s)}</div></div>`;
   const cards = st.rounds.map((r) => `${r.a}-${r.b}`).join(" ");
   return `<div id="top">${side("a")}<div id="mid"><b>第 ${st.round} 回合・第 ${st.clash} 段</b><small>這回合 你 <i class="a">${st.wins.a}</i> : <i class="b">${st.wins.b}</i> 他${cards ? "　計分 " + cards : ""}</small></div>${side("b")}</div>`;
+}
+/** Stamina under each fighter's durability (poker ground only). */
+function setSta(stam) {
+  if (!stam || !pokerOn()) return;
+  for (const s of ["a", "b"]) {
+    const t = document.querySelector(`.stn[data-s="${s}"]`), b = document.querySelector(`.bar.sta[data-s="${s}"] b`);
+    if (t) { t.textContent = `體力 ${stam[s]}`; t.classList.toggle("low", stam[s] <= 5); }
+    if (b) { b.style.width = (stam[s] / st.cfg.groundPoker.stamina) * 100 + "%"; b.classList.toggle("low", stam[s] <= 5); }
+  }
 }
 function setHp(hp) {
   for (const s of ["a", "b"]) { const h = $("#hud" + s); if (!h) continue; h.querySelector(".hpn").textContent = hp[s]; h.querySelector(".bar b").style.width = (hp[s] / st.cfg.hp) * 100 + "%"; }
@@ -328,9 +340,10 @@ function rows(v) {
 function setGround(g) {
   const was = ground, b = $("#gnd"), G = st.cfg.ground;
   ground = g || null;
-  const m21 = G.mode === "21";
+  const m21 = G.mode === "21" || G.mode === "poker";
   frame.classList.toggle("gmode", !!ground && !m21);
   frame.classList.toggle("g21mode", !!ground && m21);
+  frame.classList.toggle("pkmode", !!ground && G.mode === "poker");
   if (!ground) { $("#gpanel")?.remove(); $("#gtend")?.remove(); $("#g21")?.remove(); }
   if (b && m21) b.innerHTML = "";
   else if (b) {
@@ -388,6 +401,7 @@ async function showEvent(e, prev) {
     case "ground": float(el(e.uid) && pos(el(e.uid)), "抱摔成功", "buff"); act(e.s, "attack", "grap"); rows(e.view); say(e.s === "a" ? "帶到地面！你在上位" : "被帶到地面！你在下面", e.s === "a" ? "good" : "bad", st.cfg.ground.mode === "21" ? "" : "地面猜拳：每拍暗選一招，同時翻開"); return 1200;
     case "gbeat": return gbeat(e);
     case "g21deal": case "g21hit": case "g21stand": case "g21end": case "g21cash": case "g21deep": return g21Event(e);
+    case "pdeal": case "pact": case "pboard": case "pend": case "pcash": case "pdeep": case "psub": return pokerEvent(e);
     case "stuffed": float(el(e.uid) && pos(el(e.uid)), "防摔！", "buff"); say(e.s === "a" ? "你擋下了抱摔" : "他擋下了抱摔", e.s === "a" ? "good" : "bad", "防摔牌還在場上，抱摔就不會成功"); return 700;
     case "standup": rows(e.view); if (e.uid) float(el(e.uid) && pos(el(e.uid)), "起身", "buff"); say(e.uid ? (e.s === "a" ? "你站回來了" : "他站回來了") : "站起來了", "", e.uid ? "" : "回到站立"); return 800;
     case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 240;
@@ -396,6 +410,7 @@ async function showEvent(e, prev) {
     case "react": say(e.grade === "miss" ? "慢了" : e.grade === "perfect" ? "完美！" : "好！", e.grade === "miss" ? "bad" : "good"); return 250;
     case "clashend": {
       setGround(null);
+      if (!e.dmg && st.over?.how === "SUB" && e.s) { say(e.s === "a" ? "降伏！你鎖死了他" : "降伏！你被鎖死了", e.s === "a" ? "good" : "bad", "比賽結束"); return 1500; }
       setHp(e.hp);
       const o = e.s ? E.other(e.s) : null;
       if (e.s) { $("#hud" + o).classList.add("hurt"); act(e.s, "attack", "punch"); act(o, e.hp[o] <= 0 ? "down" : "hit"); float(fighterPos(o), `−${e.dmg}`, "dmg"); say(e.s === "a" ? `這一段你贏了：他耐久 −${e.dmg}` : `這一段他贏了：你耐久 −${e.dmg}`, e.s === "a" ? "good" : "bad", "剩下的牌打在選手身上"); }
@@ -619,12 +634,164 @@ function pick21(o) {
   });
 }
 
+// ---------- the ground game, Texas hold'em style (ground.mode "poker") ----------
+// Drawn from the snapshot each event carries (it holds both hands; the screen only shows what you may see). You are always on the left.
+const PK = { cap: "", capCls: "", stamp: null, last: { a: "", b: "" }, g: null, stam: null };
+const CLS = ["高牌", "一對", "兩對", "三條", "順子", "同花", "葫蘆", "四條", "同花順"], SUIT = ["♠", "♥", "♦", "♣"];
+const rk = (r) => ({ 11: "J", 12: "Q", 13: "K", 14: "A" })[r] || String(r);
+const pcard = (c, cls = "") => (c == null ? `<div class="pc down ${cls}"><b>?</b></div>` : `<div class="pc ${E.cardSuit(c) === 1 || E.cardSuit(c) === 2 ? "r" : ""} ${cls}"><b>${rk(E.cardRank(c))}</b><u>${SUIT[E.cardSuit(c)]}</u></div>`);
+const handName = (h) => (h.cls === 4 ? `順子 ${rk(h.hi)} 高` : h.cls === 5 || h.cls === 8 ? `${CLS[h.cls]} ${rk(h.hi)} 高` : `${CLS[h.cls]} ${rk(h.hi)}`);
+/** The ground cards of side s that matter right now, as [name, what] tags. */
+function pkTags(s, g) {
+  const P = st.cfg.groundPoker, role = g.top === s ? "top" : "bottom", out = [];
+  for (const u of st.c[s]) {
+    if (!u || u.hp <= 0) continue;
+    const d = data.skills[u.id], m = u.gold ? st.cfg.golden : 1;
+    for (const f of d.fx) {
+      if (f.when !== "ground") continue;
+      const n = (f.n || 0) * m;
+      if (f.do === "swap" && g.left.swap[s] > 0) out.push([d.name, `換一張暗牌 剩 ${g.left.swap[s]}`]);
+      else if (f.do === "peek" && g.left.peek[s] > 0) out.push([d.name, `偷看一張 剩 ${g.left.peek[s]}`]);
+      else if (f.do === "ante" && g.dealt === 1) out.push([d.name, `他多押 ${n}`]);
+      else if (f.do === "drain" && role === "top") out.push([d.name, `贏一手多磨他 ${n}`]);
+      else if (f.do === "cashplus" && role === "top") out.push([d.name, `砸下去 +${n}`]);
+      else if (f.do === "sub" && f.role === role && f.layer === g.layer) out.push([d.name, `${CLS[f.rank]}以上就${role === "top" ? "鎖死" : "反鎖"}`]);
+      else if (f.do === "refill" && role === "bottom" && g.layer >= (f.layer || 1) && !g.used.refill[s]) out.push([d.name, `被磨光先回 ${n}`]);
+    }
+  }
+  return out;
+}
+/** The opponent's published style, as lines of real numbers: exactly the table pokerPick plays from. */
+function pkStyleRows(g) {
+  const S = pokerStyle(st, "b"), P = st.cfg.groundPoker, pc = (x) => Math.round(x * 100) + "%";
+  return [
+    ["加壓", S.raise <= 0 ? "什麼牌都加壓" : `${CLS[S.raise]}以上`],
+    ["虛張", S.raise > 0 && S.bluff > 0 ? `${pc(S.bluff)} 沒到也加壓` : S.raise <= 0 ? "不用虛張" : "不虛張"],
+    ["被加壓還跟", S.call <= 0 ? "不放棄" : `${CLS[S.call]}以上`],
+    ["全押", g.layer >= P.allInLayer ? `${CLS[S.allin]}以上` : "這層不能"],
+  ];
+}
+function drawPk(g) {
+  if (!g || !g.h) return;
+  PK.g = g;
+  let n = $("#g21");
+  if (!n) { n = document.createElement("div"); n.id = "g21"; frame.appendChild(n); }
+  n.className = "pk";
+  const P = st.cfg.groundPoker, G = st.cfg.ground, h = g.h, top = g.top, open = h.reveal, board = h.board.slice(0, h.shown), stam = PK.stam || { a: st.a.stam, b: st.b.stam };
+  const name = (hole) => handName(E.evalHand([...hole, ...board]));
+  const side = (s) => {
+    const me = s === "a", role = top === s ? "top" : "bottom", V = VERB[role], f = me ? "b" : "a";
+    const seen = (i) => me || open || h.peeked.a.includes(i);
+    const cards = h.hole[s].map((c, i) => pcard(seen(i) ? c : null, !me && seen(i) && !open ? "hl" : "")).join("");
+    const show = me || open || h.peeked.a.length === 2;
+    const hand = me ? `<div class="hand">你現在：<b>${name(h.hole.a)}</b></div>` : open ? `<div class="hand">他現在：<b>${name(h.hole.b)}</b></div>` : h.peeked.a.length ? `<div class="hand dim">看到一張，另一張還不知道</div>` : "";
+    void show;
+    const tags = me ? pkTags("a", g) : [];
+    const warn = me && role === "bottom" && g.layer >= P.subLayer && stam.a <= 8 ? `<div class="warn">只剩 <b>${stam.a} 體力</b>：這層輸到 0＝<b>被降伏</b></div>` : me && stam.a <= 0 ? `<div class="warn">沒力了：這次地面只能跟或鬆手</div>` : "";
+    const style = me ? "" : `<div class="style"><h5>他的打法（真實數字）</h5>${pkStyleRows(g).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>`;
+    return `<div class="side ${me ? "you" : "foe"}"><h4><i>${me ? "你" : "他"}</i>${V.role}<small>${me ? (h.phase === "decide" && g.top === s ? "輪到你" : "") : `這手已押 <b>${h.put[s]}</b> 體力`}</small></h4>
+      <div class="hole">${cards}</div>${hand}
+      ${me ? `<div class="stake">這手已押 <em>${h.put[s]} 體力</em></div>` : ""}${warn}
+      ${me ? `<div class="chips">${tags.length ? tags.map(([k, d]) => `<span>${esc(k)}<u>${esc(d)}</u></span>`).join("") : `<span class="none">沒有地面牌</span>`}</div>` : `${PK.last.b ? `<div class="last">${PK.last.b}</div>` : ""}${style}`}</div>`;
+  };
+  const rule = (i) => {
+    const r = P.subRank[i - 1], parts = [i >= P.allInLayer ? "可全押" : "不能全押", i >= P.subLayer ? (r != null ? `${CLS[r]}鎖死` : "磨光降伏") : "不會降伏"];
+    return parts.join("・");
+  };
+  const lad = ["站起來", ...G.layerNames].map((nm, i) => `<div class="${i ? "" : "out"} ${i === g.layer ? "on" : ""}"><span>${nm}${i ? `<u>×${P.cashMul[i - 1]}</u>` : ""}<small>${i ? rule(i) : "脫出半防守"}</small></span>${i === g.layer ? `<span class="tag">第 ${g.dealt}／${P.hands} 手</span>` : ""}</div>`).join("");
+  const slots = Array.from({ length: 5 }, (_, i) => (i < board.length ? pcard(board[i], "sm") : `<div class="pc sm slot"><b>待翻</b></div>`)).join("");
+  const pot = h.put.a + h.put.b;
+  n.innerHTML = `<div class="lad">${lad}</div>${side("a")}${side("b")}
+    <div class="table"><div class="lab">桌面　彩池 <b>${pot} 體力</b></div><div class="board">${slots}</div></div>
+    ${PK.stamp ? `<div class="stamp ${PK.stamp[1]}">${PK.stamp[0]}</div>` : ""}<div class="cap ${PK.capCls}">${PK.cap}</div><div class="act"></div>`;
+}
+/** Play one event of the poker ground. */
+function pokerEvent(e) {
+  const g = e.view.ground, names = st.cfg.ground.layerNames, P = st.cfg.groundPoker, who = (s) => (s === "a" ? "你" : "他");
+  const hurt = (s, dmg) => { setHp(e.hp); $("#hud" + s)?.classList.add("hurt"); act(E.other(s), "attack", "grap"); act(s, e.hp[s] <= 0 ? "down" : "hit"); float(fighterPos(s), `−${dmg}`, "dmg"); };
+  PK.stam = e.stam; setSta(e.stam);
+  const hand = (h) => handName(h);
+  switch (e.t) {
+    case "pdeal":
+      Object.assign(PK, { stamp: null, capCls: "", last: { a: "", b: "" }, cap: e.top === "a" ? `${names[e.layer - 1]}：每人先押 1 體力，各拿兩張暗牌` : `${names[e.layer - 1]}：你被壓著，每人先押 1 體力` });
+      rows(e.view); drawPk(g);
+      say(`${e.top === "a" ? "你在上位" : "你被壓在下位"}・第 ${e.hand}／${P.hands} 手`, e.top === "a" ? "good" : "bad", "每一輪下位先動，上位看完再決定");
+      return 900;
+    case "pact": {
+      if (e.act === "cash" || e.act === "deeper") return 0;
+      const role = g.top === e.s ? "top" : "bottom", V = VERB[role];
+      if (e.act === "keep") { drawPk(g); say(`${who(e.s)}不換牌`, e.s === "a" ? "good" : "bad"); return 400; }
+      if (e.act.startsWith("swap")) { drawPk(g); say(`${who(e.s)}換掉了一張暗牌`, e.s === "a" ? "good" : "bad"); return 800; }
+      if (e.act === "peek") { drawPk(g); say(`${who(e.s)}偷看了${e.s === "a" ? "他的一張暗牌" : "你的一張暗牌"}`, e.s === "a" ? "good" : "bad"); return 800; }
+      const text = e.act === "fold" ? `${who(e.s)}鬆手` : e.act === "allin" ? `${who(e.s)}拚了！押上 ${e.amt}` : e.act === "raise" ? `${who(e.s)}${V.hit} +${e.amt}` : e.amt ? `${who(e.s)}${role === "top" ? "跟" : "撐住"}（押 ${e.amt}）` : `${who(e.s)}${role === "top" ? "穩住" : "撐住"}（過牌）`;
+      if (e.s === "b") PK.last.b = e.act === "raise" ? `他${V.hit} <small>（再押 ${e.amt}）</small>` : e.act === "allin" ? `他拚了！<small>（押上 ${e.amt}）</small>` : e.act === "fold" ? `他鬆手` : e.amt ? `他跟 <small>（押 ${e.amt}）</small>` : `他過牌`;
+      PK.cap = e.act === "fold" ? "" : `第 ${e.round} 輪`;
+      drawPk(g); say(text, e.s === "a" ? "good" : "bad");
+      if (e.act === "raise" || e.act === "allin") act(e.s, "attack", "grap");
+      return 800;
+    }
+    case "pboard": PK.cap = "再翻兩張牌，第二輪"; drawPk(g); say("再翻兩張牌", ""); return 800;
+    case "pend": {
+      const w = e.winner, gg = g || PK.g, hands = e.hands;
+      PK.last.b = "";
+      if (e.res === "tie") { PK.stamp = ["平手", "gold"]; PK.capCls = ""; PK.cap = `${hand(hands.a)} 對 ${hand(hands.b)}，各自拿回押的體力，<b>站起來</b>`; }
+      else {
+        const l = E.other(w);
+        const how = e.how === "fold" ? `${who(l)}鬆手，押的體力沒了` : `${who(w)}：${hand(hands[w])}　勝　${who(l)}：${hand(hands[l])}${hand(hands[w]) === hand(hands[l]) ? "（比到後面的牌）" : ""}`;
+        if (e.res === "sub") { PK.stamp = ["降伏！", w === "a" ? "gold" : ""]; PK.cap = `${how}<br>${e.sub === "lock" ? `${CLS[hands[w].cls]}鎖死` : e.sub === "counter" ? "反鎖降伏" : "體力被磨光"}，<b>比賽結束</b>`; }
+        else if (e.res === "top") { PK.stamp = ["壓住了", w === "a" ? "gold" : ""]; PK.cap = `${how}<br>${e.drained ? `多磨掉他 ${e.drained} 體力，` : ""}${e.refill ? `他先回 ${e.refill} 體力，` : ""}${w === "a" ? `砸下去能打 <b>${e.cash}</b>` : `他能砸下來（${e.cash}）`}`; }
+        else { PK.stamp = ["脫出！", w === "a" ? "good" : ""]; PK.cap = `${how}<br>${who(w)}脫出一層：${e.to >= 1 ? `${names[e.layer - 1]} → <b>${names[e.to - 1]}</b>` : "<b>站起來</b>"}`; }
+        PK.capCls = w === "b" ? "red" : "";
+      }
+      drawPk(gg);
+      say(e.res === "tie" ? "平手" : w === "a" ? "這手你贏" : "這手他贏", e.res === "tie" ? "" : w === "a" ? "good" : "bad");
+      return 2600;
+    }
+    case "pcash":
+      PK.stamp = null; PK.capCls = e.s === "b" ? "red" : ""; PK.cap = `${who(e.s)}砸下去，<b>${who(E.other(e.s))}耐久 −${e.dmg}</b>${e.stay ? `，還壓在${names[e.layer - 1]}` : ""}`; drawPk(g || PK.g);
+      hurt(E.other(e.s), e.dmg);
+      say(e.s === "a" ? "砸下去！" : "他砸下來", e.s === "a" ? "good" : "bad");
+      return 1500;
+    case "pdeep": say(e.s === "a" ? `過腿！到${names[e.layer - 1]}` : `他過腿到${names[e.layer - 1]}`, e.s === "a" ? "good" : "bad"); act(e.s, "attack", "grap"); return 900;
+    case "psub":
+      PK.stamp = ["降伏！", e.s === "a" ? "gold" : ""]; PK.capCls = e.s === "b" ? "red" : ""; drawPk(PK.g);
+      act(E.other(e.s), "down"); say(e.s === "a" ? "降伏！你鎖死了他" : "降伏！你被鎖死了", e.s === "a" ? "good" : "bad", "比賽結束");
+      return 1800;
+  }
+  return 0;
+}
+/** Your decision: buttons under the cage. */
+function pickPoker(o) {
+  if (speed === 0) return Promise.resolve(pokerRead(st, "a"));
+  const v = E.pokerView(st, "a"), box = $("#g21 .act"), G = st.cfg.ground, top = v.role === "top";
+  if (!box) return Promise.resolve(o.actions.includes("call") ? "call" : o.actions[0]);
+  const B = {
+    fold: ["fold", "鬆手", `放棄・輸掉押的 ${v.mine.put}`],
+    call: ["call", o.owe > 0 ? (top ? "跟" : "撐住") : top ? "穩住" : "撐住", o.owe > 0 ? `再押 ${o.owe}` : o.round === 2 && top ? "過牌・直接攤牌" : "過牌"],
+    raise: ["raise", top ? "加壓" : "掙扎", `再押 ${o.owe + o.raise}`],
+    allin: ["allin", "拚了・全押", `押上 ${o.owe + o.allin}${top && v.foe.stam <= o.allin ? "・他輸就降伏" : ""}`],
+    peek: ["peek", "偷看", "看他一張暗牌・不算這一手"],
+    keep: ["call", "不換", "留著這兩張"],
+    swap0: ["raise", "換左邊這張", "從牌堆換一張新的"],
+    swap1: ["raise", "換右邊這張", "從牌堆換一張新的"],
+    cash: ["cash", `砸下去　打他 ${o.cash}`, o.hand >= o.hands ? "兌現・結束這段地面" : `兌現・留在${G.layerNames[o.layer - 1]}再來一手`],
+    deeper: ["deep", `過腿　→ ${G.layerNames[o.layer] || ""} ×${st.cfg.groundPoker.cashMul[o.layer] || ""}`, `不砸這 ${o.cash}・換更深的位置`],
+  };
+  return new Promise((res) => {
+    box.innerHTML = o.actions.map((a) => `<button class="b ${B[a][0]}" data-a="${a}"><b>${B[a][1]}</b><small>${B[a][2]}</small></button>`).join("");
+    box.querySelectorAll("button").forEach((b) => (b.onclick = () => { box.replaceChildren(); res(b.dataset.a); }));
+    if (o.phase === "decide") say("壓住了：砸下去，還是過腿？", "good");
+    else if (o.phase === "swap") say("要不要換掉一張暗牌？", "good");
+    else say(`輪到你：${o.owe > 0 ? "他加壓了" : "第 " + o.round + " 輪"}`, top ? "good" : "bad");
+  });
+}
+
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
     <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
     <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
-  ground = null; frame.classList.remove("gmode", "g21mode");
+  ground = null; frame.classList.remove("gmode", "g21mode", "pkmode");
   pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
   const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);
@@ -643,6 +810,15 @@ async function clash(id) {
   };
   await flush();
   while (id === runId && st.phase === "clash") {
+    const op = E.pokerOptions(st);
+    if (op) {
+      const m = op.turn === "a" ? await pickPoker(op) : pokerPick(st, "b");
+      if (id !== runId) return;
+      E.chooseGround(st, op.turn, m);
+      E.step(st);
+      await flush();
+      continue;
+    }
     const o21 = E.g21Options(st);
     if (o21) {
       const m = o21.turn === "a" ? await pick21(o21) : g21Pick(st, "b");
@@ -683,7 +859,7 @@ function finish() {
   const o = st.over, d = document.createElement("div");
   d.className = "over";
   const title = o.winner === "a" ? "你贏了" : o.winner === "b" ? "你輸了" : "平手";
-  const how = o.how === "DEC" ? `判定 ${o.total.a}-${o.total.b}` : `KO・第 ${o.round} 回合`;
+  const how = o.how === "DEC" ? `判定 ${o.total.a}-${o.total.b}` : o.how === "SUB" ? `降伏 SUB・第 ${o.round} 回合` : `KO・第 ${o.round} 回合`;
   frame.innerHTML = `<div class="bgart"></div>${hud()}`;
   d.innerHTML = `<div class="box wide"><h2 class="${o.winner === "a" ? "win" : "lose"}">${title}｜${how}</h2>
     ${st.rounds.length ? `<div class="cardrow">${st.rounds.map((r, i) => `<span>第 ${i + 1} 回合 <b>${r.a}-${r.b}</b></span>`).join("")}</div>` : ""}

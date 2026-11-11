@@ -30,12 +30,18 @@
   "beat": {"press": "guard", "strike": "rise", "sub": "turn", "guard": "sub", "rise": "press", "turn": "strike"},
   "ai": {"base": {"press": 3, "strike": 3, "sub": 3, "guard": 3, "rise": 3, "turn": 3}, "layerLean": {"rise": 0.15, "turn": 0.15, "press": -0.1}, "cardBoost": 0.3, "react": 0.5, "threat": 1.2, "flat": 0.2, "bigHit": 6}
  },
- "_doc21": "ground.mode 地面用哪一版：rps＝上面的猜拳，21＝ground21 的 21 點（網址 ?ground=21 或 ?ground=rps 可切）。ground21（2026-11-11）：每手雙方各發 2 張 1～max 的數字（放回抽；deck 是 1～10 各自的權重，照真的撲克牌：10／J／Q／K 都算 10，所以 10 是 4 份、其他各 1 份，2026-11-11 使用者試玩覺得滿 5 張太容易），各蓋第 2 張給對方；依 topLast 決定誰先要牌或收手，每人最多再要 hits 張；fiveWin＝要滿牌（2＋hits 張）都沒爆就直接贏這手，不比大小（上位這樣贏差距算 fiveGap）；超過 bust 就爆牌（上位爆＝下位脫出一層；下位爆＝上位贏，差距算 bustGap）；沒爆比總和，下位大＝脫出一層、地面繼續再發一手，同點＝站起來；上位贏了二選一：兌現（傷害＝差距÷div 進位 × layerMul[層]，上限 cap）或往深一層再比一手（放棄這次兌現）；一次地面最多 hands 手。上位總和達到 bust 且下位不是 bust＝降伏，傷害 submit（不低於兌現）。場上的牌：每張 startKw 的牌上位起手 +1（最多 startCap）；有 subKw 的牌上位 subAt 就算降伏；有 upKw 的牌下位爆牌線 +upAdd。topLast（2026-11-11 使用者選「先改規則」）：下位先要牌或收手，上位看完再決定（像 21 點的莊家，上位掌控節奏）；false＝上位先。stay（2026-11-11 使用者選的 A）：兌現之後不站起來，留在這一層再發一手（手數用完才站起來）。layerRules（同日選的 B）：每一層對下位的限制，botHits 下位最多再要幾張、botBust 下位的爆牌線（起身牌再 +upAdd）；只能要 2 張的人湊不到 5 張，所以沒有五張不爆。ai：hitBelow 對手總和低於幾點會要牌（上位 top／下位 bottom；選手可在 fighters.json 的 ai.ground21 覆寫；下位還會至少要到比上位露出來的牌多 2，最高 standCap），jitter 每次判斷的抖動，fiveBelow 只差一張就滿牌時改用這個門檻（比原本高才用），deepBelow 兌現低於幾點會往深一層賭。",
+ "_doc21": "ground.mode 地面用哪一版：rps＝上面的猜拳，21＝ground21 的 21 點，poker＝groundPoker 的撲克（網址 ?ground=21 / rps / poker 可切）。ground21（2026-11-11）：每手雙方各發 2 張 1～max 的數字（放回抽；deck 是 1～10 各自的權重，照真的撲克牌：10／J／Q／K 都算 10，所以 10 是 4 份、其他各 1 份，2026-11-11 使用者試玩覺得滿 5 張太容易），各蓋第 2 張給對方；依 topLast 決定誰先要牌或收手，每人最多再要 hits 張；fiveWin＝要滿牌（2＋hits 張）都沒爆就直接贏這手，不比大小（上位這樣贏差距算 fiveGap）；超過 bust 就爆牌（上位爆＝下位脫出一層；下位爆＝上位贏，差距算 bustGap）；沒爆比總和，下位大＝脫出一層、地面繼續再發一手，同點＝站起來；上位贏了二選一：兌現（傷害＝差距÷div 進位 × layerMul[層]，上限 cap）或往深一層再比一手（放棄這次兌現）；一次地面最多 hands 手。上位總和達到 bust 且下位不是 bust＝降伏，傷害 submit（不低於兌現）。場上的牌：每張 startKw 的牌上位起手 +1（最多 startCap）；有 subKw 的牌上位 subAt 就算降伏；有 upKw 的牌下位爆牌線 +upAdd。topLast（2026-11-11 使用者選「先改規則」）：下位先要牌或收手，上位看完再決定（像 21 點的莊家，上位掌控節奏）；false＝上位先。stay（2026-11-11 使用者選的 A）：兌現之後不站起來，留在這一層再發一手（手數用完才站起來）。layerRules（同日選的 B）：每一層對下位的限制，botHits 下位最多再要幾張、botBust 下位的爆牌線（起身牌再 +upAdd）；只能要 2 張的人湊不到 5 張，所以沒有五張不爆。ai：hitBelow 對手總和低於幾點會要牌（上位 top／下位 bottom；選手可在 fighters.json 的 ai.ground21 覆寫；下位還會至少要到比上位露出來的牌多 2，最高 standCap），jitter 每次判斷的抖動，fiveBelow 只差一張就滿牌時改用這個門檻（比原本高才用），deepBelow 兌現低於幾點會往深一層賭。",
  "ground21": {
   "max": 10, "deck": [1, 1, 1, 1, 1, 1, 1, 1, 1, 4], "bust": 21, "hits": 3, "hands": 4, "div": 4, "layerMul": [1, 2, 4], "cap": 8, "bustGap": 8, "submit": 4, "fiveWin": true, "fiveGap": 8,
   "startKw": "ground", "startCap": 3, "subKw": "sub", "subAt": 20, "upKw": "getup", "upAdd": 1,
   "stay": true, "topLast": true, "layerRules": [{}, {"botHits": 2}, {"botBust": 20}],
   "ai": {"hitBelow": {"top": 16, "bottom": 15}, "jitter": 1, "standCap": 20, "deepBelow": 4, "fiveBelow": 16}
+ },
+ "_docPoker": "撲克地面（ground.mode＝poker，網址 ?ground=poker；2026-11-11 使用者核可的規格，docs/TASKS.md「撲克地面規格」）。籌碼＝體力：stamina 每位選手的油箱上限（整場帶著走），regen 每回合結束回多少（不超過上限）。一手：每人先押 ante，各 2 張暗牌、桌上 5 張（flop 先翻 3 張，第二輪前再翻 2 張）、兩輪押注、攤牌；每手重洗 52 張。每輪下位先動、上位看完再決定；raise 是各輪加壓的額度（第一輪、第二輪），maxRaises 一輪最多加幾次；allInLayer 全押要到第幾層以上。輸的人押的體力沒了，贏的人拿回自己押的。上位贏→兌現（傷害＝彩池÷2 進位 × cashMul[層]，上限 cap）或過腿往深一層；下位贏→脫出一層（半防守＝站起來）；平分→站起來；hands 一次地面最多幾手。降伏（結束比賽，判定 SUB）：只在 subLayer 以上；①下位輸了這手而體力為 0（磨光）②上位攤牌贏、牌型等級達到 subRank[層]（牌型等級：0 高牌、1 一對、2 兩對、3 三條、4 順子、5 同花、6 葫蘆、7 四條、8 同花順；null＝不可能）。場上的牌的效果寫在 skills.json 的 fx（when:ground）。ai：對手預設的打法（fighters.json 的 ai.poker 覆寫）：raise 牌型等級達到就加壓、bluff 沒達到時仍加壓的機率、call 被加壓時牌型等級達到才跟（否則放棄）、allin 牌型等級達到就全押（要先能全押）、deepBelow 兌現低於幾點就改過腿。畫面上顯示的就是這些數字。",
+ "groundPoker": {
+  "stamina": 20, "regen": 6, "ante": 1, "hands": 3, "raise": [2, 4], "maxRaises": 2, "allInLayer": 2,
+  "cashMul": [1, 2, 4], "cap": 8, "subLayer": 2, "subRank": [null, 6, 2],
+  "ai": {"raise": 1, "bluff": 0.1, "call": 1, "allin": 2, "deepBelow": 3}
  },
  "combo": {"atk": 1, "max": 3},
  "maxAttacks": 120

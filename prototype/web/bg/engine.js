@@ -37,7 +37,7 @@ export function createGame(data, aId, bId, seed = 1) {
   const st = { data, cfg, rng: (seed >>> 0) || 1, round: 1, clash: 0, turn: 0, phase: "shop", over: null, log: [], rounds: [], wins: { a: 0, b: 0 }, c: null };
   for (const [s, id] of [["a", aId], ["b", bId]]) {
     st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null,
-      shop: { gold: 0, tier: 1, offers: [], frozen: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 } };
+      shop: { gold: 0, tier: 1, offers: [], frozen: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 }, stam: cfg.groundPoker.stamina };
   }
   beginTurn(st);
   return st;
@@ -177,14 +177,14 @@ const view = (st) => {
   const unitView = (u) => (u ? { uid: u.uid, id: u.id, gold: u.gold, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
   return { a: st.c.a.map(unitView), b: st.c.b.map(unitView), ground: st.c.ground ? structuredClone(st.c.ground) : null };
 };
-function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, view: view(st) }; st.log.push(e); return e; }
+function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, stam: { a: st.a.stam, b: st.b.stam }, view: view(st) }; st.log.push(e); return e; }
 
 // ---------- clash ----------
 export function startClash(st) {
   if (st.phase !== "shop" || st.a.discover || st.b.discover) return false;
   st.phase = "clash";
   let uid = 0;
-  const c = (st.c = { n: 0, turn: null, pending: null, opt: null, ace: null, reacted: false, ground: null, grounds: 0, ko: null, gchoice: null, glast: { a: null, b: null }, chain: { a: 0, b: 0 }, a: [], b: [] });
+  const c = (st.c = { n: 0, turn: null, pending: null, opt: null, ace: null, reacted: false, ground: null, grounds: 0, ko: null, sub: null, gchoice: null, glast: { a: null, b: null }, chain: { a: 0, b: 0 }, a: [], b: [] });
   for (const s of SIDES) {
     st[s].shown = st[s].board.map((x) => (x ? { ...x, kw: { ...x.kw } } : null));
     c[s] = st[s].board.map((x, slot) => (x ? { ...x, kw: { ...x.kw }, uid: ++uid, slot, side: s, acted: false, stun: false, swings: 0 } : null));
@@ -246,7 +246,8 @@ function takedown(st, u) {
   c.ground = { top: s, layer: st.cfg.ground.start, beat: 1 };
   c.grounds++;
   ev(st, "ground", { s, uid: u.uid });
-  if (is21(st)) deal21(st);
+  if (isPoker(st)) startPoker(st);
+  else if (is21(st)) deal21(st);
 }
 function standUp(st, s = null, uid = null) { st.c.ground = null; ev(st, "standup", { s, uid }); }
 const canHit = (st, u) => u && u.hp > 0 && power(st, u) > 0;
@@ -256,7 +257,7 @@ export function options(st) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return null;
   if (c.opt) return c.opt;
-  if (c.ko || c.ground || !alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
+  if (c.ko || c.sub || c.ground || !alive(c.a).length || !alive(c.b).length || c.n >= st.cfg.maxAttacks) return null;
   for (let tries = 0; tries < 4; tries++) {
     const s = c.turn, mine = alive(c[s]);
     const sitOut = () => { let n = 0; for (const x of mine) if (x.stun && !x.acted) { x.stun = false; x.acted = true; n++; ev(st, "stunned", { uid: x.uid }); } if (n) c.chain[s] = 0; return n; };
@@ -327,7 +328,7 @@ function swing(st, u, t, mul) {
 export function step(st, grade = null) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return false;
-  if (c.ground) { if (is21(st)) run21(st); else runBeat(st); return true; }
+  if (c.ground) { if (isPoker(st)) runPoker(st); else if (is21(st)) run21(st); else runBeat(st); return true; }
   const react = grade ? needsReact(st) : null, p = upcoming(st);
   if (!p) { endClash(st); return true; }
   c.pending = null; c.opt = null; c.n++;
@@ -358,11 +359,12 @@ export function groundMoves(st, s) {
 /** What the ground game looks like right now: { top, layer, beat, max, moves: { a, b }, last } or null. */
 export function groundOptions(st) {
   const c = st.c, g = c?.ground;
-  if (st.phase !== "clash" || !g || c.ko || is21(st)) return null;
+  if (st.phase !== "clash" || !g || c.ko || is21(st) || isPoker(st)) return null;
   return { top: g.top, layer: g.layer, beat: g.beat, max: st.cfg.ground.beats, moves: { a: groundMoves(st, "a"), b: groundMoves(st, "b") }, last: c.glast };
 }
 /** Side s picks its move for this beat (hidden until both have). False when it is not allowed. */
 export function chooseGround(st, s, move) {
+  if (isPoker(st)) { const o = pokerOptions(st); if (!o || o.turn !== s || !o.actions.includes(move)) return false; st.c.gchoice = { [s]: move }; return true; }
   if (is21(st)) { const o = g21Options(st); if (!o || o.turn !== s || !o.actions.includes(move)) return false; st.c.gchoice = { [s]: move }; return true; }
   if (!groundOptions(st) || !groundMoves(st, s).includes(move)) return false;
   (st.c.gchoice ||= {})[s] = move;
@@ -531,13 +533,208 @@ function end21(st) {
   standUp(st);
 }
 
+// ---------- the ground game, Texas hold'em style (ground.mode "poker"; numbers in rules/bg groundPoker) ----------
+// The chips are stamina (st[s].stam, carried through the bout). A hand: both ante, two hole cards each, five on the table (three shown first, two more
+// before the second round), two betting rounds, a showdown. The bottom man acts first in every round, the top man answers.
+// The loser's stake is gone, the winner takes his own back. The top man winning cashes in (pot / 2 x layer) or passes deeper; the bottom man winning
+// slips out one layer; a split stands them up. A submission ends the bout (how "SUB"). The cards on the board add small effects (fx when "ground").
+const isPoker = (st) => st.cfg.ground.mode === "poker";
+export const pokerOn = isPoker;
+const PK = (st) => st.cfg.groundPoker;
+/** Cards are 0..51: rank = c % 13 + 2 (2..14, ace high), suit = floor(c / 13). */
+export const cardRank = (c) => (c % 13) + 2;
+export const cardSuit = (c) => Math.floor(c / 13);
+/** Best five of the cards (up to seven): { cls 0..8, score (a number, higher wins), hi (the rank that names it) }.
+ *  cls: 0 high card, 1 pair, 2 two pair, 3 three, 4 straight, 5 flush, 6 full house, 7 four, 8 straight flush. */
+export function evalHand(cards) {
+  const rc = new Array(15).fill(0), sm = [0, 0, 0, 0], sn = [0, 0, 0, 0];
+  let all = 0;
+  for (const c of cards) { const r = (c % 13) + 2, s = (c / 13) | 0; rc[r]++; sm[s] |= 1 << r; sn[s]++; all |= 1 << r; }
+  const straight = (m) => { m |= ((m >> 14) & 1) << 1; for (let h = 14; h >= 5; h--) if (((m >> (h - 4)) & 31) === 31) return h; return 0; };
+  const pack = (cls, rs) => { let v = cls; for (let i = 0; i < 5; i++) v = v * 15 + (rs[i] || 0); return v; };
+  const rest = (used, n) => { const out = []; for (let r = 14; r >= 2 && out.length < n; r--) if (rc[r] && !used.includes(r)) out.push(r); return out; };
+  const fs = sn.findIndex((n) => n >= 5);
+  if (fs >= 0) { const h = straight(sm[fs]); if (h) return { cls: 8, score: pack(8, [h]), hi: h }; }
+  const four = [], three = [], two = [];
+  for (let r = 14; r >= 2; r--) { if (rc[r] === 4) four.push(r); else if (rc[r] === 3) three.push(r); else if (rc[r] === 2) two.push(r); }
+  if (four.length) return { cls: 7, score: pack(7, [four[0], ...rest([four[0]], 1)]), hi: four[0] };
+  if (three.length && (three.length > 1 || two.length)) return { cls: 6, score: pack(6, [three[0], three.length > 1 ? Math.max(three[1], two[0] || 0) : two[0]]), hi: three[0] };
+  if (fs >= 0) { const rs = []; for (let r = 14; r >= 2 && rs.length < 5; r--) if ((sm[fs] >> r) & 1) rs.push(r); return { cls: 5, score: pack(5, rs), hi: rs[0] }; }
+  const sh = straight(all);
+  if (sh) return { cls: 4, score: pack(4, [sh]), hi: sh };
+  if (three.length) return { cls: 3, score: pack(3, [three[0], ...rest([three[0]], 2)]), hi: three[0] };
+  if (two.length >= 2) return { cls: 2, score: pack(2, [two[0], two[1], ...rest([two[0], two[1]], 1)]), hi: two[0] };
+  if (two.length) return { cls: 1, score: pack(1, [two[0], ...rest([two[0]], 3)]), hi: two[0] };
+  const hi = rest([], 5);
+  return { cls: 0, score: pack(0, hi), hi: hi[0] };
+}
+const pFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "ground" && x.do === kind).map((x) => ({ ...x, n: (x.n || 0) * mulOf(st, u) })));
+const pSum = (st, s, kind) => pFx(st, s, kind).reduce((n, x) => n + x.n, 0);
+function shuffled(st) {
+  const d = Array.from({ length: 52 }, (_, i) => i);
+  for (let i = 51; i > 0; i--) { const j = Math.floor(rand(st) * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+  return d;
+}
+/** The hand class side s needs to submit on `layer` at a showdown win: Infinity when it cannot. The layer's own rule is the top man's; cards can lower it or give it to the bottom man. */
+export function pokerSubRank(st, s, layer = st.c.ground.layer) {
+  const g = st.c.ground, role = g.top === s ? "top" : "bottom", P = PK(st);
+  let r = role === "top" && layer >= P.subLayer ? P.subRank[layer - 1] ?? Infinity : Infinity;
+  for (const x of pFx(st, s, "sub")) if (x.role === role && x.layer === layer) r = Math.min(r, x.rank);
+  return r;
+}
+/** Damage for cashing in a pot on `layer`: half the pot rounded up, times the layer, capped; a pounding card adds on top. */
+export function pokerCash(st, pot, layer, s = st.c.ground.top) {
+  const P = PK(st);
+  return Math.min(P.cap, Math.ceil(pot / 2) * P.cashMul[layer - 1]) + pSum(st, s, "cashplus");
+}
+function startPoker(st) {
+  const g = st.c.ground;
+  g.dealt = 0; g.used = { refill: { a: false, b: false } };
+  g.left = { swap: { a: pSum(st, "a", "swap"), b: pSum(st, "b", "swap") }, peek: { a: pSum(st, "a", "peek"), b: pSum(st, "b", "peek") } };
+  dealPoker(st);
+}
+function pay(st, s, n) { const k = Math.max(0, Math.min(n, st[s].stam)); st[s].stam -= k; st.c.ground.h.put[s] += k; return k; }
+function dealPoker(st) {
+  const g = st.c.ground, P = PK(st), bot = other(g.top), first = g.dealt === 0, d = shuffled(st);
+  g.dealt++;
+  const h = (g.h = { deck: d, hole: { a: [d[0], d[1]], b: [d[2], d[3]] }, board: d.slice(4, 9), next: 9, shown: 3, round: 1, put: { a: 0, b: 0 }, street: { a: 0, b: 0 }, raises: 0, acted: { a: false, b: false },
+    turn: bot, phase: "bet", swapQ: [], peeked: { a: [], b: [] }, log: [], reveal: false, win: null });
+  for (const s of SIDES) pay(st, s, P.ante + (first ? pSum(st, other(s), "ante") : 0));
+  if (first) for (const s of [bot, g.top]) if (g.left.swap[s] > 0) h.swapQ.push(s);
+  if (h.swapQ.length) h.phase = "swap";
+  ev(st, "pdeal", { top: g.top, layer: g.layer, hand: g.dealt });
+  if (!h.swapQ.length) enterBet(st);
+}
+/** A man with no stamina left cannot bet, and neither can the one facing him: straight to the showdown. */
+function enterBet(st) {
+  const g = st.c.ground, h = g.h;
+  h.phase = "bet"; h.turn = other(g.top); h.raises = 0; h.acted = { a: false, b: false }; h.street = { a: 0, b: 0 };
+  if (st.a.stam <= 0 || st.b.stam <= 0) showdown(st);
+}
+/** Whose decision it is and what it may be: { top, layer, hand, hands, round, phase, turn, actions, owe, raise, allin, pot } or null. */
+export function pokerOptions(st) {
+  const c = st.c, g = c?.ground, h = g?.h, P = PK(st);
+  if (st.phase !== "clash" || !h || c.ko || c.sub || !isPoker(st)) return null;
+  const base = { top: g.top, layer: g.layer, hand: g.dealt, hands: P.hands, round: h.round, phase: h.phase };
+  if (h.phase === "decide") return { ...base, turn: g.top, actions: ["cash", ...(g.layer < st.cfg.ground.layers && g.dealt < P.hands ? ["deeper"] : [])], cash: h.win.cash, pot: h.win.pot };
+  if (h.phase === "swap") return { ...base, turn: h.swapQ[0], actions: ["keep", "swap0", "swap1"] };
+  const me = h.turn, opp = other(me), owe = Math.max(0, h.street[opp] - h.street[me]), room = Math.max(0, st[me].stam - owe);
+  const k = Math.min(P.raise[h.round - 1], room, st[opp].stam), kAll = Math.min(room, st[opp].stam), canRaise = h.raises < P.maxRaises && k > 0;
+  const canAll = canRaise && g.layer >= P.allInLayer && kAll > k;
+  const actions = ["fold", "call"];
+  if (canRaise) actions.push("raise");
+  if (canAll) actions.push("allin");
+  if (g.left.peek[me] > 0 && h.peeked[me].length < 2) actions.push("peek");
+  return { ...base, turn: me, actions, owe: Math.min(owe, st[me].stam), raise: canRaise ? k : 0, allin: canAll ? kAll : 0, pot: h.put.a + h.put.b };
+}
+/** What side s can see: all of its own cards, the table so far, the other man's cards only when peeked or at the showdown, and the betting so far. */
+export function pokerView(st, s) {
+  const o = pokerOptions(st);
+  if (!o) return null;
+  const g = st.c.ground, h = g.h, f = other(s), board = h.board.slice(0, h.shown), mine = evalHand([...h.hole[s], ...board]);
+  const known = [0, 1].map((i) => (h.reveal || h.peeked[s].includes(i) ? h.hole[f][i] : null));
+  return { ...o, role: g.top === s ? "top" : "bottom", board, mine: { cards: [...h.hole[s]], stam: st[s].stam, put: h.put[s], street: h.street[s], hand: mine, left: { swap: g.left.swap[s], peek: g.left.peek[s] } },
+    foe: { cards: known, stam: st[f].stam, put: h.put[f], street: h.street[f], hand: h.reveal ? evalHand([...h.hole[f], ...board]) : null }, log: h.log.map((x) => ({ ...x })), subRank: pokerSubRank(st, g.top) };
+}
+function runPoker(st) {
+  const c = st.c, g = c.ground, h = g.h, o = pokerOptions(st), s = o.turn, opp = other(s), P = PK(st);
+  const act = o.actions.includes(c.gchoice?.[s]) ? c.gchoice[s] : h.phase === "decide" ? "cash" : h.phase === "swap" ? "keep" : "call";
+  c.gchoice = null;
+  if (h.phase === "decide") {
+    ev(st, "pact", { s, act, hand: g.dealt, layer: g.layer });
+    if (act === "deeper") { g.layer++; ev(st, "pdeep", { s, layer: g.layer }); return dealPoker(st); }
+    const dmg = pokerCash(st, h.win.pot, g.layer), bot = other(g.top);
+    st[bot].hp = Math.max(0, st[bot].hp - dmg); st[g.top].stats.dmg += dmg;
+    const stay = g.dealt < P.hands && st[bot].hp > 0;
+    ev(st, "pcash", { s, dmg, layer: g.layer, stay });
+    return stay ? dealPoker(st) : endPoker(st);
+  }
+  if (h.phase === "swap") {
+    h.swapQ.shift();
+    if (act !== "keep") { h.hole[s][Number(act.slice(4))] = h.deck[h.next++]; g.left.swap[s]--; }
+    ev(st, "pact", { s, act, hand: g.dealt, layer: g.layer });
+    if (!h.swapQ.length) enterBet(st);
+    return;
+  }
+  if (act === "peek") {
+    const free = [0, 1].filter((i) => !h.peeked[s].includes(i)), i = free[Math.floor(rand(st) * free.length)];
+    h.peeked[s].push(i); g.left.peek[s]--;
+    return void ev(st, "pact", { s, act, hand: g.dealt, layer: g.layer, card: h.hole[opp][i], idx: i });
+  }
+  const entry = { s, act, round: h.round, facing: o.owe > 0, canRaise: o.raise > 0, canAllin: o.allin > 0 };
+  h.log.push(entry);
+  if (act === "fold") { ev(st, "pact", { ...entry, hand: g.dealt, layer: g.layer, amt: 0 }); return settle(st, opp, "fold"); }
+  let amt = pay(st, s, o.owe);
+  if (act === "raise" || act === "allin") { amt += pay(st, s, act === "raise" ? o.raise : o.allin); h.raises++; h.acted[opp] = false; }
+  h.street[s] += amt; h.acted[s] = true;
+  ev(st, "pact", { ...entry, hand: g.dealt, layer: g.layer, amt });
+  if (h.acted[opp] && h.street[s] === h.street[opp]) return nextRound(st);
+  h.turn = opp;
+}
+function nextRound(st) {
+  const g = st.c.ground, h = g.h;
+  if (h.round >= 2) return showdown(st);
+  h.round = 2; h.shown = 5;
+  ev(st, "pboard", { round: 2 });
+  enterBet(st);
+}
+function showdown(st) {
+  const g = st.c.ground, h = g.h;
+  h.shown = 5; h.reveal = true;
+  const ha = evalHand([...h.hole.a, ...h.board]), hb = evalHand([...h.hole.b, ...h.board]);
+  settle(st, ha.score > hb.score ? "a" : hb.score > ha.score ? "b" : null, "show", { a: ha, b: hb });
+}
+/** The hand is over: `w` won (null = split), by "fold" or "show". Stakes, drain, submissions, then what the winner does with it. */
+function settle(st, w, how, hands = null) {
+  const g = st.c.ground, h = g.h, P = PK(st), top = g.top, bot = other(top), pot = h.put.a + h.put.b, layer = g.layer;
+  const out = { how, pot, layer, hand: g.dealt, hands, board: h.board.slice(0, how === "show" ? 5 : h.shown), hole: how === "show" ? { a: [...h.hole.a], b: [...h.hole.b] } : null };
+  if (!w) {
+    for (const s of SIDES) st[s].stam += h.put[s];
+    ev(st, "pend", { ...out, res: "tie" });
+    return endPoker(st);
+  }
+  const l = other(w);
+  st[w].stam += h.put[w];
+  let drained = 0;
+  if (w === top) for (const x of pFx(st, top, "drain")) { const k = Math.min(st[l].stam, x.n); st[l].stam -= k; drained += k; }
+  let sub = null;
+  if (w === top) {
+    if (how === "show" && layer >= P.subLayer && hands[top].cls >= pokerSubRank(st, top)) sub = "lock";
+    else if (st[l].stam <= 0 && layer >= P.subLayer) {
+      const back = pFx(st, l, "refill").find((x) => layer >= (x.layer || 1));
+      if (back && !g.used.refill[l]) { g.used.refill[l] = true; st[l].stam += back.n; out.refill = back.n; } else sub = "drain";
+    }
+  } else if (how === "show" && hands[bot].cls >= pokerSubRank(st, bot)) sub = "counter";
+  Object.assign(out, { winner: w, drained });
+  if (sub) {
+    ev(st, "pend", { ...out, res: "sub", sub });
+    c_sub(st, l);
+    return;
+  }
+  if (w === top) {
+    h.win = { pot, cash: pokerCash(st, pot, layer) };
+    h.phase = "decide";
+    return void ev(st, "pend", { ...out, res: "top", cash: h.win.cash });
+  }
+  g.layer--;
+  ev(st, "pend", { ...out, res: "bottom", to: g.layer });
+  if (g.layer < 1 || g.dealt >= P.hands) return endPoker(st);
+  dealPoker(st);
+}
+function c_sub(st, loser) { const c = st.c; c.sub = loser; c.ground = null; ev(st, "psub", { s: other(loser), loser }); }
+function endPoker(st) {
+  const c = st.c, bot = other(c.ground.top);
+  if (st[bot].hp <= 0) { c.ko = bot; c.ground = null; return; } // finished on the mat
+  standUp(st);
+}
+
 function endClash(st) {
   const c = st.c, cfg = st.cfg, na = alive(c.a).length, nb = alive(c.b).length;
-  const w = c.ko ? other(c.ko) : na && !nb ? "a" : nb && !na ? "b" : null;
+  const w = c.ko ? other(c.ko) : c.sub ? other(c.sub) : na && !nb ? "a" : nb && !na ? "b" : null;
   let dmg = 0;
   if (w) {
     const l = other(w);
-    dmg = c.ko ? 0 : Math.min(cfg.damage.caps[st.round - 1] ?? 99, alive(c[w]).reduce((n, u) => n + defOf(st, u).tier, 0) + st[w].shop.tier);
+    dmg = c.ko || c.sub ? 0 : Math.min(cfg.damage.caps[st.round - 1] ?? 99, alive(c[w]).reduce((n, u) => n + defOf(st, u).tier, 0) + st[w].shop.tier);
     st[l].hp = Math.max(0, st[l].hp - dmg);
     st[w].stats.won++; st[w].stats.dmg += dmg;
     st.wins[w]++;
@@ -547,6 +744,7 @@ function endClash(st) {
   for (const s of SIDES) st[s].lostLast = w === other(s);
   ev(st, "clashend", { s: w, dmg });
   st.c = null;
+  if (c.sub) return finish(st, w, "SUB");
   if (w && st[other(w)].hp <= 0) return finish(st, w, "KO");
   if (st.clash >= cfg.clashes) return endRound(st);
   beginTurn(st);
@@ -562,6 +760,7 @@ function endRound(st) {
   card.wins = { a, b };
   for (const s of SIDES) for (const x of st[s].board) if (x && x.worn) { x.atk += x.worn; delete x.worn; } // the minute's rest: worn-down cards recover
   st.rounds.push(card);
+  for (const s of SIDES) st[s].stam = Math.min(st.cfg.groundPoker.stamina, st[s].stam + st.cfg.groundPoker.regen); // a minute's rest gives stamina back
   st.wins = { a: 0, b: 0 };
   ev(st, "roundend", { card });
   if (st.round >= cfg.rounds) {

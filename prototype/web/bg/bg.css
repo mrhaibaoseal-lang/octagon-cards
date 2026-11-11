@@ -309,3 +309,60 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 @keyframes aimflow{to{stroke-dashoffset:-21}}
 .sk.hot2{box-shadow:0 0 0 3px #ff8a3c,0 0 16px #ff8a3c!important;transform:scale(1.03)}
 .sk.hot2::after{content:"也會打到";position:absolute;left:50%;bottom:-15px;z-index:3;transform:translateX(-50%);font-size:10px;font-weight:700;color:#ffb070;white-space:nowrap;text-shadow:0 1px 2px #000}
+
+/* 地面撲克（ground.mode＝poker）：沿用 21 點的版面（#g21），中間是桌面，選手在下面的籠子裡 */
+.stn{color:#35d0a0!important;font-weight:800;margin-left:auto} .stn.low{color:#ff9a6a!important}
+.hud.b .stn{margin-left:0;margin-right:auto}
+.bar.sta{height:4px;background:#10261f;margin-top:-1px}
+.bar.sta b{background:linear-gradient(90deg,#1e9e78,#35d0a0)} .bar.sta b.low{background:linear-gradient(90deg,#b8401f,#ff8a4c)}
+.pkmode #stage{top:150px;height:166px}
+.pkmode #say{top:-4px}
+.pkmode #fa{left:388px} .pkmode #fb{left:456px}
+#g21.pk .table{left:288px;width:268px;top:80px;height:70px}
+#g21.pk .table .lab{position:absolute;left:0;right:0;top:0;text-align:center;font-size:11px;color:var(--dim);line-height:14px}
+#g21.pk .table .lab b{display:inline-block;font-size:12px;color:#35d0a0;padding:0 8px;margin-left:4px;border-radius:8px;background:#0f2a22;box-shadow:0 0 0 1px #1f6a52}
+#g21.pk .board{position:absolute;left:0;right:0;top:16px;display:flex;gap:5px;justify-content:center}
+#g21.pk .side{height:236px;overflow:hidden}
+#g21.pk .hole{display:flex;gap:6px;height:76px;align-items:center}
+.pc{position:relative;width:50px;height:70px;border-radius:7px;flex:none;background:linear-gradient(#fbfcff,#dfe5f1);color:#1b2233;box-shadow:0 2px 0 #0009;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;font-weight:800;animation:g21in .25s ease-out}
+.pc b{font-size:26px}.pc u{text-decoration:none;font-size:20px;margin-top:2px}
+.pc.r{color:#d0302b}
+.pc.down{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--c) 40%,#10141c) 0 5px,color-mix(in srgb,var(--c) 22%,#10141c) 5px 10px);color:#ffffffcc;box-shadow:0 2px 0 #0009,0 0 0 2px color-mix(in srgb,var(--c) 60%,#000) inset}
+.pc.down b{font-size:24px}
+.pc.hl{box-shadow:0 0 0 3px var(--gold),0 2px 0 #0009}
+.pc.sm{width:40px;height:54px}.pc.sm b{font-size:20px}.pc.sm u{font-size:15px}
+.pc.slot{background:none;border:2px dashed #3a4459;box-shadow:none;color:#4a5469;animation:none}
+.pc.slot b{font-size:11px;font-weight:600}
+#g21.pk .hand{margin-top:6px;font-size:13px;line-height:1.3}
+#g21.pk .hand b{font-size:19px;font-weight:800;color:var(--gold);font-style:italic}
+#g21.pk .hand.dim{font-size:11px;color:var(--dim)}
+#g21.pk .stake{margin-top:6px;display:flex;align-items:center;gap:6px;font-size:12px;color:#cfd7e6}
+#g21.pk .stake em{font-style:normal;font-weight:800;color:#35d0a0}
+#g21.pk .warn{margin-top:6px;font-size:11.5px;line-height:1.35;padding:4px 7px;border-radius:6px;background:#3a1512;border:1px solid #8a2c24;color:#ffb3a8}
+#g21.pk .warn b{color:#ff7a6a}
+#g21.pk .style{margin-top:2px;border-radius:7px;background:#241d06;border:1px solid #6a5310;padding:5px 8px;font-size:11.5px;line-height:1.55}
+#g21.pk .style h5{font-size:10.5px;font-weight:700;color:#c9b77a;margin-bottom:1px}
+#g21.pk .style div{display:flex;justify-content:space-between;gap:6px}
+#g21.pk .style div b{color:var(--gold);font-weight:800}
+#g21.pk .last{margin-top:6px;font-size:12.5px;font-weight:800;color:#ff9d9b}
+#g21.pk .last small{font-weight:400;color:var(--dim);font-size:11px;margin-left:4px}
+#g21.pk .cap{left:284px;width:276px;bottom:74px}
+#g21.pk .stamp{top:120px}
+#g21.pk .act .call{background:linear-gradient(#4c8dff,#2c5fcf)}
+#g21.pk .act .raise{background:linear-gradient(#e2574c,#a52c25)}
+#g21.pk .act .fold{background:linear-gradient(#566178,#394358);flex:.8}
+#g21.pk .act .allin{background:linear-gradient(#f5c542,#c47f08);color:#231700;flex:1.15;box-shadow:0 3px 0 #0009,0 0 14px #f5c54266}
+#g21.pk .act .peek{background:linear-gradient(#2a8c74,#1a5f4e);flex:.8}
+#g21.pk .act{left:60px;right:60px}
+/* 版面微調：對手面板放得下四行打法；桌面牌小一點，旁白不蓋到牌 */
+#g21.pk .foe .pc{width:46px;height:62px}#g21.pk .foe .pc b{font-size:23px}#g21.pk .foe .pc u{font-size:18px}
+#g21.pk .foe .hole{height:66px}
+#g21.pk .foe .stake{margin-top:3px}#g21.pk .foe .last{margin-top:3px}
+#g21.pk .style{line-height:1.4;padding:4px 8px}
+#g21.pk .pc.sm{width:38px;height:50px}#g21.pk .pc.sm b{font-size:19px}
+#g21.pk .board{top:15px}
+.pkmode #stage{top:158px;height:158px}
+#g21.pk .pc.slot b{font-size:10px;white-space:nowrap}
+#g21.pk .foe h4 small b{color:#35d0a0}
+#g21.pk .stamp{top:176px;font-size:26px}
+.who small{min-width:0}.stn{flex:none!important;overflow:visible!important;text-overflow:clip!important}
