@@ -19,7 +19,7 @@ function kwWorth(st, s, c, k) {
 function cardWorth(st, c, d, s) {
   let v = c.atk + c.hp + (c.gold ? 2 : 0);
   for (const k of Object.keys(c.kw)) v += kwWorth(st, s, c, k);
-  return v + d.fx.filter((x) => x.when !== "play" && x.when !== "ground").length * 2;
+  return v + d.fx.filter((x) => x.when !== "play" && x.when !== "ground" && x.when !== "groundEA").length * 2;
 }
 /** What an offered card is worth to side s right now. */
 function offerWorth(st, s, id) {
@@ -314,6 +314,118 @@ export function pokerRead(st, s) {
 const vsPoker = (mine) => (st, s) => (s === "a" ? mine(st, s) : pokerPick(st, s));
 export const groundersPoker = { reader: vsPoker(pokerRead), fixed: vsPoker(pokerFixed), random: vsPoker(pokerRandom) };
 
+// ---------- the EA ground: how the opponent picks its direction, and the players the simulation uses ----------
+const eaState = (st) => {
+  const g = st.c.ground, bot = E.other(g.top);
+  return { layer: g.layer, space: g.space, covered: g.covered, topSta: st[g.top].stam, botSta: st[bot].stam, quickUsed: g.quickUsed, dmg: 0, lastTop: g.lastTop, lastBot: g.lastBot };
+};
+const eaStyleOf = (st, s, role) => st[s].f.ai?.groundEA?.[role] || { pass: 3, pound: 3, sub: 3 };
+/** The chance each direction is picked by a man of `style` in `role` ("top" attacks, "bot" defends) on the virtual state V, as { move: 0..1 } (or { rest: 1 } when the top man can afford nothing).
+ *  Style weights, then: the top man shies away from what the bottom man just guarded (he remembers) and goes for a submission when it is on;
+ *  the bottom man covers up after eating a strike, guards what the top man just did (he remembers) and guards the finish harder when it is on. */
+function eaTableV(X, layers, style, role, V, M) {
+  const A = X.ai, odds = E.eaSubOdds(X, M, V.layer, V.botSta), w = {};
+  for (const m of E.EA_MOVES) {
+    let x = style[m] ?? 3;
+    if (role === "top") {
+      if (E.eaCost(X, M, m) > V.topSta || (m === "pass" && V.layer >= layers)) x = 0;
+      else {
+        if (V.lastBot && V.lastBot !== m) x *= 1 + A.memory / 2;
+        if (m === "sub") x *= 0.5 + odds * A.subTop;
+      }
+    } else {
+      if (V.covered && m === "pound") x *= A.cover;
+      if (V.lastTop === m) x *= 1 + A.memory;
+      if (m === "sub") x *= 0.6 + odds * A.subBot;
+      if (m === "pass" && V.layer >= layers) x = 0;
+    }
+    w[m] = x;
+  }
+  const ok = E.EA_MOVES.filter((m) => w[m] > 0), sum = ok.reduce((n, m) => n + w[m], 0);
+  if (!ok.length) return { rest: 1 };
+  return Object.fromEntries(E.EA_MOVES.map((m) => [m, w[m] > 0 ? (1 - A.flat) * (w[m] / sum) + A.flat / ok.length : 0]));
+}
+/** The opponent's real table this beat, with the reasons the screen shows beside it: { w, why: [text] }. This is exactly what it draws from. */
+export function eaTable(st, s) {
+  const g = st.c.ground, X = st.cfg.groundEA, role = g.top === s ? "top" : "bot", V = eaState(st), style = eaStyleOf(st, s, role), N = X.names;
+  const w = eaTableV(X, st.cfg.ground.layers, style, role, V, g.mods), why = [];
+  if (role === "bot") {
+    if (V.covered) why.push("你剛<b>砸中他</b>：他想護頭");
+    if (V.lastTop) why.push(`你上一拍<b>${N.top[V.lastTop]}</b>：他防著這招`);
+    if (E.eaSubOdds(X, g.mods, V.layer, V.botSta) > 0.12) why.push(`他體力 ${V.botSta}：防降伏變弱`);
+  } else {
+    if (V.lastBot) why.push(`你上一拍<b>${N.bot[V.lastBot]}</b>：他少用${N.top[V.lastBot]}`);
+    if (E.eaSubOdds(X, g.mods, V.layer, V.botSta) > 0.12) why.push(`你體力 ${V.botSta}：他想<b>降伏</b>`);
+    if (w.rest) why.push(`他體力 ${V.topSta}：沒力出招，要喘口氣`);
+  }
+  const fav = E.EA_MOVES.reduce((b, m) => ((style[m] ?? 3) > (style[b] ?? 3) ? m : b), "pass");
+  why.push(`${st[s].f.short}：愛${(role === "top" ? N.top : N.bot)[fav]}（基本傾向）`);
+  return { w, why };
+}
+const eaDraw = (st, w) => { let r = E.rand(st); const es = Object.entries(w).filter(([, p]) => p > 0); for (const [m, p] of es) if ((r -= p) <= 0) return m; return es.at(-1)[0]; };
+/** The opponent's direction: drawn from its own table. */
+export function eaPick(st, s) {
+  const o = E.eaOptions(st);
+  if (!o || o.phase !== "pick") return null;
+  const w = eaTable(st, s).w;
+  const m = eaDraw(st, w);
+  return o.moves[s].includes(m) ? m : o.moves[s][0];
+}
+/** A player who reads: looks two beats ahead against what the shown table says the opponent will do (and a plain table for the beat after), and picks the direction worth most. */
+export function eaRead(st, s) {
+  const o = E.eaOptions(st);
+  if (!o || o.phase !== "pick") return null;
+  const mine = o.moves[s];
+  if (mine[0] === "rest") return "rest";
+  const g = st.c.ground, X = st.cfg.groundEA, L = st.cfg.ground.layers, M = g.mods, W = X.ai.value, top = g.top === s, f = s === "a" ? "b" : "a", V0 = eaState(st);
+  const styles = { top: eaStyleOf(st, g.top, "top"), bot: eaStyleOf(st, E.other(g.top), "bot") };
+  const val = (V) => V.dmg + V.layer * W.pos + (V.topSta - V.botSta) * W.sta;
+  const look = (V, depth) => {
+    if (depth <= 0) return val(V);
+    const tt = eaTableV(X, L, styles.top, "top", V, M), bt = eaTableV(X, L, styles.bot, "bot", V, M);
+    let ev = 0;
+    for (const [t, pt] of Object.entries(tt)) if (pt) for (const [b, pb] of Object.entries(bt)) if (pb) ev += pt * pb * pair(V, t, b, depth);
+    return ev;
+  };
+  const pair = (V, t, b, depth) => {
+    const v = { ...V }, r = E.eaBeat(X, L, v, M, t, b);
+    v.lastTop = t; v.lastBot = b;
+    if (r.kind === "sub") {
+      const p = (1 - E.eaEscape(X, v.botSta)) ** r.stages;
+      return p * (W.sub + v.dmg) + (1 - p) * look({ ...v, botSta: Math.max(0, v.botSta - X.escDrain), space: 0, covered: false }, depth - 1);
+    }
+    return look(v, depth - 1);
+  };
+  const foe = eaTable(st, f).w;
+  let best = null;
+  for (const m of mine) {
+    let ev = 0;
+    for (const [o2, p] of Object.entries(foe)) if (p) ev += p * (top ? pair(V0, m, o2, 2) : pair(V0, o2, m, 2));
+    if (!top) ev = -ev;
+    if (!best || ev > best[0]) best = [ev, m];
+  }
+  return best[1];
+}
+/** A fixed line: the same mix of directions every beat, whatever the opponent shows. */
+const eaMix = (wt, wb) => (st, s) => {
+  const o = E.eaOptions(st);
+  if (!o || o.phase !== "pick") return null;
+  const mine = o.moves[s];
+  if (mine[0] === "rest") return "rest";
+  const w = Object.fromEntries(mine.map((m) => [m, (st.c.ground.top === s ? wt : wb)[m]]));
+  return eaDraw(st, w);
+};
+const eaRandom = (st, s) => { const o = E.eaOptions(st); return o && o.phase === "pick" ? o.moves[s][Math.floor(E.rand(st) * o.moves[s].length)] : null; };
+const vsEA = (mine) => (st, s) => (s === "a" ? mine(st, s) : eaPick(st, s));
+/** Side a: reads the table, plays one of three memorised mixes, or picks at random; side b always plays its own table. */
+export const groundersEA = {
+  reader: vsEA(eaRead),
+  mixBal: vsEA(eaMix({ pass: 0.35, pound: 0.4, sub: 0.25 }, { pass: 0.35, pound: 0.4, sub: 0.25 })),
+  mixPound: vsEA(eaMix({ pass: 0.2, pound: 0.6, sub: 0.2 }, { pass: 0.2, pound: 0.6, sub: 0.2 })),
+  mixSub: vsEA(eaMix({ pass: 0.25, pound: 0.25, sub: 0.5 }, { pass: 0.25, pound: 0.25, sub: 0.5 })),
+  random: vsEA(eaRandom),
+};
+
 export function cornerPick(st, s) { return st[s].hp <= st.cfg.hp - st.cfg.corner.heal - 3 ? "heal" : "discover"; }
 
 export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {} };
@@ -323,7 +435,7 @@ export const fighters = { sharp: (st, o) => fight(st, o, o.s === "a" ? 1 : undef
 /** A whole bout: side a shops with `shopper`, side b with its own AI; timing(st, p) grades each timing bar. */
 export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp, gpick = null) {
   const st = E.createGame(data, aId, bId, seed);
-  gpick ||= st.cfg.ground.mode === "poker" ? groundersPoker.reader : st.cfg.ground.mode === "21" ? grounders21.smart : grounders.read;
+  gpick ||= st.cfg.ground.mode === "ea" ? groundersEA.reader : st.cfg.ground.mode === "poker" ? groundersPoker.reader : st.cfg.ground.mode === "21" ? grounders21.smart : grounders.read;
   let guard = 0;
   while (!st.over && guard++ < 60) {
     if (st.phase === "corner") { E.corner(st, "a", shopper === shoppers.none ? "heal" : cornerPick(st, "a")); E.corner(st, "b", cornerPick(st, "b")); continue; }

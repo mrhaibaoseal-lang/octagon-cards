@@ -1,6 +1,6 @@
 // Octagon Cards — one-on-one board battler, browser front end. Rules live in engine.js / ai.js; this file draws and forwards clicks.
 import * as E from "./engine.js";
-import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead, g21Threshold, g21Pick, g21Smart, pokerStyle, pokerPick, pokerRead } from "./ai.js";
+import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead, g21Threshold, g21Pick, g21Smart, pokerStyle, pokerPick, pokerRead, eaTable, eaPick, eaRead } from "./ai.js";
 
 const params = new URLSearchParams(location.search);
 const load = async (n) => (await fetch(`rules/bg/${n}.json`)).json();
@@ -19,6 +19,13 @@ const KW_TEXT = {
   combo: (c) => `前一張出手的也是連段牌：這一下 +${c.combo.atk} 攻擊，可累積到 +${c.combo.atk * c.combo.max}`,
   reach: () => "這張出手時不會被反擊",
 };
+// the EA ground: the same keywords, what they do there (each card has its own small effect, shown on the tag in the ground)
+const KW_EA = {
+  sub: () => "地面（EA 式）：你的降伏少一關；降伏要先把他打累、壓到深處才鎖得住",
+  takedown: (c) => `打中就把這一段帶到地面，你在上位，最多 ${c.groundEA.beats} 拍；每一拍雙方同時往一個方向拖（一段一次）`,
+  getup: () => "地面（EA 式）：你在下位，第一次只要擋住 1 次就脫出一層",
+  ground: () => "地面（EA 式）：看這張牌自己的地面效果",
+};
 const WHEN = { start: "開場", hit: "命中", play: "上場", buy: "成長", break: "破解時", win: "獲勝" };
 // Clash playback pace. 1 is the original tempo; the default is the slow one so each exchange can be read.
 const SPEEDS = [0.45, 0.9, 1.8], SPEED_NAME = ["慢", "普通", "快"];
@@ -35,7 +42,7 @@ addEventListener("resize", fit);
 async function boot() {
   const [config, skills, fighters] = await Promise.all([load("config"), load("skills"), load("fighters")]);
   data = E.prepare({ config, skills: strip(skills), fighters: strip(fighters) });
-  if (params.has("ground")) data.config.ground.mode = ["21", "poker"].includes(params.get("ground")) ? params.get("ground") : "rps"; // ?ground=21 / rps / poker picks the ground game
+  if (params.has("ground")) data.config.ground.mode = ["21", "poker", "ea"].includes(params.get("ground")) ? params.get("ground") : "rps"; // ?ground=21 / rps / poker / ea picks the ground game
   const ids = Object.keys(data.fighters);
   choice = { a: params.get("a") || ids[0], b: params.get("b") || ids[1] };
   fit();
@@ -108,7 +115,7 @@ function showTip(node) {
   tipEl.className = d.school;
   tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級${gold ? "・金卡" : ""}</span>
     <div class="st"><i class="atk">${node.dataset.atk}</i>攻擊<i class="hp">${node.dataset.hp}</i>耐力</div>
-    ${d.fx.some((f) => f.when !== "ground") ? `<p>${esc(d.text)}</p>` : ""}${data.config.ground.mode === "poker" ? d.fx.filter((f) => f.when === "ground").map((f) => `<p><em>地面</em>${esc(f.text)}</p>`).join("") : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${KW_TEXT[k](data.config)}</p>`).join("")}
+    ${d.fx.some((f) => f.when !== "ground") ? `<p>${esc(d.text)}</p>` : ""}${data.config.ground.mode === "poker" ? d.fx.filter((f) => f.when === "ground").map((f) => `<p><em>地面</em>${esc(f.text)}</p>`).join("") : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${data.config.ground.mode === "ea" && KW_EA[k] ? KW_EA[k](data.config) : KW_TEXT[k](data.config)}</p>`).join("")}
     ${node.dataset.worn ? `<p class="dim">腿傷：攻擊 −${node.dataset.worn}，這回合結束才恢復。</p>` : ""}
     ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
     ${gold ? `<p class="dim">金卡：數值與效果的數字都加倍。</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
@@ -242,21 +249,24 @@ function pickScreen() {
 }
 
 const pokerOn = () => st.cfg.ground.mode === "poker";
+/** Stamina is shown under each fighter in the poker and the EA grounds. */
+const staOn = () => st.cfg.ground.mode === "poker" || st.cfg.ground.mode === "ea";
+const staMax = () => (st.cfg.ground.mode === "ea" ? st.cfg.groundEA : st.cfg.groundPoker).stamina;
 function hud(hp = { a: st.a.hp, b: st.b.hp }) {
   // in the poker ground the stamina (the chips) sits under the durability bar
-  const sta = (s) => (pokerOn() ? `<div class="bar sta" data-s="${s}"><b class="${st[s].stam <= 5 ? "low" : ""}" style="width:${(st[s].stam / st.cfg.groundPoker.stamina) * 100}%"></b></div>` : "");
-  const side = (s) => `<div class="hud ${s}" id="hud${s}"><div class="hpn">${hp[s]}</div><div class="hb"><div class="who"><b>${s === "a" ? "你" : "對手"}</b><small>${esc(st[s].f.short)}・${esc(st[s].f.power.text)}</small>${pokerOn() ? `<small class="stn" data-s="${s}">體力 ${st[s].stam}</small>` : ""}</div>
+  const sta = (s) => (staOn() ? `<div class="bar sta" data-s="${s}"><b class="${st[s].stam <= 5 ? "low" : ""}" style="width:${(st[s].stam / staMax()) * 100}%"></b></div>` : "");
+  const side = (s) => `<div class="hud ${s}" id="hud${s}"><div class="hpn">${hp[s]}</div><div class="hb"><div class="who"><b>${s === "a" ? "你" : "對手"}</b><small>${esc(st[s].f.short)}・${esc(st[s].f.power.text)}</small>${staOn() ? `<small class="stn" data-s="${s}">體力 ${st[s].stam}</small>` : ""}</div>
     <div class="bar"><b style="width:${(hp[s] / st.cfg.hp) * 100}%"></b></div>${sta(s)}</div></div>`;
   const cards = st.rounds.map((r) => `${r.a}-${r.b}`).join(" ");
   return `<div id="top">${side("a")}<div id="mid"><b>第 ${st.round} 回合・第 ${st.clash} 段</b><small>這回合 你 <i class="a">${st.wins.a}</i> : <i class="b">${st.wins.b}</i> 他${cards ? "　計分 " + cards : ""}</small></div>${side("b")}</div>`;
 }
 /** Stamina under each fighter's durability (poker ground only). */
 function setSta(stam) {
-  if (!stam || !pokerOn()) return;
+  if (!stam || !staOn()) return;
   for (const s of ["a", "b"]) {
     const t = document.querySelector(`.stn[data-s="${s}"]`), b = document.querySelector(`.bar.sta[data-s="${s}"] b`);
     if (t) { t.textContent = `體力 ${stam[s]}`; t.classList.toggle("low", stam[s] <= 5); }
-    if (b) { b.style.width = (stam[s] / st.cfg.groundPoker.stamina) * 100 + "%"; b.classList.toggle("low", stam[s] <= 5); }
+    if (b) { b.style.width = (stam[s] / staMax()) * 100 + "%"; b.classList.toggle("low", stam[s] <= 5); }
   }
 }
 function setHp(hp) {
@@ -340,9 +350,10 @@ function rows(v) {
 function setGround(g) {
   const was = ground, b = $("#gnd"), G = st.cfg.ground;
   ground = g || null;
-  const m21 = G.mode === "21" || G.mode === "poker";
+  const ea = G.mode === "ea", m21 = G.mode === "21" || G.mode === "poker" || ea;
   frame.classList.toggle("gmode", !!ground && !m21);
   frame.classList.toggle("g21mode", !!ground && m21);
+  frame.classList.toggle("eamode", !!ground && ea);
   frame.classList.toggle("pkmode", !!ground && G.mode === "poker");
   if (!ground) { $("#gpanel")?.remove(); $("#gtend")?.remove(); $("#g21")?.remove(); }
   if (b && m21) b.innerHTML = "";
@@ -402,6 +413,7 @@ async function showEvent(e, prev) {
     case "gbeat": return gbeat(e);
     case "g21deal": case "g21hit": case "g21stand": case "g21end": case "g21cash": case "g21deep": return g21Event(e);
     case "pdeal": case "pact": case "pboard": case "pend": case "pcash": case "pdeep": case "psub": return pokerEvent(e);
+    case "eadeal": case "eabeat": case "easubstart": case "easub": case "easubmit": return eaEvent(e);
     case "stuffed": float(el(e.uid) && pos(el(e.uid)), "防摔！", "buff"); say(e.s === "a" ? "你擋下了抱摔" : "他擋下了抱摔", e.s === "a" ? "good" : "bad", "防摔牌還在場上，抱摔就不會成功"); return 700;
     case "standup": rows(e.view); if (e.uid) float(el(e.uid) && pos(el(e.uid)), "起身", "buff"); say(e.uid ? (e.s === "a" ? "你站回來了" : "他站回來了") : "站起來了", "", e.uid ? "" : "回到站立"); return 800;
     case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 240;
@@ -786,12 +798,183 @@ function pickPoker(o) {
   });
 }
 
+// ---------- the EA ground (ground.mode "ea"): drag a direction, the opponent's real table beside him, a timing bar for submissions ----------
+// Everything is drawn from the snapshot each event carries (EAU.g) plus the stamina it brings, so the screen never runs ahead of the engine.
+const EAU = { g: null, stam: null, sel: null, reveal: null, stamp: null, cap: "", capCls: "", last: "", hint: "", tbl: null, aim: null };
+const eaGlyph = { pass: "↑", pound: "→", sub: "←" };
+const eaPos = { pass: "up", pound: "rt", sub: "lf" };
+/** The cards on your side that do something in this ground: [card name, what it does]. */
+function eaTags(s, g) {
+  const out = [], role = g.top === s ? "top" : "bot", mine = role === "top" ? ["poundplus", "drainplus", "stagecut", "passcut"] : ["quick"];
+  for (const u of st.c?.[s] || []) {
+    if (!u || u.hp <= 0) continue;
+    const d = data.skills[u.id];
+    for (const x of d.fx) if (x.when === "groundEA" && mine.includes(x.do) && (x.do !== "quick" || !g.quickUsed)) out.push([d.name, String(x.text).replace(/^EA 地面：(你[^，]*，)?/, "")]);
+  }
+  return out;
+}
+function drawEA() {
+  const g = EAU.g;
+  if (!g || !g.mods) return;
+  let n = $("#g21");
+  if (!n) { n = document.createElement("div"); n.id = "g21"; frame.appendChild(n); }
+  n.className = "ea";
+  const X = st.cfg.groundEA, G = st.cfg.ground, N = X.names, meTop = g.top === "a", mine = meTop ? N.top : N.bot, his = meTop ? N.bot : N.top, stam = EAU.stam || { a: st.a.stam, b: st.b.stam };
+  const bot = meTop ? "b" : "a", need = g.mods.quick && !g.quickUsed ? 1 : X.need, M = g.mods;
+  const cost = (m) => Math.max(1, X.cost[m] - (m === "pass" ? M.passCut : 0));
+  const lad = ["站起來", ...G.layerNames].map((nm, i) => `<div class="${i ? "" : "out"} ${i === g.layer ? "on" : ""}"><span>${nm}<small>${i ? `降伏要撐 ${Math.max(1, X.stages[i - 1] - (meTop ? M.stageCut : 0))} 關` : "脫出半防守"}</small></span>${i === g.layer ? `<span class="tag">第 ${Math.min(g.beat, X.beats)}／${X.beats} 拍</span>` : ""}</div>`).join("");
+  const space = (g.space | 0), dots = Array.from({ length: need }, (_, i) => `<i class="${i < space ? "on" : ""}"></i>`).join("");
+  const tags = eaTags("a", g);
+  const myBody = `<div class="row">${meTop ? "他的空間" : "你的空間"} <span class="space">${dots}</span><small>${meTop ? `滿 ${need} 格他就脫出一層` : `再擋 ${Math.max(0, need - space)} 次就脫出一層`}</small></div>
+    <div class="costs">${meTop ? `過腿 <b>${cost("pass")}</b>・砸擊 <b>${cost("pound")}</b>・降伏 <b>${cost("sub")}</b> 體力<br>被他擋住：再多扣 <b>${X.denied}</b>` : `擋不花體力<br>被砸中：<b>−${X.drain}</b> 體力；體力越少越擋不住降伏`}</div>
+    ${!meTop && stam.a <= 8 ? `<div class="warn">體力只剩 <b>${stam.a}</b>：被降伏打中很危險</div>` : meTop && stam.a < cost("sub") ? `<div class="warn">體力 <b>${stam.a}</b>：出不起降伏</div>` : ""}
+    <div class="chips">${tags.length ? tags.map(([k, d]) => `<span>${esc(k)}<u>${esc(d)}</u></span>`).join("") : `<span class="none">沒有地面牌</span>`}</div>`;
+  const T = EAU.tbl, tr = (m) => `<div class="tr m-${m}"><span><em>${eaGlyph[m]}</em>${his[m]}</span><i><b style="width:${Math.round((T.w[m] || 0) * 100)}%"></b></i><strong>${T.w[m] ? Math.round(T.w[m] * 100) + "%" : "—"}</strong></div>`;
+  const foeBody = T ? `<div class="tbl"><h5>${EAU.reveal ? "他剛剛的表" : meTop ? "他這一拍怎麼擋（真實數字）" : "他這一拍怎麼打（真實數字）"}</h5>${E.EA_MOVES.map(tr).join("")}</div>${T.w.rest ? `<div class="why"><span>他沒力氣出招，要喘口氣</span></div>` : `<div class="why">${T.why.map((w) => `<span>${w}</span>`).join("")}</div>`}` : "";
+  const pad = E.EA_MOVES.map((m) => {
+    const ok = !EAU.allowed || EAU.allowed.includes(m);
+    return `<button class="ar m-${m} ${eaPos[m]} ${EAU.sel === m ? "sel" : EAU.aim === m ? "aim" : EAU.sel || !ok ? "dim" : ""}" data-m="${m}"><b><span class="k">${eaGlyph[m]}</span> ${mine[m]}</b><small>${!ok ? (m === "pass" && g.layer >= G.layers ? "已經在最深" : "體力不夠") : meTop ? `花 ${cost(m)} 體力` : "同方向＝擋住"}</small></button>`;
+  }).join("");
+  const rv = EAU.reveal ? `<div class="reveal"><span class="m-${EAU.reveal[0]}">你 ${eaGlyph[EAU.reveal[0]]} ${mine[EAU.reveal[0]]}</span><span class="m-${EAU.reveal[1]}">他 ${eaGlyph[EAU.reveal[1]]} ${his[EAU.reveal[1]]}</span></div>` : "";
+  n.innerHTML = `<div class="lad">${lad}</div>
+    <div class="side you"><h4><i>你</i>${meTop ? "上位・進攻" : "下位・防守"}<small>${EAU.allowed ? "輪到你" : ""}</small></h4>${myBody}</div>
+    <div class="side foe"><h4><i>他</i>${meTop ? "下位・防守" : "上位・進攻"}<small>${EAU.allowed ? "同時決定" : ""}</small></h4>${foeBody}</div>
+    <div class="zone">${EAU.reveal ? "" : `<div class="pad">${pad}</div>`}${rv}${EAU.stamp ? `<div class="stamp ${EAU.stamp[1] || ""}">${EAU.stamp[0]}</div>` : ""}<div class="dot"></div></div>
+    <div class="cap ${EAU.capCls}">${EAU.cap}</div>
+    <div class="act"><div class="last"><div>${EAU.last}</div></div><div class="hint"><div>${EAU.hint}</div></div></div>`;
+}
+/** Play one event of the EA ground. */
+function eaEvent(e) {
+  const g = e.view?.ground, X = st.cfg.groundEA, names = st.cfg.ground.layerNames, N = X.names, who = (s) => (s === "a" ? "你" : "他");
+  const hurt = (s, dmg) => { setHp(e.hp); $("#hud" + s)?.classList.add("hurt"); act(E.other(s), "attack", "grap"); act(s, e.hp[s] <= 0 ? "down" : "hit"); float(fighterPos(s), `−${dmg}`, "dmg"); };
+  setSta(e.stam); EAU.stam = e.stam;
+  switch (e.t) {
+    case "eadeal":
+      Object.assign(EAU, { g, sel: null, reveal: null, stamp: null, capCls: "", allowed: null, tbl: null, last: "", hint: "", cap: e.top === "a" ? `${names[e.layer - 1]}：你在上面，每一拍往一個方向拖` : `${names[e.layer - 1]}：你被壓著，猜他往哪拖就往同一邊擋` });
+      rows(e.view); drawEA();
+      say(e.top === "a" ? "你在上位" : "你被壓在下位", e.top === "a" ? "good" : "bad", "每一拍雙方同時選方向");
+      return 900;
+    case "eabeat": {
+      const bot = E.other(e.top), meTop = e.top === "a", mine = meTop ? e.mt : e.mb, his = meTop ? e.mb : e.mt;
+      const nm = (m, top) => (top ? N.top : N.bot)[m];
+      EAU.g = g; EAU.reveal = [mine, his]; EAU.allowed = null; EAU.sel = null;
+      let stamp = null, cap = "", mineWin = false;
+      if (e.kind === "rest") { stamp = ["喘口氣", "gold"]; cap = `${who(e.top)}沒力氣出招，<b>${who(bot)}得 1 格空間</b>`; mineWin = !meTop; }
+      else if (e.kind === "deny") { stamp = ["擋住了", !meTop ? "good" : ""]; cap = `方向一樣：<b>${who(e.top)}多扣 ${X.denied} 體力</b>，${who(bot)}得 1 格空間`; mineWin = !meTop; }
+      else if (e.kind === "pass") { stamp = ["過腿成功", meTop ? "gold" : ""]; cap = `${who(e.top)}過腿，<b>往深一層（${names[e.layer - 1]}）</b>`; mineWin = meTop; }
+      else if (e.kind === "pound") { stamp = ["砸中！", meTop ? "gold" : ""]; cap = `${who(e.top)}砸中：<b>${who(bot)}耐久 −${e.dmg}、體力 −${e.drain}</b>，他接著會護頭`; mineWin = meTop; }
+      else if (e.kind === "sub") { stamp = ["降伏打中！", meTop ? "gold" : ""]; cap = `進入降伏攻防：要撐 <b>${e.stages}</b> 關`; mineWin = meTop; }
+      if (e.esc) cap += `<br>${who(bot)}<b>脫出一層：</b>${e.up ? "站起來" : `${names[e.layer]} → ${names[e.layer - 1]}`}`;
+      EAU.stamp = stamp; EAU.cap = cap; EAU.capCls = mineWin ? "" : "red";
+      EAU.last = `這一拍：${who(e.top)} <b>${eaGlyph[e.mt]} ${nm(e.mt, true)}</b>，${who(bot)} <b>${eaGlyph[e.mb]} ${nm(e.mb, false)}</b>`;
+      EAU.hint = e.kind === "sub" ? "降伏！" : "";
+      drawEA();
+      say(stamp[0], mineWin ? "good" : "bad");
+      if (e.dmg) hurt(bot, e.dmg); else if (e.kind === "pass") act(e.top, "attack", "grap"); else if (e.kind === "deny") float(fighterPos(bot), "擋住", "buff");
+      return 2200;
+    }
+    case "easubstart": {
+      EAU.g = g; EAU.stamp = ["降伏打中！", e.top === "a" ? "gold" : ""]; EAU.reveal = null;
+      EAU.cap = `進入降伏攻防：要撐 <b>${e.stages}</b> 關；他每一關逃脫的機會 <b>${Math.round(e.escape * 100)}%</b>（看他的體力）`; EAU.capCls = e.top === "a" ? "" : "red"; EAU.hint = "";
+      drawEA(); act(e.top, "attack", "grap");
+      return 1100;
+    }
+    case "easub": {
+      const mineTop = e.top === "a";
+      EAU.g = g; EAU.stamp = null;
+      EAU.cap = `第 ${e.stage}／${e.stages} 關：${e.escaped ? `<b>${who(e.bot)}逃掉了</b>（機會 ${Math.round(e.p * 100)}%），他掉 ${X.escDrain} 體力，回到地面` : `<b>${who(e.bot)}沒逃掉</b>（機會 ${Math.round(e.p * 100)}%）${e.stage >= e.stages ? "" : "，下一關"}`}`;
+      EAU.capCls = (mineTop ? e.escaped : !e.escaped) ? "red" : "";
+      EAU.last = e.grade && e.grade !== "miss" ? `你按準了時機：他的逃脫機會 ${mineTop ? "−" : "+"}${Math.round((X.timing[e.grade] || 0) * 100)}%` : "";
+      drawEA();
+      return 1100;
+    }
+    case "easubmit":
+      EAU.g = g || EAU.g; EAU.stamp = ["降伏！", e.s === "a" ? "gold" : ""]; EAU.capCls = e.s === "b" ? "red" : ""; EAU.cap = `${who(e.s)}鎖死了${who(e.loser)}，<b>比賽結束</b>`; EAU.hint = "";
+      drawEA(); act(e.loser, "down");
+      say(e.s === "a" ? "降伏！你鎖死了他" : "降伏！你被鎖死了", e.s === "a" ? "good" : "bad", "比賽結束");
+      return 1800;
+  }
+  return 0;
+}
+/** Your direction: drag on the mat (↑ pass, → pound, ← submission), or tap an arrow. Resolves with the move. */
+function pickEA(o) {
+  const g = structuredClone(st.c.ground), top = o.top === "a", mine = o.moves.a, X = st.cfg.groundEA;
+  Object.assign(EAU, { g, stam: { a: st.a.stam, b: st.b.stam }, sel: null, reveal: null, stamp: null, aim: null, tbl: eaTable(st, "b"), allowed: mine, capCls: "" });
+  if (speed === 0) return Promise.resolve(eaRead(st, "a"));
+  const tired = mine[0] === "rest", foeTired = !top && o.moves[o.top][0] === "rest";
+  if (tired || foeTired) {
+    EAU.allowed = null; EAU.cap = tired ? "你沒力氣出招，<b>喘口氣</b>（回體力，他得 1 格空間）" : "他沒力氣出招，在喘口氣"; EAU.hint = ""; EAU.last = "";
+    drawEA(); say(tired ? "喘口氣" : "他在喘口氣", tired ? "bad" : "good");
+    return sleep(900).then(() => (tired ? "rest" : "pound"));
+  }
+  EAU.cap = top ? "把手指往一個方向拖：<b>↑ 過腿　→ 砸擊　← 降伏</b>" : "猜他往哪拖，往同一邊擋：<b>↑　→　←</b>";
+  EAU.hint = top ? "放開手指＝出招<br><small>拖到箭頭上，雙方同時翻開</small>" : "放開手指＝擋<br><small>和他同方向就擋住</small>"; EAU.last = EAU.lastBeat || "";
+  drawEA(); say(top ? "輪到你出招" : "輪到你防守", top ? "good" : "bad");
+  return new Promise((res) => {
+    const zone = $("#g21 .zone"), dot = zone.querySelector(".dot");
+    let from = null, done = false;
+    const dirOf = (dx, dy) => (Math.hypot(dx, dy) < 26 ? null : dy < -Math.abs(dx) * 0.7 ? "pass" : dx > 0 ? "pound" : "sub");
+    const choose = (m) => {
+      if (done || !m || !mine.includes(m)) return;
+      done = true; dot.style.display = "none"; EAU.sel = m; EAU.aim = null; EAU.last = ""; EAU.hint = "";
+      drawEA(); sleep(350).then(() => res(m));
+    };
+    const aim = (m) => { if (EAU.aim !== m) { EAU.aim = m; zone.querySelectorAll(".ar").forEach((b) => b.classList.toggle("aim", b.dataset.m === m)); } };
+    const xy = (ev) => { const r = zone.getBoundingClientRect(), k = scale(); return { x: (ev.clientX - r.left) / k, y: (ev.clientY - r.top) / k }; };
+    zone.onpointerdown = (ev) => { if (done) return; zone.setPointerCapture(ev.pointerId); from = xy(ev); dot.style.display = "block"; dot.style.left = from.x - 17 + "px"; dot.style.top = from.y - 17 + "px"; };
+    zone.onpointermove = (ev) => { if (!from || done) return; const p = xy(ev); dot.style.left = p.x - 17 + "px"; dot.style.top = p.y - 17 + "px"; aim(dirOf(p.x - from.x, p.y - from.y)); };
+    zone.onpointerup = (ev) => {
+      if (!from || done) return;
+      const p = xy(ev), m = dirOf(p.x - from.x, p.y - from.y);
+      from = null; dot.style.display = "none";
+      if (m) return choose(m);
+      const t = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".ar"); // a tap on an arrow
+      if (t) choose(t.dataset.m);
+    };
+    zone.onpointercancel = () => { from = null; dot.style.display = "none"; aim(null); };
+    zone.querySelectorAll(".ar").forEach((b) => (b.onclick = () => choose(b.dataset.m))); // a plain click works too (keyboard, desktop)
+  });
+}
+/** The submission's timing bar: your side's chance moves with it (the opponent's does not). Resolves "perfect" | "good" | "miss". */
+function eaBar(o) {
+  const q = st.cfg.react, X = st.cfg.groundEA, meTop = o.top === "a";
+  if (speed === 0) return Promise.resolve("good");
+  frame.classList.add("eabar");
+  return new Promise((res) => {
+    const box = $("#qte"), g0 = (1 - q.zone.good) / 2, p0 = (1 - q.zone.perfect) / 2;
+    EAU.hint = ""; EAU.last = ""; drawEA();
+    say(meTop ? "收緊！" : "掙脫！", meTop ? "good" : "bad", meTop ? `按準了，他這一關逃脫的機會 −${Math.round(X.timing.good * 100)}%（空白鍵或點時機條）` : `按準了，你這一關逃脫的機會 +${Math.round(X.timing.good * 100)}%（空白鍵或點時機條）`);
+    box.innerHTML = `<button class="track"><i class="good" style="left:${g0 * 100}%;width:${q.zone.good * 100}%"></i><i class="perfect" style="left:${p0 * 100}%;width:${q.zone.perfect * 100}%"></i><b class="mark"></b></button>`;
+    const mark = box.querySelector(".mark"), t0 = performance.now();
+    let done = false, x = 0, raf = 0;
+    const end = (grade) => {
+      if (done) return;
+      done = true; cancelAnimationFrame(raf); removeEventListener("keydown", key);
+      box.querySelector(".track").classList.add(grade);
+      setTimeout(() => { box.innerHTML = ""; frame.classList.remove("eabar"); res(grade); }, 300);
+    };
+    const hit = () => { const d = Math.abs(x - 0.5); end(d <= q.zone.perfect / 2 ? "perfect" : d <= q.zone.good / 2 ? "good" : "miss"); };
+    const key = (e) => { if (e.code === "Space" || e.code === "Enter") { e.preventDefault(); hit(); } };
+    const tick = (now) => {
+      const n = ((now - t0) / 1000) * q.speed;
+      if (n >= q.sweeps) return end("miss");
+      const f = n % 2;
+      x = f <= 1 ? f : 2 - f;
+      mark.style.left = x * 100 + "%";
+      raf = requestAnimationFrame(tick);
+    };
+    box.querySelector(".track").onclick = hit;
+    addEventListener("keydown", key);
+    raf = requestAnimationFrame(tick);
+  });
+}
+
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
     <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
     <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
-  ground = null; frame.classList.remove("gmode", "g21mode", "pkmode");
+  ground = null; frame.classList.remove("gmode", "g21mode", "pkmode", "eamode", "eabar");
   pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
   const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);
@@ -810,6 +993,22 @@ async function clash(id) {
   };
   await flush();
   while (id === runId && st.phase === "clash") {
+    const oe = E.eaOptions(st);
+    if (oe) {
+      if (oe.phase === "sub") {
+        const grade = await eaBar(oe);
+        if (id !== runId) return;
+        E.step(st, grade);
+        await flush();
+        continue;
+      }
+      const m = await pickEA(oe);
+      if (id !== runId) return;
+      E.chooseGround(st, "a", m); E.chooseGround(st, "b", eaPick(st, "b"));
+      E.step(st);
+      await flush();
+      continue;
+    }
     const op = E.pokerOptions(st);
     if (op) {
       const m = op.turn === "a" ? await pickPoker(op) : pokerPick(st, "b");

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadData } from "./load.node.js";
 import * as E from "./engine.js";
-import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders, g21Threshold, g21Pick, g21Smart, grounders21, pokerDist, pokerStyle, pokerPick, pokerEquity, groundersPoker } from "./ai.js";
+import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders, g21Threshold, g21Pick, g21Smart, grounders21, pokerDist, pokerStyle, pokerPick, pokerEquity, groundersPoker, eaTable, eaPick, eaRead, groundersEA } from "./ai.js";
 
 const data = loadData(); data.config.ground.mode = "rps"; // the guessing-game tests; the blackjack ground has its own copy (d21) further down
 const fresh = (a = "holloway", b = "makhachev", seed = 3) => E.createGame(data, a, b, seed);
@@ -25,7 +25,7 @@ test("same seed, same bout; every bout ends by KO or decision", () => {
 });
 
 test("every card has a school, a tier the shop can reach, and only known keywords and effects", () => {
-  const kws = ["guard", "slip", "flurry", "sweep", "sub", "takedown", "sprawl", "getup", "ground", "combo", "reach"], whens = ["play", "buy", "start", "hit", "break", "win", "ground"];
+  const kws = ["guard", "slip", "flurry", "sweep", "sub", "takedown", "sprawl", "getup", "ground", "combo", "reach"], whens = ["play", "buy", "start", "hit", "break", "win", "ground", "groundEA"];
   for (const d of Object.values(data.skills)) {
     assert.ok(["punch", "kick", "grap", "def"].includes(d.school), d.id);
     assert.ok(d.tier >= 1 && d.tier <= data.config.shop.maxTier, d.id);
@@ -1126,4 +1126,228 @@ test("poker ground AI: the published style is the table it plays from; the reade
       assert.ok(g.over && ["KO", "DEC", "SUB"].includes(g.over.how), k);
     }
   }
+});
+
+// ---------- the EA UFC-style ground (ground.mode "ea") ----------
+const dea = loadData(); dea.config.ground.mode = "ea";
+const XE = dea.config.groundEA;
+/** A clash already on the ground in EA mode with `top` on top at `layer`; boards as given. */
+const downEA = (a, b, top = "a", layer = 1, who = ["poirier", "makhachev"], d = dea) => {
+  const st = E.createGame(d, ...who, 3); put(st, "a", a); put(st, "b", b); E.startClash(st);
+  st.c.ground = { top, layer, beat: 1 }; E.startEA(st);
+  return st;
+};
+const beatEA = (st, mt, mb) => { assert.ok(E.chooseGround(st, st.c.ground.top, mt), "top may " + mt); assert.ok(E.chooseGround(st, st.c.ground.top === "a" ? "b" : "a", mb), "bottom may " + mb); E.step(st); return evs(st, "eabeat").at(-1); };
+const vstate = (o = {}) => ({ layer: 1, space: 0, covered: false, topSta: 20, botSta: 20, quickUsed: false, dmg: 0, ...o });
+const M0 = { poundPlus: 0, drainPlus: 0, stageCut: 0, passCut: 0, quick: false };
+
+test("EA ground, the rule on a virtual state: a match is a denial, a miss lands; denials give space, two make an escape, a pound hurts and drains, a pass goes deeper", () => {
+  let V = vstate(), r = E.eaBeat(XE, 3, V, M0, "pound", "pound");
+  assert.deepEqual({ kind: r.kind, dmg: r.dmg }, { kind: "deny", dmg: 0 });
+  assert.equal(V.topSta, 20 - XE.cost.pound - XE.denied, "the attacker pays extra when he is read");
+  assert.equal(V.botSta, 20); assert.equal(V.space, 1);
+  r = E.eaBeat(XE, 3, V, M0, "pass", "pass");
+  assert.equal(r.kind, "deny"); assert.equal(r.esc, true); assert.equal(r.up, true, "two denials in the first layer: on his feet");
+  V = vstate({ layer: 2, space: 1 }); r = E.eaBeat(XE, 3, V, M0, "sub", "sub");
+  assert.deepEqual({ layer: V.layer, space: V.space, esc: r.esc, up: r.up }, { layer: 1, space: 0, esc: true, up: false });
+  V = vstate({ layer: 2 }); r = E.eaBeat(XE, 3, V, M0, "pound", "sub");
+  assert.deepEqual({ kind: r.kind, dmg: r.dmg, drain: r.drain }, { kind: "pound", dmg: XE.pound[1], drain: XE.drain });
+  assert.equal(V.botSta, 20 - XE.drain); assert.equal(V.covered, true); assert.equal(V.dmg, XE.pound[1]);
+  assert.equal(V.topSta, 20 - XE.cost.pound);
+  V = vstate({ space: 1 }); r = E.eaBeat(XE, 3, V, M0, "pass", "sub");
+  assert.deepEqual({ kind: r.kind, layer: V.layer, space: V.space }, { kind: "pass", layer: 2, space: 0 }, "a landed pass goes deeper and wipes his space");
+  assert.equal(V.topSta, 20 - XE.cost.pass);
+  V = vstate({ layer: 3 }); E.eaBeat(XE, 3, V, M0, "pass", "pound");
+  assert.equal(V.layer, 3, "nothing deeper than the mount");
+  V = vstate({ topSta: 5 }); r = E.eaBeat(XE, 3, V, M0, "rest", "pound");
+  assert.deepEqual({ kind: r.kind, top: V.topSta, space: V.space }, { kind: "rest", top: 5 + XE.rest, space: 1 }, "too tired to attack: he rests and the bottom man gets space");
+  V = vstate({ topSta: 19 }); E.eaBeat(XE, 3, V, M0, "rest", "pound");
+  assert.equal(V.topSta, XE.stamina, "never above the tank");
+  V = vstate({ layer: 2 }); r = E.eaBeat(XE, 3, V, M0, "sub", "pass");
+  assert.deepEqual({ kind: r.kind, stages: r.stages }, { kind: "sub", stages: XE.stages[1] });
+});
+
+test("EA ground, what the numbers are: the escape chance falls with stamina; deeper means fewer stages; submission odds are the product", () => {
+  assert.ok(E.eaEscape(XE, 20) > E.eaEscape(XE, 10) && E.eaEscape(XE, 10) > E.eaEscape(XE, 0));
+  assert.ok(Math.abs(E.eaEscape(XE, 20) - Math.min(XE.escMax, XE.escBase + XE.escSta)) < 1e-9);
+  assert.equal(E.eaStages(XE, M0, 1), XE.stages[0]); assert.ok(E.eaStages(XE, M0, 3) < E.eaStages(XE, M0, 1));
+  assert.equal(E.eaStages(XE, { ...M0, stageCut: 99 }, 1), 1, "never fewer than one stage");
+  const p = E.eaSubOdds(XE, M0, 3, 4);
+  assert.ok(Math.abs(p - (1 - E.eaEscape(XE, 4)) ** XE.stages[2]) < 1e-12);
+  assert.ok(E.eaSubOdds(XE, M0, 3, 4) > E.eaSubOdds(XE, M0, 1, 4) && E.eaSubOdds(XE, M0, 3, 2) > E.eaSubOdds(XE, M0, 3, 18), "deeper and more tired: the submission is likelier");
+});
+
+test("EA ground, a takedown starts it: both pick at once, the top man is limited by stamina, nothing is picked for the other", () => {
+  const st = E.createGame(dea, "holloway", "makhachev", 3);
+  put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "highkick"]);
+  E.startClash(st); E.step(st);
+  assert.equal(evs(st, "ground").length, 1); assert.equal(evs(st, "eadeal").length, 1);
+  assert.equal(E.options(st), null, "no card attacks while they grapple"); assert.equal(E.groundOptions(st), null);
+  const o = E.eaOptions(st);
+  assert.deepEqual({ phase: o.phase, top: o.top, layer: o.layer, beat: o.beat, beats: o.beats }, { phase: "pick", top: "a", layer: 1, beat: 1, beats: XE.beats });
+  assert.deepEqual(o.moves.a, ["pass", "pound", "sub"]); assert.deepEqual(o.moves.b, ["pass", "pound", "sub"]);
+  assert.equal(E.chooseGround(st, "a", "rest"), false, "resting is only for a man who cannot attack");
+  assert.ok(E.chooseGround(st, "b", "sub")); assert.ok(E.chooseGround(st, "a", "pound"));
+  E.step(st);
+  assert.deepEqual({ t: evs(st, "eabeat")[0].mt, b: evs(st, "eabeat")[0].mb }, { t: "pound", b: "sub" });
+  const s2 = downEA(["cross"], ["cross"]);
+  s2.a.stam = 2;
+  assert.deepEqual(E.eaOptions(s2).moves.a, ["pass", "pound"], "he cannot pay for a submission with 2 stamina");
+  s2.a.stam = 0;
+  assert.deepEqual(E.eaOptions(s2).moves.a, ["rest"]);
+  const s3 = downEA(["cross"], ["cross"], "a", 3); assert.deepEqual(E.eaOptions(s3).moves.a, ["pound", "sub"], "no pass from the mount");
+});
+
+test("EA ground, a beat on the real engine: denials earn space and a layer, a pound hurts the fighter and drains him, the ground ends after the last beat", () => {
+  let st = downEA(["cross"], ["cross"], "a", 2), hp = st.b.hp;
+  let e = beatEA(st, "pass", "pass");
+  assert.deepEqual({ kind: e.kind, space: e.space, layer: e.layer }, { kind: "deny", space: 1, layer: 2 });
+  assert.equal(st.a.stam, 20 - XE.cost.pass - XE.denied);
+  e = beatEA(st, "pound", "pound");
+  assert.deepEqual({ kind: e.kind, esc: e.esc, layer: e.layer }, { kind: "deny", esc: true, layer: 1 });
+  e = beatEA(st, "pound", "pass");
+  assert.equal(e.kind, "pound"); assert.equal(st.b.hp, hp - XE.pound[0]); assert.equal(st.b.stam, 20 - XE.drain);
+  assert.equal(st.c.ground.covered, true);
+  assert.equal(st.a.stats.dmg, XE.pound[0]);
+  // after the last beat the referee stands them up and the cards carry on
+  st = downEA(["cross"], ["cross"], "a", 1);
+  for (let i = 0; i < XE.beats && st.c.ground; i++) beatEA(st, "pound", "pass");
+  assert.equal(st.c.ground, null); assert.equal(evs(st, "standup").length, 1); assert.ok(E.options(st), "the cards carry on");
+  // a finish on the mat
+  st = downEA(["cross"], ["cross"], "a", 3); st.b.hp = 2;
+  beatEA(st, "pound", "pass");
+  E.step(st);
+  assert.deepEqual({ winner: st.over?.winner, how: st.over?.how }, { winner: "a", how: "KO" });
+});
+
+test("EA ground, a submission: stages of the timing game, escaping costs stamina and returns to the ground, failing every stage ends the bout (SUB)", () => {
+  const st = downEA(["cross"], ["cross"], "a", 2);
+  beatEA(st, "sub", "pound");
+  assert.equal(st.c.ground.phase, "sub"); assert.equal(evs(st, "easubstart").length, 1);
+  const o = E.eaOptions(st);
+  assert.deepEqual({ phase: o.phase, stage: o.stage, stages: o.stages }, { phase: "sub", stage: 0, stages: XE.stages[1] });
+  assert.equal(E.chooseGround(st, "a", "pound"), false, "nobody picks a direction during a submission");
+  // force the dice: a very tired bottom man fails every stage
+  st.b.stam = 0;
+  const cfg = st.cfg.groundEA, was = cfg.escBase; cfg.escBase = 0; cfg.escSta = 0;
+  for (let i = 0; i < XE.stages[1] && st.c?.ground; i++) E.step(st);
+  cfg.escBase = was; cfg.escSta = 0.5;
+  assert.ok(st.c.sub === "b" && !st.c.ground, "he tapped");
+  E.step(st);
+  assert.equal(st.c, null, "the bout is over: the clash ended");
+  assert.deepEqual({ winner: st.over?.winner, how: st.over?.how }, { winner: "a", how: "SUB" });
+  assert.equal(evs(st, "easub").length, XE.stages[1]); assert.equal(evs(st, "easubmit").length, 1);
+  // an escape on the first stage
+  const s2 = downEA(["cross"], ["cross"], "a", 2);
+  beatEA(s2, "sub", "pound");
+  s2.b.stam = 20; const was2 = XE.escMax;
+  const cfg2 = s2.cfg.groundEA; cfg2.escBase = 5; cfg2.escMax = 1;
+  E.step(s2);
+  cfg2.escBase = 0.4; cfg2.escMax = was2;
+  assert.equal(evs(s2, "easub").at(-1).escaped, true);
+  assert.equal(s2.c.ground.phase, "pick"); assert.equal(s2.b.stam, 20 - XE.escDrain, "getting out costs him stamina"); assert.equal(s2.c.ground.layer, 2);
+  // the player's timing moves his side's chance: defending adds, attacking takes away
+  const sp = downEA(["cross"], ["cross"], "b", 2);
+  beatEA(sp, "sub", "pound");
+  E.step(sp, "perfect");
+  assert.ok(Math.abs(evs(sp, "easub").at(-1).p - Math.min(XE.escMax, E.eaEscape(XE, 20) + XE.timing.perfect)) < 1e-9, "a is the bottom man: a perfect bar adds to his chance");
+  const sq = downEA(["cross"], ["cross"], "a", 2);
+  beatEA(sq, "sub", "pound");
+  E.step(sq, "good");
+  assert.ok(Math.abs(evs(sq, "easub").at(-1).p - (E.eaEscape(XE, 20) - XE.timing.good)) < 1e-9, "a is on top: a good bar takes from his chance");
+});
+
+test("EA ground, the cards on the board: each does one small thing, kept in its own data", () => {
+  const dmgOf = (a, b) => { const st = downEA(a, b, "a", 1); const hp = st.b.hp; beatEA(st, "pound", "pass"); return { dmg: hp - st.b.hp, drain: 20 - st.b.stam }; };
+  assert.deepEqual(dmgOf(["cross"], ["cross"]), { dmg: XE.pound[0], drain: XE.drain });
+  assert.equal(dmgOf(["elbows"], ["cross"]).dmg, XE.pound[0] + 1, "ground-and-elbows: pounds hit harder");
+  assert.equal(dmgOf(["groundpound"], ["cross"]).drain, XE.drain + 1, "ground-and-pound: drains him more");
+  assert.equal(dmgOf(["elbows"], ["cross"]).drain, XE.drain);
+  let st = downEA(["rnc"], ["cross"], "a", 2);
+  beatEA(st, "sub", "pound"); assert.equal(E.eaOptions(st).stages, XE.stages[1] - 1, "a choke needs one stage fewer");
+  st = downEA(["cross"], ["guillotine"], "b", 2); beatEA(st, "sub", "pound");
+  assert.equal(E.eaOptions(st).stages, XE.stages[1] - 1, "the guillotine card is the top man's own: the top man is b");
+  st = downEA(["wrestlecoach"], ["cross"]); const was = st.a.stam; beatEA(st, "pass", "pound");
+  assert.equal(was - st.a.stam, XE.cost.pass - 1, "the coach makes a pass cost one less");
+  st = downEA(["cross"], ["shrimp"], "a", 2);
+  const e = beatEA(st, "pound", "pound");
+  assert.equal(e.esc, true, "one denial is enough the first time with a get-up card");
+  assert.equal(st.c.ground.layer, 1);
+  assert.equal(E.eaView(st, "a").quick, false, "once per ground");
+  const e2 = beatEA(st, "pound", "pound");
+  assert.equal(e2.esc, false, "the second time it takes two");
+  assert.equal(E.eaView(downEA(["cross"], ["shrimp"]), "b").quick, true);
+});
+
+test("EA ground, stamina is carried through the bout: the tank, the rest between rounds", () => {
+  const st = E.createGame(dea, "poirier", "makhachev", 3);
+  assert.equal(st.a.stam, XE.stamina); assert.equal(st.b.stam, XE.stamina);
+  st.a.stam = 5; st.b.stam = 19;
+  for (const s of ["a", "b"]) st[s].stam = Math.min(XE.stamina, st[s].stam + XE.regen);
+  assert.deepEqual([st.a.stam, st.b.stam], [5 + XE.regen, XE.stamina]);
+  const g = runGame(dea, "makhachev", "holloway", 17);
+  assert.ok(g.over); assert.ok(g.a.stam >= 0 && g.a.stam <= XE.stamina && g.b.stam >= 0 && g.b.stam <= XE.stamina);
+});
+
+test("EA ground AI: its table sums to one over what it may pick, is exactly what it draws from, leans on what you just did, and shows the reasons", () => {
+  let st = downEA(["cross"], ["cross"], "a", 2);
+  let t = eaTable(st, "b");
+  assert.ok(Math.abs(Object.values(t.w).reduce((n, v) => n + v, 0) - 1) < 1e-9);
+  assert.deepEqual(Object.keys(t.w).sort(), ["pass", "pound", "sub"]);
+  const before = t.w;
+  // you pounded and landed: he covers up next
+  beatEA(st, "pound", "pass");
+  const after = eaTable(st, "b");
+  assert.ok(after.w.pound > before.pound, "he covers up after eating a strike");
+  assert.ok(after.why.some((x) => x.includes("砸中")), "and says why");
+  assert.ok(after.why.some((x) => x.includes("砸擊")), "he guards the thing you did");
+  // a tired bottom man guards the finish worse and the opponent wants it more
+  const tired = downEA(["cross"], ["cross"], "b", 3), fresh = downEA(["cross"], ["cross"], "b", 3);
+  tired.a.stam = 3;
+  assert.ok(eaTable(tired, "b").w.sub > eaTable(fresh, "b").w.sub, "a tired man is attacked with a submission more");
+  assert.ok(eaTable(tired, "b").why.some((x) => x.includes("降伏")));
+  // the top man cannot pick what he cannot afford, and rests when nothing is affordable
+  const poor = downEA(["cross"], ["cross"]); poor.b.stam = 0;
+  const pt = eaTable(poor, "a");
+  assert.equal(pt.w.rest, undefined);
+  poor.a.stam = 0; poor.c.ground.top = "a";
+  assert.deepEqual(eaTable(poor, "a").w, { rest: 1 });
+  assert.equal(eaPick(poor, "a"), "rest");
+  // the draw is from the table: with all weight on one move the pick is that move
+  const f = downEA(["cross"], ["cross"], "b"); f.a.f = { ...f.a.f, ai: { ...f.a.f.ai, groundEA: { bot: { pass: 0, pound: 0, sub: 1 }, top: { pass: 1, pound: 1, sub: 1 } } } };
+  const flat = f.cfg.groundEA.ai.flat; f.cfg.groundEA.ai.flat = 0;
+  for (let i = 0; i < 20; i++) { f.rng += 7; assert.equal(eaPick(f, "a"), "sub"); }
+  f.cfg.groundEA.ai.flat = flat;
+  // the opponent (a, underneath) never picks outside its options, and the players act only while a direction is wanted
+  const g = downEA(["cross"], ["cross"], "b");
+  for (const k of Object.keys(groundersEA)) { const m = groundersEA[k](g, "a"); assert.ok(["pass", "pound", "sub", "rest"].includes(m), k); }
+  beatEA(g, "sub", "pound");
+  assert.equal(eaPick(g, "a"), null); assert.equal(eaRead(g, "a"), null, "nobody picks a direction in the middle of a submission");
+});
+
+test("EA ground, the reader: it picks the direction worth most against the shown table, and beats a fixed line", () => {
+  // you are on top and he is almost out of stamina at the mount and never guards a submission: the reader goes for it
+  const flat = dea.config.groundEA.ai.flat; dea.config.groundEA.ai.flat = 0;
+  const st = downEA(["cross"], ["cross"], "a", 3);
+  st.b.stam = 0; st.a.stam = 20; st.b.f = { ...st.b.f, ai: { ...st.b.f.ai, groundEA: { top: { pass: 1, pound: 1, sub: 1 }, bot: { pass: 1, pound: 1, sub: 0 } } } };
+  assert.equal(eaRead(st, "a"), "sub");
+  // he is on top and only ever submits; you are underneath: the reader guards it
+  const s2 = downEA(["cross"], ["cross"], "b", 3);
+  s2.a.stam = 2; s2.b.f = { ...s2.b.f, ai: { ...s2.b.f.ai, groundEA: { top: { pass: 0, pound: 0, sub: 1 }, bot: { pass: 1, pound: 1, sub: 1 } } } };
+  assert.equal(eaRead(s2, "a"), "sub");
+  dea.config.groundEA.ai.flat = flat;
+  // over many bouts the reader beats the best memorised mix (this is the point of the ground)
+  let r = 0, f = 0, n = 0;
+  for (const [a, b] of [["makhachev", "poirier"], ["poirier", "makhachev"], ["holloway", "makhachev"], ["makhachev", "holloway"], ["poirier", "holloway"], ["holloway", "poirier"]]) for (let i = 0; i < 25; i++) {
+    n++; r += runGame(dea, a, b, 700 + i * 31, shoppers.smart, undefined, undefined, groundersEA.reader).over?.winner === "a" ? 1 : 0;
+    f += runGame(dea, a, b, 700 + i * 31, shoppers.smart, undefined, undefined, groundersEA.mixPound).over?.winner === "a" ? 1 : 0;
+  }
+  assert.ok(r >= f, `reader ${r}/${n} against the fixed mix ${f}/${n}`);
+  for (const k of Object.keys(groundersEA)) {
+    const g = runGame(dea, "makhachev", "poirier", 21, shoppers.smart, undefined, undefined, groundersEA[k]);
+    assert.ok(g.over && ["KO", "DEC", "SUB"].includes(g.over.how), k);
+  }
+  const a1 = runGame(dea, "makhachev", "holloway", 5), b1 = runGame(dea, "makhachev", "holloway", 5);
+  assert.deepEqual(a1.over, b1.over); assert.equal(a1.log.length, b1.log.length);
+  assert.ok(evs(a1, "eadeal").length > 0, "the bout reached the ground");
 });

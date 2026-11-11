@@ -366,3 +366,61 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #g21.pk .foe h4 small b{color:#35d0a0}
 #g21.pk .stamp{top:176px;font-size:26px}
 .who small{min-width:0}.stn{flex:none!important;overflow:visible!important;text-overflow:clip!important}
+
+/* 地面 EA 式（ground.mode＝ea）：往一個方向拖、他的表（真實數字）、降伏用時機條 */
+.eamode #say{display:none}
+.eamode #stage{top:92px;height:170px}
+.eamode #fa{left:398px} .eamode #fb{left:450px}
+.eamode #cue{visibility:hidden}
+.eamode.eabar #cue{visibility:visible;position:relative;z-index:6}
+.eamode.eabar #g21 .act{display:none}
+#g21.ea .m-pass{--m:#4c8dff} #g21.ea .m-pound{--m:#f0524f} #g21.ea .m-sub{--m:#b06cff}
+#g21.ea .lad{top:46px}
+#g21.ea .side{top:88px;width:236px;height:228px}
+#g21.ea .row{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;color:#cfd7e6;flex-wrap:wrap}
+#g21.ea .space{display:flex;gap:4px}
+#g21.ea .space i{width:15px;height:15px;border-radius:50%;box-shadow:0 0 0 2px #3ecf8e inset;display:block}
+#g21.ea .space i.on{background:#3ecf8e}
+#g21.ea .row small{color:var(--dim);font-size:10.5px}
+#g21.ea .costs{margin-top:8px;font-size:11.5px;line-height:1.6;color:#aab4c7}
+#g21.ea .costs b{color:#35d0a0}
+#g21.ea .warn{margin-top:8px;font-size:11.5px;line-height:1.35;padding:4px 7px;border-radius:6px;background:#3a1512;border:1px solid #8a2c24;color:#ffb3a8}
+#g21.ea .warn b{color:#ff7a6a}
+#g21.ea .chips{margin-top:8px}
+#g21.ea .tbl{border-radius:7px;background:#241d06;border:1px solid #6a5310;padding:5px 8px}
+#g21.ea .tbl h5{font-size:10.5px;font-weight:700;color:#c9b77a;margin-bottom:3px}
+#g21.ea .tr{display:flex;align-items:center;gap:6px;height:21px;font-size:12px}
+#g21.ea .tr span{width:66px;white-space:nowrap}
+#g21.ea .tr span em{font-style:normal;color:var(--m);font-weight:800;margin-right:3px}
+#g21.ea .tr i{flex:1;height:8px;border-radius:4px;background:#1b2230;overflow:hidden}
+#g21.ea .tr i b{display:block;height:100%;background:var(--m)}
+#g21.ea .tr strong{width:34px;text-align:right;font-weight:800;color:var(--gold)}
+#g21.ea .why{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+#g21.ea .why span{font-size:10.5px;line-height:1.3;padding:2px 6px;border-radius:5px;background:#1c2331;color:#cfd7e6}
+#g21.ea .why span b{color:var(--gold)}
+#g21.ea .zone{left:252px;width:340px;top:88px;height:228px;pointer-events:auto;touch-action:none;cursor:grab}
+#g21.ea .zone>*{position:absolute}
+#g21.ea .pad{inset:0}
+#g21.ea .pad .ar{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;width:92px;height:46px;border-radius:10px;background:color-mix(in srgb,var(--m) 22%,#0d111a);border:2px solid var(--m);color:#fff;line-height:1.15;text-align:center;box-shadow:0 3px 0 #0008;font:inherit;padding:0}
+#g21.ea .pad .ar b{font-size:14px;font-weight:800}
+#g21.ea .pad .ar small{font-size:10.5px;color:#d6dcea}
+#g21.ea .pad .ar .k{font-size:15px;font-weight:800;color:var(--m)}
+#g21.ea .pad .ar.up{left:124px;top:2px}
+#g21.ea .pad .ar.lf{left:2px;top:122px}
+#g21.ea .pad .ar.rt{right:2px;top:122px}
+#g21.ea .pad .ar.sel{background:var(--m);box-shadow:0 0 0 3px #fff,0 0 18px var(--m)}
+#g21.ea .pad .ar.sel .k{color:#fff}
+#g21.ea .pad .ar.aim{box-shadow:0 0 0 3px #fff8,0 0 14px var(--m)}
+#g21.ea .pad .ar.dim{opacity:.35}
+#g21.ea .dot{display:none;width:34px;height:34px;border-radius:50%;background:#ffffffdd;box-shadow:0 0 0 6px #ffffff33,0 0 20px #fff8;pointer-events:none;z-index:4}
+#g21.ea .reveal{left:0;right:0;top:112px;display:flex;justify-content:space-between;padding:0 6px;z-index:2;pointer-events:none}
+#g21.ea .reveal span{font-size:12px;font-weight:800;padding:3px 9px;border-radius:12px;background:#0a0d12d9;box-shadow:0 0 0 2px var(--m)}
+#g21.ea .stamp{left:50%;top:48px;font-size:25px;line-height:1.25;text-align:center;pointer-events:none}
+#g21.ea .cap{left:252px;width:340px;bottom:76px;font-size:12px;line-height:1.35}
+#g21.ea .act{left:84px;right:84px;top:326px;height:56px;gap:10px;align-items:center}
+#g21.ea .last,#g21.ea .hint{height:100%;border-radius:8px;display:flex;flex-direction:column;justify-content:center;font-size:12px;line-height:1.45}
+#g21.ea .last{flex:1;background:#121722;border:1px solid var(--line);padding:0 12px;color:#cfd7e6;pointer-events:none}
+#g21.ea .last b{font-weight:800} #g21.ea .last em{font-style:normal;font-weight:800;color:var(--gold)}
+#g21.ea .hint{width:250px;background:linear-gradient(#1a2440,#121a2f);border:1px solid #2c3d6e;text-align:center;font-weight:700;color:#cfe0ff;padding:0 10px;pointer-events:none}
+#g21.ea .hint:has(div:empty){opacity:0}
+#g21.ea .hint small{font-weight:400;color:#9fb3e6}

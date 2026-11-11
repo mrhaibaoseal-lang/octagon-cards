@@ -32,12 +32,14 @@ export function make(st, id, gold = false) {
 }
 const mulOf = (st, c) => (c.gold ? st.cfg.golden : 1);
 
+/** The stamina numbers of the ground game in use (the EA ground has its own block; the poker block is the default). */
+const groundStam = (cfg) => (cfg.ground.mode === "ea" ? cfg.groundEA : cfg.groundPoker);
 export function createGame(data, aId, bId, seed = 1) {
   const cfg = data.config;
   const st = { data, cfg, rng: (seed >>> 0) || 1, round: 1, clash: 0, turn: 0, phase: "shop", over: null, log: [], rounds: [], wins: { a: 0, b: 0 }, c: null };
   for (const [s, id] of [["a", aId], ["b", bId]]) {
     st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null,
-      shop: { gold: 0, tier: 1, offers: [], frozen: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 }, stam: cfg.groundPoker.stamina };
+      shop: { gold: 0, tier: 1, offers: [], frozen: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 }, stam: groundStam(cfg).stamina };
   }
   beginTurn(st);
   return st;
@@ -247,6 +249,7 @@ function takedown(st, u) {
   c.grounds++;
   ev(st, "ground", { s, uid: u.uid });
   if (isPoker(st)) startPoker(st);
+  else if (isEA(st)) startEA(st);
   else if (is21(st)) deal21(st);
 }
 function standUp(st, s = null, uid = null) { st.c.ground = null; ev(st, "standup", { s, uid }); }
@@ -328,7 +331,7 @@ function swing(st, u, t, mul) {
 export function step(st, grade = null) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return false;
-  if (c.ground) { if (isPoker(st)) runPoker(st); else if (is21(st)) run21(st); else runBeat(st); return true; }
+  if (c.ground) { if (isPoker(st)) runPoker(st); else if (isEA(st)) runEA(st, grade); else if (is21(st)) run21(st); else runBeat(st); return true; }
   const react = grade ? needsReact(st) : null, p = upcoming(st);
   if (!p) { endClash(st); return true; }
   c.pending = null; c.opt = null; c.n++;
@@ -359,11 +362,12 @@ export function groundMoves(st, s) {
 /** What the ground game looks like right now: { top, layer, beat, max, moves: { a, b }, last } or null. */
 export function groundOptions(st) {
   const c = st.c, g = c?.ground;
-  if (st.phase !== "clash" || !g || c.ko || is21(st) || isPoker(st)) return null;
+  if (st.phase !== "clash" || !g || c.ko || is21(st) || isPoker(st) || isEA(st)) return null;
   return { top: g.top, layer: g.layer, beat: g.beat, max: st.cfg.ground.beats, moves: { a: groundMoves(st, "a"), b: groundMoves(st, "b") }, last: c.glast };
 }
 /** Side s picks its move for this beat (hidden until both have). False when it is not allowed. */
 export function chooseGround(st, s, move) {
+  if (isEA(st)) { const o = eaOptions(st); if (!o || o.phase !== "pick" || !o.moves[s].includes(move)) return false; (st.c.gchoice ||= {})[s] = move; return true; } // both men pick at the same moment
   if (isPoker(st)) { const o = pokerOptions(st); if (!o || o.turn !== s || !o.actions.includes(move)) return false; st.c.gchoice = { [s]: move }; return true; }
   if (is21(st)) { const o = g21Options(st); if (!o || o.turn !== s || !o.actions.includes(move)) return false; st.c.gchoice = { [s]: move }; return true; }
   if (!groundOptions(st) || !groundMoves(st, s).includes(move)) return false;
@@ -728,6 +732,105 @@ function endPoker(st) {
   standUp(st);
 }
 
+// ---------- the ground game, EA UFC style (ground.mode "ea"; numbers in rules/bg groundEA) ----------
+// Every beat both men drag a direction at the same moment. The three directions mean the same thing to both: up = pass (deny the pass),
+// right = pound (cover up), left = submission (defend it). The same direction is a DENIAL: the attacker pays extra stamina and the bottom man gains a
+// point of space (two points and he is out one layer; out of the first layer he stands up). A different one LANDS: a pass goes one layer deeper, a pound
+// hurts him and drains his stamina (and makes him cover up next beat), a submission starts a staged timing game whose escape chance falls with his
+// stamina; surviving every stage ends it, otherwise the bout is over (how "SUB"). Stamina is st[s].stam, carried through the bout.
+// eaBeat is a pure function of a small virtual state, so the screen, the opponent and the simulated reader all use the same rule.
+const isEA = (st) => st.cfg.ground.mode === "ea";
+export const eaOn = isEA;
+const EAX = (st) => st.cfg.groundEA;
+export const EA_MOVES = ["pass", "pound", "sub"];
+const eFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "groundEA" && x.do === kind).map((x) => ({ ...x, n: (x.n || 0) * mulOf(st, u) })));
+const eSum = (st, s, kind) => eFx(st, s, kind).reduce((n, x) => n + x.n, 0);
+/** What the cards on the board do in this ground (fixed for the ground: nobody swings while they grapple). */
+function eaMods(st) {
+  const top = st.c.ground.top, bot = other(top);
+  return { poundPlus: eSum(st, top, "poundplus"), drainPlus: eSum(st, top, "drainplus"), stageCut: eSum(st, top, "stagecut"), passCut: eSum(st, top, "passcut"), quick: eSum(st, bot, "quick") > 0 };
+}
+/** What an attack costs the top man in stamina. */
+export const eaCost = (X, M, t) => Math.max(1, X.cost[t] - (t === "pass" ? M.passCut : 0));
+/** The chance the bottom man gets out of one stage of a submission, from his stamina. */
+export const eaEscape = (X, botSta) => Math.min(X.escMax, X.escBase + X.escSta * (botSta / X.stamina));
+/** The number of stages a submission has here. */
+export const eaStages = (X, M, layer) => Math.max(1, X.stages[layer - 1] - M.stageCut);
+/** The chance a submission goes the whole way (he fails every stage). */
+export const eaSubOdds = (X, M, layer, botSta) => (1 - eaEscape(X, botSta)) ** eaStages(X, M, layer);
+/** One beat on a virtual state V = { layer, space, covered, topSta, botSta, quickUsed, dmg }: the top man's move t (or "rest") against the bottom man's b.
+ *  Returns what happened: { kind: rest | deny | pass | pound | sub, dmg, drain, esc, up, stages }. */
+export function eaBeat(X, layers, V, M, t, b) {
+  V.covered = false;
+  const r = { kind: "", dmg: 0, drain: 0, esc: false, up: false, stages: 0 };
+  if (t === "rest") { V.topSta = Math.min(X.stamina, V.topSta + X.rest); V.space++; r.kind = "rest"; }
+  else {
+    V.topSta = Math.max(0, V.topSta - eaCost(X, M, t));
+    if (t === b) { V.topSta = Math.max(0, V.topSta - X.denied); V.space++; r.kind = "deny"; }
+    else if (t === "pass") { V.space = 0; if (V.layer < layers) V.layer++; r.kind = "pass"; }
+    else if (t === "pound") {
+      r.dmg = X.pound[V.layer - 1] + M.poundPlus; r.drain = X.drain + M.drainPlus;
+      V.botSta = Math.max(0, V.botSta - r.drain); V.covered = true; V.dmg = (V.dmg || 0) + r.dmg; r.kind = "pound";
+    } else { r.kind = "sub"; r.stages = eaStages(X, M, V.layer); }
+  }
+  const need = M.quick && !V.quickUsed ? 1 : X.need;
+  if (r.kind !== "sub" && V.space >= need) { if (need < X.need) V.quickUsed = true; V.space = 0; V.layer--; r.esc = true; if (V.layer < 1) r.up = true; }
+  return r;
+}
+/** Set up the EA ground on st.c.ground ({ top, layer, beat }): the cards on the board are read once, here. */
+export function startEA(st) {
+  const g = st.c.ground;
+  Object.assign(g, { space: 0, covered: false, lastTop: null, lastBot: null, quickUsed: false, phase: "pick", sub: null, mods: eaMods(st) });
+  ev(st, "eadeal", { top: g.top, layer: g.layer });
+}
+/** What may be picked now: { phase: "pick", top, layer, beat, beats, moves: { a, b } } or { phase: "sub", ... stage, stages, escape }. */
+export function eaOptions(st) {
+  const c = st.c, g = c?.ground, X = EAX(st);
+  if (st.phase !== "clash" || !g || c.ko || !isEA(st)) return null;
+  const bot = other(g.top), base = { top: g.top, layer: g.layer, beat: g.beat, beats: X.beats };
+  if (g.phase === "sub") return { ...base, phase: "sub", stage: g.sub.stage, stages: g.sub.stages, escape: eaEscape(X, st[bot].stam) };
+  const ok = EA_MOVES.filter((m) => eaCost(X, g.mods, m) <= st[g.top].stam && !(m === "pass" && g.layer >= st.cfg.ground.layers));
+  return { ...base, phase: "pick", moves: { [g.top]: ok.length ? ok : ["rest"], [bot]: [...EA_MOVES] } };
+}
+/** What side s sees: the options plus both stamina bars, the space, the cards' effects and what a move costs. */
+export function eaView(st, s) {
+  const o = eaOptions(st);
+  if (!o) return null;
+  const g = st.c.ground, X = EAX(st), M = g.mods, bot = other(g.top);
+  return { ...o, role: g.top === s ? "top" : "bottom", sta: { a: st.a.stam, b: st.b.stam }, space: g.space, covered: g.covered, lastTop: g.lastTop, lastBot: g.lastBot, mods: { ...M }, quick: M.quick && !g.quickUsed,
+    costs: Object.fromEntries(EA_MOVES.map((m) => [m, eaCost(X, M, m)])), stages: eaStages(X, M, g.layer), escape: eaEscape(X, st[bot].stam), subOdds: eaSubOdds(X, M, g.layer, st[bot].stam) };
+}
+function runEA(st, grade) {
+  const c = st.c, g = c.ground, X = EAX(st), o = eaOptions(st);
+  if (g.phase === "sub") return eaStage(st, grade);
+  const top = g.top, bot = other(top), pickFor = (s) => (c.gchoice?.[s] && o.moves[s].includes(c.gchoice[s]) ? c.gchoice[s] : pickOne(st, o.moves[s]));
+  const t = pickFor(top), b = pickFor(bot);
+  c.gchoice = null;
+  const V = { layer: g.layer, space: g.space, covered: g.covered, topSta: st[top].stam, botSta: st[bot].stam, quickUsed: g.quickUsed, dmg: 0 };
+  const r = eaBeat(X, st.cfg.ground.layers, V, g.mods, t, b);
+  st[top].stam = V.topSta; st[bot].stam = V.botSta;
+  Object.assign(g, { layer: V.layer, space: V.space, covered: V.covered, quickUsed: V.quickUsed, lastTop: t, lastBot: b });
+  const n = g.beat++;
+  if (r.dmg) { st[bot].hp = Math.max(0, st[bot].hp - r.dmg); st[top].stats.dmg += r.dmg; }
+  ev(st, "eabeat", { top, mt: t, mb: b, ...r, layer: g.layer, space: g.space, beat: n }); // (t is the event type, so the moves are mt / mb)
+  if (st[bot].hp <= 0) { c.ko = bot; c.ground = null; return; } // finished on the mat
+  if (r.up) return endEA(st);
+  if (r.kind === "sub") { g.phase = "sub"; g.sub = { stage: 0, stages: r.stages }; return void ev(st, "easubstart", { top, layer: g.layer, stages: r.stages, escape: eaEscape(X, st[bot].stam) }); }
+  if (g.beat > X.beats) endEA(st);
+}
+/** One stage of a submission. grade (perfect | good | miss) is the player's (side a) timing: it moves his side's chance by X.timing[grade]. */
+function eaStage(st, grade) {
+  const c = st.c, g = c.ground, X = EAX(st), top = g.top, bot = other(top), S = g.sub;
+  const base = eaEscape(X, st[bot].stam), mod = grade ? X.timing[grade] || 0 : 0;
+  const p = Math.max(0.02, Math.min(X.escMax, base + ("a" === bot ? mod : -mod)));
+  const esc = rand(st) < p;
+  S.stage++;
+  ev(st, "easub", { top, bot, stage: S.stage, stages: S.stages, base, p, grade: grade || null, escaped: esc });
+  if (esc) { st[bot].stam = Math.max(0, st[bot].stam - X.escDrain); g.phase = "pick"; g.sub = null; g.space = 0; g.covered = false; if (g.beat > X.beats) endEA(st); return; }
+  if (S.stage >= S.stages) { c.sub = bot; c.ground = null; ev(st, "easubmit", { s: top, loser: bot }); }
+}
+function endEA(st) { standUp(st); }
+
 function endClash(st) {
   const c = st.c, cfg = st.cfg, na = alive(c.a).length, nb = alive(c.b).length;
   const w = c.ko ? other(c.ko) : c.sub ? other(c.sub) : na && !nb ? "a" : nb && !na ? "b" : null;
@@ -760,7 +863,7 @@ function endRound(st) {
   card.wins = { a, b };
   for (const s of SIDES) for (const x of st[s].board) if (x && x.worn) { x.atk += x.worn; delete x.worn; } // the minute's rest: worn-down cards recover
   st.rounds.push(card);
-  for (const s of SIDES) st[s].stam = Math.min(st.cfg.groundPoker.stamina, st[s].stam + st.cfg.groundPoker.regen); // a minute's rest gives stamina back
+  for (const s of SIDES) st[s].stam = Math.min(groundStam(st.cfg).stamina, st[s].stam + groundStam(st.cfg).regen); // a minute's rest gives stamina back
   st.wins = { a: 0, b: 0 };
   ev(st, "roundend", { card });
   if (st.round >= cfg.rounds) {

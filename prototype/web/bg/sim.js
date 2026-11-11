@@ -1,6 +1,6 @@
 // One-on-one board battler simulation: same engine, cards and opponent AI as bg.html. node prototype/web/bg/sim.js [bouts per cell]
 import { loadData } from "./load.node.js";
-import { shoppers, fighters, grounders, grounders21, groundersPoker, runGame } from "./ai.js";
+import { shoppers, fighters, grounders, grounders21, groundersPoker, groundersEA, runGame } from "./ai.js";
 
 const data = loadData(), N = Number(process.argv[2]) || 200, ids = Object.keys(data.fighters);
 const pc = (x) => `${Math.round(x * 100)}%`.padStart(5);
@@ -20,6 +20,8 @@ function cell(a, b, shop, timing, pick, gpick, d = data) {
       if (e.t === "pdeal") { r.hands++; if (e.layer >= d.config.ground.layers) r.mount++; }
       if (e.t === "pcash") r.gdmg += e.dmg / N;
       if (e.t === "pact" && e.s === "a") r.dec += 1 / N;
+      // the EA ground: every beat is one direction picked by each side; the damage is whatever pounds landed
+      if (e.t === "eabeat") { r.gdmg += e.dmg / N; r.hands++; if (e.layer >= d.config.ground.layers) r.mount++; }
       if (e.t === "g21deal") { r.hands++; if (e.layer >= d.config.ground.layers) r.mount++; }
     }
     if (o.how === "SUB") { r.sub += 1 / N; if (o.winner === "b") r.subBy += 1 / N; }
@@ -96,7 +98,28 @@ for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
 console.log(`流派對打（撲克）　${[["kick", "punch"], ["grap", "punch"], ["grap", "kick"]].map(([x, y]) => `${NAME[x]}對${NAME[y]} ${pc(stylePk[x + y]).trim()}`).join("　")}`);
 const byPair = pairs.map(([a, b]) => ({ a, b, w: cell(a, b, shoppers.smart, undefined, undefined, groundersPoker.reader, dpk).w }));
 console.log(`六組選手對打（會讀）　${byPair.map((x) => `${x.a.slice(0, 3)}>${x.b.slice(0, 3)} ${pc(x.w).trim()}`).join("　")}`);
-console.log("\n六、檢查");
+// The EA ground (ground.mode "ea"): both pick a direction at the same moment; stamina, the opponent's remembered last move and staged submissions.
+// Side a reads the shown table, plays one of three memorised mixes, or picks at random; side b always plays its own table.
+const dea = loadData(); dea.config.ground.mode = "ea";
+const rowEA = (gpick, d = dea) => { const s = { w: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0, sub: 0, subBy: 0 }; for (const [a, b] of pairs) { const r = cell(a, b, shoppers.smart, undefined, undefined, gpick, d); for (const k in s) s[k] += r[k] / (k === "hands" || k === "mount" ? 1 : pairs.length); } return s; };
+const ea = Object.fromEntries(Object.entries(groundersEA).map(([k, g]) => [k, rowEA(g)]));
+const bestFixed = Math.max(ea.mixBal.w, ea.mixPound.w, ea.mixSub.w);
+console.log("\n六、地面 EA 式（ground.mode＝ea，猜方向＋體力；你這邊都是認真逛）");
+console.log(`會讀（看他的表，往前看兩拍）　${pc(ea.reader.w)}`);
+console.log(`固定打法（背一套出招比例，不看他的表）　均衡 ${pc(ea.mixBal.w)}　重砸擊 ${pc(ea.mixPound.w)}　重降伏 ${pc(ea.mixSub.w)}`);
+console.log(`亂猜　${pc(ea.random.w)}`);
+console.log(`每場進地面 ${ea.reader.grounds.toFixed(1)} 次，每次 ${(ea.reader.hands / Math.max(1, ea.reader.grounds * pairs.length * N)).toFixed(1)} 拍；地面傷害每場 ${ea.reader.gdmg.toFixed(1)}；降伏結束 ${pc(ea.reader.sub)} 的比賽（你鎖死他 ${pc(ea.reader.sub - ea.reader.subBy)}、被鎖 ${pc(ea.reader.subBy)}）；在騎乘層打的拍 ${(share(ea.reader) * 100).toFixed(1)}%`);
+const styleEA = {}, sea = loadData();
+sea.config.ground.mode = "ea"; sea.fighters = sdata.fighters;
+for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
+  let w = 0;
+  for (let i = 0; i < N * 2; i++) { const st = runGame(sea, i % 2 ? x : y, i % 2 ? y : x, 300 + i * 7919, shoppers.smart), o = st.over; if (o && o.winner && st[o.winner].id === x) w += 1 / (N * 2); }
+  styleEA[x + y] = w;
+}
+console.log(`流派對打（EA 式）　${[["kick", "punch"], ["grap", "punch"], ["grap", "kick"]].map(([x, y]) => `${NAME[x]}對${NAME[y]} ${pc(styleEA[x + y]).trim()}`).join("　")}`);
+const byPairEA = pairs.map(([a, b]) => ({ a, b, w: cell(a, b, shoppers.smart, undefined, undefined, groundersEA.reader, dea).w }));
+console.log(`六組選手對打（會讀）　${byPairEA.map((x) => `${x.a.slice(0, 3)}>${x.b.slice(0, 3)} ${pc(x.w).trim()}`).join("　")}`);
+console.log("\n七、檢查");
 const checks = [
   ["認真逛（smart）對上對手 AI 的勝率在 50%～75%", avg.smart >= 0.5 && avg.smart <= 0.75],
   ["亂買（random）比 smart 低至少 15 個百分點：買什麼有差", avg.smart - avg.random >= 0.15],
@@ -118,6 +141,11 @@ const checks = [
   ["撲克：每場地面傷害約 10 點（7～13）", pk.reader.gdmg >= 7 && pk.reader.gdmg <= 13],
   ["撲克：每次地面你的決定平均不超過 8 個", perGround(pk.reader) <= 8],
   ["撲克：認真逛仍在 50%～75%，流派對打在 35%～65%，六組選手對打在 25%～85%", pk.reader.w >= 0.5 && pk.reader.w <= 0.75 && Object.values(stylePk).every((w) => w >= 0.35 && w <= 0.65) && byPair.every((x) => x.w >= 0.25 && x.w <= 0.85)],
+  ["EA 式：會讀比最好的固定打法高至少 3 個百分點：動腦比背起來有用", ea.reader.w - bestFixed >= 0.03],
+  ["EA 式：會讀比亂猜高至少 8 個百分點", ea.reader.w - ea.random.w >= 0.08],
+  ["EA 式：降伏結束的比賽約 5%～10%", ea.reader.sub >= 0.05 && ea.reader.sub <= 0.1],
+  ["EA 式：每場地面傷害約 10 點（7～13）", ea.reader.gdmg >= 7 && ea.reader.gdmg <= 13],
+  ["EA 式：認真逛仍在 50%～75%，流派對打在 35%～65%，六組選手對打在 25%～85%", ea.reader.w >= 0.5 && ea.reader.w <= 0.75 && Object.values(styleEA).every((w) => w >= 0.35 && w <= 0.65) && byPairEA.every((x) => x.w >= 0.25 && x.w <= 0.85)],
 ];
 let bad = 0;
 for (const [t, ok] of checks) { console.log(`${ok ? "✓" : "✗"} ${t}`); if (!ok) bad++; }
