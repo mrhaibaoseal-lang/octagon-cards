@@ -296,3 +296,16 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #g21 .act .hit,#g21 .act .deep{background:linear-gradient(#e2574c,#a52c25)}
 #g21 .act .stand{background:linear-gradient(#566178,#394358)}
 #g21 .act .cash{background:linear-gradient(#e9b52f,#b27a0c);color:#241a00}
+/* aiming an attack: an arrow from the card, the target and anything a sweep also hits light up */
+.sk.aiming{transform:translateY(-6px) scale(1.06);box-shadow:0 0 0 3px #ff7a3c,0 0 22px #ff5a3c!important;z-index:5}
+.aim{position:absolute;inset:0;z-index:40;pointer-events:none}
+.aim svg{position:absolute;left:0;top:0;overflow:visible}
+.aim .aim-b{stroke:#000a;stroke-width:13;stroke-linecap:round}
+.aim .aim-l{stroke-width:7;stroke-linecap:round;stroke-dasharray:14 7;animation:aimflow .5s linear infinite}
+.aim .aim-h path{fill:#ffd24a;stroke:#000b;stroke-width:3;stroke-linejoin:round}
+.aim .aim-o{fill:#ff7a3c;stroke:#000b;stroke-width:3}
+.aim.on .aim-h path{fill:#ff3b2f}
+.aim.on .aim-l{stroke-width:8}
+@keyframes aimflow{to{stroke-dashoffset:-21}}
+.sk.hot2{box-shadow:0 0 0 3px #ff8a3c,0 0 16px #ff8a3c!important;transform:scale(1.03)}
+.sk.hot2::after{content:"也會打到";position:absolute;left:50%;bottom:-15px;z-index:3;transform:translateX(-50%);font-size:10px;font-weight:700;color:#ffb070;white-space:nowrap;text-shadow:0 1px 2px #000}

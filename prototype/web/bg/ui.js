@@ -149,10 +149,35 @@ new MutationObserver(() => {
 // ---------- drag and drop (pointer events: mouse and touch alike) ----------
 // A screen sets dnd = { hot(from, under) -> element to light up | null, drop(from, under) }. Cards with data-drag can be picked up.
 let dnd = null, drag = null, dragged = false;
+// hot() may return one element or a list: the first is the target, the rest light up as also hit (a sweep's neighbours).
+function lightHot(hot) {
+  const list = hot ? [].concat(hot).filter(Boolean) : [];
+  if (drag && drag.hot && drag.hot.length === list.length && drag.hot.every((n, i) => n === list[i])) return;
+  drag?.hot?.forEach((n) => n.classList.remove("hot", "hot2"));
+  list.forEach((n, i) => n.classList.add(i ? "hot2" : "hot"));
+  if (drag) drag.hot = list.length ? list : null;
+}
+// Attacks are aimed with an arrow from the card (the card itself stays put).
+function arrowEl() {
+  const g = document.createElement("div");
+  g.className = "aim";
+  g.innerHTML = `<svg width="844" height="390" viewBox="0 0 844 390"><defs><linearGradient id="aimg" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff5a3c" stop-opacity=".15"/><stop offset="1" stop-color="#ffd24a"/></linearGradient></defs>
+    <path class="aim-b" fill="none"/><path class="aim-l" fill="none" stroke="url(#aimg)"/><g class="aim-h"><path d="M-13,-12 L15,0 L-13,12 L-6,0 Z"/></g><circle class="aim-o" r="6"/></svg>`;
+  return g;
+}
+function aimAt(g, a, b) {
+  const mx = (a.x + b.x) / 2, my = Math.min(a.y, b.y) - Math.max(30, Math.abs(b.x - a.x) * 0.25);
+  const d = `M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}`;
+  g.querySelector(".aim-b").setAttribute("d", d); g.querySelector(".aim-l").setAttribute("d", d);
+  const gr = g.querySelector("#aimg"); gr.setAttribute("x1", a.x); gr.setAttribute("y1", a.y); gr.setAttribute("x2", b.x); gr.setAttribute("y2", b.y);
+  const ang = (Math.atan2(b.y - my, b.x - mx) * 180) / Math.PI;
+  g.querySelector(".aim-h").setAttribute("transform", `translate(${b.x},${b.y}) rotate(${ang})`);
+  const o = g.querySelector(".aim-o"); o.setAttribute("cx", a.x); o.setAttribute("cy", a.y);
+}
 const under = (e) => { const n = document.elementFromPoint(e.clientX, e.clientY); return n instanceof Element && frame.contains(n) ? n : null; };
 function endDrag() {
   if (!drag) return;
-  drag.ghost?.remove(); drag.n.classList.remove("lift"); drag.hot?.classList.remove("hot");
+  drag.ghost?.remove(); drag.n.classList.remove("lift", "aiming"); lightHot(null);
   frame.classList.remove("dragging", "drag-" + drag.n.dataset.drag);
   drag = null;
 }
@@ -166,6 +191,11 @@ addEventListener("pointermove", (e) => {
   if (!drag.ghost) {
     if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 8) return;
     if (!drag.n.isConnected) return endDrag();
+    if (dnd?.arrow) {
+      drag.ghost = arrowEl(); frame.appendChild(drag.ghost);
+      drag.n.classList.add("aiming"); frame.classList.add("dragging", "drag-" + drag.n.dataset.drag);
+      clearTimeout(holdT); hideTip();
+    } else {
     const g = (drag.ghost = drag.n.cloneNode(true));
     for (const a of ["data-uid", "data-drag", "data-slot", "data-offer"]) g.removeAttribute(a);
     g.classList.add("ghost"); g.classList.remove("sel", "can");
@@ -173,11 +203,16 @@ addEventListener("pointermove", (e) => {
     frame.appendChild(g);
     drag.n.classList.add("lift"); frame.classList.add("dragging", "drag-" + drag.n.dataset.drag);
     clearTimeout(holdT); hideTip();
+    }
   }
-  const f = frame.getBoundingClientRect(), k = scale();
-  drag.ghost.style.left = (e.clientX - f.left) / k + "px"; drag.ghost.style.top = (e.clientY - f.top) / k + "px";
+  const f = frame.getBoundingClientRect(), k = scale(), p = { x: (e.clientX - f.left) / k, y: (e.clientY - f.top) / k };
   const u = under(e), hot = (u && dnd?.hot(drag.n, u)) || null;
-  if (hot !== drag.hot) { drag.hot?.classList.remove("hot"); hot?.classList.add("hot"); drag.hot = hot; }
+  lightHot(hot);
+  if (drag.ghost.classList.contains("aim")) {
+    const t = drag.hot ? pos(drag.hot[0]) : p;
+    aimAt(drag.ghost, pos(drag.n), t);
+    drag.ghost.classList.toggle("on", !!drag.hot);
+  } else { drag.ghost.style.left = p.x + "px"; drag.ghost.style.top = p.y + "px"; }
 });
 addEventListener("pointerup", (e) => {
   if (!drag || e.pointerId !== drag.id) return;
@@ -417,8 +452,15 @@ function pickAttack(o) {
     const done = (u, t) => { dnd = null; $("#rowA").onclick = $("#rowB").onclick = null; frame.querySelectorAll(".can,.tgt,.sel").forEach((n) => { n.classList.remove("can", "tgt", "sel"); delete n.dataset.drag; }); res([u, t]); };
     const uidOf = (n) => { const x = n.closest("[data-uid]"); return x ? Number(x.dataset.uid) : null; };
     $("#rowA").onclick = $("#rowB").onclick = (e) => { const uid = uidOf(e.target); if (un.has(uid)) { pick = uid; mark(); } else if (tg.has(uid) && pick != null) done(pick, uid); };
+    const side = E.other(o.s);
+    const alsoHit = (a, t) => {
+      const au = o.units.find((x) => x.uid === a), row = st.c[side], tu = row.find((x) => x && x.uid === t);
+      if (!au?.kw?.sweep || !tu) return [];
+      return [row[tu.slot - 1], row[tu.slot + 1]].filter((x) => x && x.hp > 0).map((x) => el(x.uid));
+    };
     dnd = {
-      hot: (from, u) => (tg.has(uidOf(u)) ? u.closest("[data-uid]") : null),
+      arrow: true,
+      hot: (from, u) => { const t = uidOf(u); return tg.has(t) ? [u.closest("[data-uid]"), ...alsoHit(uidOf(from), t)] : null; },
       drop: (from, u) => { const a = uidOf(from), t = uidOf(u); if (un.has(a) && tg.has(t)) done(a, t); },
     };
     mark();
