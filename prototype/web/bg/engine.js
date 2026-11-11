@@ -407,12 +407,22 @@ function groundBeat(st, mv) {
 }
 
 // ---------- the ground game, blackjack style (ground.mode "21"; numbers in rules/bg ground21) ----------
-// Each hand both sides get two numbers (1..max, drawn with replacement). The top man hits or stands first, then the bottom man.
+// Each hand both sides get two numbers (1..10 drawn with replacement, weighted like a real deck: ground21.deck). The top man hits or stands first, then the bottom man.
 // Over the bust line loses the hand. Otherwise the higher total wins: the bottom man slips out one layer and the ground goes on;
 // the top man either cashes the gap in as damage (times the layer) or passes one layer deeper and plays another hand for more.
 // Each side hides its second card from the other until the hand is decided: g21View(st, s) is what side s may know.
 const is21 = (st) => st.cfg.ground.mode === "21";
-const draw21 = (st) => 1 + Math.floor(rand(st) * st.cfg.ground21.max);
+/** The odds of each number, as [[value, chance], ...]: ground21.deck gives a weight per value 1..10 (like a real deck, where 10 / J / Q / K all count 10). */
+export function g21Odds(st) {
+  const w = st.cfg.ground21.deck, sum = w.reduce((a, b) => a + b, 0);
+  return w.map((x, i) => [i + 1, x / sum]).filter(([, p]) => p > 0);
+}
+function draw21(st) {
+  let r = rand(st);
+  const odds = g21Odds(st);
+  for (const [v, p] of odds) if ((r -= p) < 0) return v;
+  return odds.at(-1)[0];
+}
 const hasKw = (st, s, kw) => alive(st.c[s]).some((u) => u.kw[kw]);
 function deal21(st) {
   const g = st.c.ground;

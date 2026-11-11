@@ -405,6 +405,30 @@ test("21 ground: going over the line loses the hand; a top bust lets the bottom 
   assert.deepEqual(E.g21Options(st).actions, ["stand"], "no more cards after the limit");
 });
 
+test("21 ground: the numbers come in a real deck's odds (10 / J / Q / K all count 10), so five cards under the line is rare", () => {
+  const st = E.createGame(d21, "poirier", "makhachev", 7), odds = E.g21Odds(st);
+  assert.ok(Math.abs(odds.reduce((n, [, p]) => n + p, 0) - 1) < 1e-9);
+  assert.deepEqual(odds.map(([v]) => v), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.ok(Math.abs(odds.at(-1)[1] - 4 / 13) < 1e-9, "a ten is four times as likely as any other number");
+  // the dealer follows those odds: count every card dealt or drawn over many bouts
+  const seen = Array(11).fill(0);
+  for (let i = 0; i < 40; i++) {
+    const g = runGame(d21, "makhachev", "poirier", 500 + i);
+    for (const e of g.log) {
+      if (e.t === "g21hit") seen[e.card]++;
+      if (e.t === "g21deal") for (const x of ["a", "b"]) for (const v of e.view.ground.hands[x]) seen[v]++;
+    }
+  }
+  const n = seen.reduce((a, b) => a + b, 0), tens = seen[10] / n;
+  assert.ok(n > 500, `${n} cards seen`);
+  assert.ok(tens > 0.25 && tens < 0.37, `tens ${(tens * 100).toFixed(1)}% (a real deck: 30.8%)`);
+  // chance that five random cards stay at the line or under, with these odds
+  let dist = new Map([[0, 1]]);
+  for (let k = 0; k < 5; k++) { const nx = new Map(); for (const [t, p] of dist) for (const [v, q] of odds) nx.set(t + v, (nx.get(t + v) || 0) + p * q); dist = nx; }
+  const under = [...dist].filter(([t]) => t <= X.bust).reduce((a, [, p]) => a + p, 0);
+  assert.ok(under < 0.08, `five cards under ${X.bust}: ${(under * 100).toFixed(1)}%`);
+});
+
 test("21 ground: a full hand that has not gone over wins outright, whatever the totals; the opponent reaches for it one card short", () => {
   assert.equal(X.fiveWin, true);
   // the bottom man fills his hand: he is out a layer although the top man holds more
