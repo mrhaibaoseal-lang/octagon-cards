@@ -488,12 +488,12 @@ function draw21(g) {
     const over = !hide && tot > bust, res = G21.res;
     const cls = !res || hide ? "" : over ? "bad" : res.win === s ? "win" : "";
     const cards = cs.map((v, i) => (hide && i === 1 ? `<div class="c down">?</div>` : `<div class="c ${me && i === 1 && !open ? "hid" : ""} ${G21.fresh === s && i === cs.length - 1 && i > 1 ? "new" : ""}">${v}</div>`)).join("") + (I.bonus[s] ? `<div class="bonus">+${I.bonus[s]}<small>${KW[X.startKw]}</small></div>` : "");
-    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? `還能要 ${X.hits - g.hits[s]} 張` : role === "bottom" ? "之後才動" : "";
+    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? (X.fiveWin ? (X.hits - g.hits[s] === 1 ? "再 1 張不爆就贏" : `還能要 ${X.hits - g.hits[s]} 張・滿 ${X.hits + 2} 張不爆就贏`) : `還能要 ${X.hits - g.hits[s]} 張`) : role === "bottom" ? "之後才動" : "";
     const tag = over ? `<em class="ovr">超過 ${bust}</em>` : res && !hide && res.win && res.gap ? `<em class="${res.win === s ? "won" : ""}">${res.win === s ? "贏" : "輸"} ${res.gap}</em>` : `<em class="${bust > X.bust ? "v22" : ""}">爆牌線 ${bust}</em>`;
     // the opponent's real number: what you show him changes it when he is underneath
     let tell = "", th = 0;
     if (!me && !open) {
-      th = g21Threshold(st, "b", role, total("a") - g.hands.a[1]);
+      th = g21Threshold(st, "b", role, total("a") - g.hands.a[1], cs.length);
       tell = `<div class="tell">他低於 <b>${th}</b> 會再${V.hit}<small>${g.stood.b ? `他停了＝約 ${th} 以上` : `真實數字 ±${X.ai.jitter}`}</small></div>`;
     }
     const chips = [];
@@ -529,15 +529,16 @@ function g21Event(e) {
     case "g21end": {
       const bot = E.other(e.top), win = e.res === "tie" ? null : e.res === "bottom" ? bot : e.top, mine = win === "a", t = e.totals, score = `${t.a} 對 ${t.b}`;
       G21.open = true; G21.fresh = null;
-      G21.res = { win, gap: e.res === "top" || e.res === "sub" ? (e.why === "bust" ? 0 : e.gap) : e.why === "bust" ? 0 : Math.abs(t.a - t.b) };
+      G21.res = { win, gap: e.why !== "show" ? 0 : e.res === "top" || e.res === "sub" ? e.gap : Math.abs(t.a - t.b) };
+      const full = `${who(e.five)}滿 ${X.hits + 2} 張沒爆，直接贏這手`;
       if (e.res === "tie") { G21.stamp = ["平手", "gold"]; G21.cap = `${score}，裁判叫停，<b>站起來</b>`; }
       else if (e.res === "sub") { G21.stamp = ["降伏！", mine ? "gold" : ""]; G21.cap = `${who(e.top)}鎖死了，<b>${who(bot)}耐久 −${e.dmg}</b>`; }
       else if (e.res === "top") {
-        G21.stamp = [e.why === "bust" ? "力氣放盡" : "壓住了", mine ? "gold" : ""];
-        G21.cap = (e.why === "bust" ? `${who(bot)}爆牌，差距算 ${e.gap}` : `${score}，差距 ${e.gap}`) + ` ÷${X.div} 進位 × ${names[e.layer - 1]} ${X.layerMul[e.layer - 1]} ＝ <b>${e.cash}</b>`;
+        G21.stamp = [e.why === "five" ? "壓到底" : e.why === "bust" ? "力氣放盡" : "壓住了", mine ? "gold" : ""];
+        G21.cap = (e.why === "five" ? `${full}，差距算 ${e.gap}` : e.why === "bust" ? `${who(bot)}爆牌，差距算 ${e.gap}` : `${score}，差距 ${e.gap}`) + ` ÷${X.div} 進位 × ${names[e.layer - 1]} ${X.layerMul[e.layer - 1]} ＝ <b>${e.cash}</b>`;
       } else {
-        G21.stamp = [e.why === "bust" ? "壓過頭" : "脫出！", bot === "a" ? "good" : ""];
-        G21.cap = `${e.why === "bust" ? `${who(e.top)}爆牌` : score}，${who(bot)}脫出一層：${e.to >= 1 ? `${names[e.layer - 1]} → <b>${names[e.to - 1]}</b>，地面繼續` : "<b>站起來</b>"}`;
+        G21.stamp = [e.why === "five" ? "硬撐出來" : e.why === "bust" ? "壓過頭" : "脫出！", bot === "a" ? "good" : ""];
+        G21.cap = `${e.why === "five" ? full : e.why === "bust" ? `${who(e.top)}爆牌` : score}，${who(bot)}脫出一層：${e.to >= 1 ? `${names[e.layer - 1]} → <b>${names[e.to - 1]}</b>，地面繼續` : "<b>站起來</b>"}`;
       }
       G21.capCls = win === "b" ? "red" : "";
       // show the hand as it was decided: after an escape the snapshot is already the next position

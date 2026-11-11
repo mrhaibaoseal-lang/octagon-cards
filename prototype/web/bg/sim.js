@@ -35,9 +35,11 @@ for (const [name, shop] of Object.entries(shoppers)) {
 let blind = 0;
 for (const [a, b] of pairs) blind += cell(a, b, shoppers.smart, undefined, fighters.blind).w / pairs.length;
 console.log(`\n同樣認真逛，但出手不挑（最左邊的牌、隨機目標）　${pc(blind)}`);
-let guess = 0;
-for (const [a, b] of pairs) guess += cell(a, b, shoppers.smart, undefined, undefined, grounders.guess).w / pairs.length;
-console.log(`同樣認真逛，但地面猜拳亂猜（不看對手傾向）　${pc(guess)}　　每場平均 ${extra.smart.grounds.toFixed(1)} 次進地面`);
+// the guessing-game ground (ground.mode "rps"), kept as the alternative: reading the table against guessing blind
+const drps = loadData(); drps.config.ground.mode = "rps";
+let read = 0, guess = 0;
+for (const [a, b] of pairs) { read += cell(a, b, shoppers.smart, undefined, undefined, grounders.read, drps).w / pairs.length; guess += cell(a, b, shoppers.smart, undefined, undefined, grounders.guess, drps).w / pairs.length; }
+console.log(`地面改用猜拳版（ground.mode＝rps）：讀對手傾向　${pc(read)}　亂猜　${pc(guess)}`);
 console.log("\n二、時機條（smart 逛法）");
 const tm = {};
 for (const g of ["miss", "good", "perfect"]) { let w = 0; for (const [a, b] of pairs) w += cell(a, b, shoppers.smart, () => g).w / pairs.length; tm[g] = w; console.log(`${{ miss: "全部失敗", good: "全部按到好", perfect: "全部完美" }[g]}　${pc(w)}`); }
@@ -54,9 +56,9 @@ for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
 // The blackjack ground game (ground.mode "21"): the same bouts under the other ground rules.
 const d21 = loadData(); d21.config.ground.mode = "21";
 const row21 = (gpick, d = d21) => { const s = { w: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0 }; for (const [a, b] of pairs) { const r = cell(a, b, shoppers.smart, undefined, undefined, gpick, d); for (const k in s) s[k] += r[k] / (k === "hands" || k === "mount" ? 1 : pairs.length); } return s; };
-const rps = row21(undefined, data), g21 = Object.fromEntries(Object.entries(grounders21).map(([k, g]) => [k, row21(g)]));
+const rps = row21(grounders.read, drps), g21 = Object.fromEntries(Object.entries(grounders21).map(([k, g]) => [k, row21(g)]));
 const share = (r) => (r.hands ? r.mount / r.hands : 0);
-console.log("\n四、地面 21 點（ground.mode＝21，其餘完全相同；你這邊都是認真逛）");
+console.log("\n四、地面 21 點（ground.mode＝21，現在的預設；你這邊都是認真逛）");
 console.log(`會算（看得到的牌＋對手門檻）　${pc(g21.smart.w)}`);
 console.log(`亂要牌（要不要牌、兌現或再賭都丟銅板）　${pc(g21.random.w)}`);
 console.log(`永遠到 17 收手、贏了就兌現　${pc(g21.fixed17.w)}`);
@@ -74,7 +76,7 @@ const checks = [
   ["認真逛（smart）對上對手 AI 的勝率在 50%～75%", avg.smart >= 0.5 && avg.smart <= 0.75],
   ["亂買（random）比 smart 低至少 15 個百分點：買什麼有差", avg.smart - avg.random >= 0.15],
   ["出手不挑比自己挑目標低至少 8 個百分點：戰鬥中的選擇有差", avg.smart - blind >= 0.08],
-  ["地面讀對手傾向比亂猜高 3～15 個百分點：猜拳有東西可讀，但不是穩贏", avg.smart - guess >= 0.03 && avg.smart - guess <= 0.15],
+  ["猜拳版地面：讀對手傾向比亂猜高 3～15 個百分點：有東西可讀，但不是穩贏", read - guess >= 0.03 && read - guess <= 0.15],
   ["完全不買（none）勝率 < 5%", avg.none < 0.05],
   ["前兩回合就被 KO 的比例 < 5%：不會一開始就倒", extra.smart.early < 0.05 && extra.random.early < 0.05],
   ["平均打超過 10 段：商店用得到", extra.smart.turns >= 10],

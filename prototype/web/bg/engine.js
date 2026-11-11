@@ -470,6 +470,7 @@ function run21(st) {
     ev(st, "g21hit", { s, card });
     if (g21Total(st, s) > g21Bust(st, s)) return show21(st, s);
     if (g.hits[s] < X.hits) return;
+    if (X.fiveWin) return show21(st, null, s); // every card he may take and still under the line: the hand is his
   }
   g.stood[s] = true;
   const last = g.phase === "bottom";
@@ -477,14 +478,14 @@ function run21(st) {
   ev(st, "g21stand", { s });
   if (last) show21(st, null);
 }
-/** The hand is decided: `bust` is the side that went over, or null for a showdown. */
-function show21(st, bust) {
+/** The hand is decided: `bust` is the side that went over; `five` the side that filled its hand without going over (it wins whatever the totals); neither = a showdown. */
+function show21(st, bust, five = null) {
   const g = st.c.ground, X = st.cfg.ground21, top = g.top, bot = other(top), tt = g21Total(st, top), tb = g21Total(st, bot);
-  const res = bust ? (bust === top ? "bottom" : "top") : tt > tb ? "top" : tb > tt ? "bottom" : "tie";
-  const out = { top, why: bust ? "bust" : "show", bust, totals: { [top]: tt, [bot]: tb }, layer: g.layer };
+  const res = five ? (five === top ? "top" : "bottom") : bust ? (bust === top ? "bottom" : "top") : tt > tb ? "top" : tb > tt ? "bottom" : "tie";
+  const out = { top, why: five ? "five" : bust ? "bust" : "show", bust, five, totals: { [top]: tt, [bot]: tb }, layer: g.layer };
   if (res === "top") {
-    g.gap = bust ? X.bustGap : tt - tb;
-    if (tt >= g21SubAt(st) && tb !== X.bust) { // a submission: never worth less than cashing in
+    g.gap = five ? X.fiveGap : bust ? X.bustGap : tt - tb;
+    if (tt >= g21SubAt(st) && (five || tb !== X.bust)) { // a submission: never worth less than cashing in
       const dmg = Math.max(X.submit, g21Cash(st, g.gap, g.layer));
       hurt21(st, dmg);
       ev(st, "g21end", { ...out, res: "sub", gap: g.gap, dmg });

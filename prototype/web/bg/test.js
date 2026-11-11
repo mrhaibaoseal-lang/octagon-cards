@@ -6,7 +6,7 @@ import { loadData } from "./load.node.js";
 import * as E from "./engine.js";
 import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders, g21Threshold, g21Pick, g21Smart, grounders21 } from "./ai.js";
 
-const data = loadData();
+const data = loadData(); data.config.ground.mode = "rps"; // the guessing-game tests; the blackjack ground has its own copy (d21) further down
 const fresh = (a = "holloway", b = "makhachev", seed = 3) => E.createGame(data, a, b, seed);
 const put = (st, s, ids) => { st[s].board = Array(st.cfg.slots).fill(null); ids.forEach((id, i) => { if (id) st[s].board[i] = E.make(st, id); }); };
 const offer = (st, s, ids) => { st[s].shop.offers = [...ids]; st[s].shop.gold = 99; };
@@ -403,9 +403,38 @@ test("21 ground: going over the line loses the hand; a top bust lets the bottom 
   st = down21(["cross"], ["cross"], { a: [1, 1], b: [5, 5] });
   st.c.ground.hits.a = X.hits;
   assert.deepEqual(E.g21Options(st).actions, ["stand"], "no more cards after the limit");
-  st = down21(["cross"], ["cross"], { a: [1, 1], b: [5, 5] });
-  for (let i = 0; i < X.hits && E.g21Options(st)?.turn === "a" && st.c.ground.beat === 1; i++) act(st, "a", "hit");
-  assert.ok(st.c.ground.beat > 1 || st.c.ground.phase === "bottom", "after the last card he has stood (or bust)");
+});
+
+test("21 ground: a full hand that has not gone over wins outright, whatever the totals; the opponent reaches for it one card short", () => {
+  assert.equal(X.fiveWin, true);
+  // the bottom man fills his hand: he is out a layer although the top man holds more
+  let st = down21(["cross"], ["cross"], { a: [10, 10], b: [1, 1, 1, 1] }, "a", 2);
+  st.c.ground.hits.b = X.hits - 1;
+  act(st, "a", "stand"); act(st, "b", "hit");
+  let e = last(st, "g21end");
+  assert.deepEqual({ res: e.res, why: e.why, five: e.five, to: e.to }, { res: "bottom", why: "five", five: "b", to: 1 });
+  assert.ok(e.totals.b < e.totals.a, "he won with the smaller total");
+  assert.equal(st.c.ground.layer, 1);
+  // the top man fills his: the bottom man never gets to answer, and the win counts as a gap of fiveGap
+  st = down21(["cross"], ["cross"], { a: [1, 1, 1, 1], b: [10, 10] }, "a", 2);
+  st.c.ground.hits.a = X.hits - 1;
+  act(st, "a", "hit");
+  e = last(st, "g21end");
+  assert.deepEqual({ res: e.res, why: e.why, five: e.five, gap: e.gap, cash: e.cash }, { res: "top", why: "five", five: "a", gap: X.fiveGap, cash: E.g21Cash(st, X.fiveGap, 2) });
+  assert.equal(st.c.ground.hits.b, 0);
+  assert.equal(E.g21Options(st).phase, "decide");
+  // a card short of full, the opponent's published number goes up to fiveBelow
+  const A = { ...X.ai, ...d21.fighters.makhachev.ai.ground21 };
+  assert.equal(g21Threshold(st, "b", "top", 0, X.hits + 1), Math.max(A.hitBelow.top, A.fiveBelow));
+  assert.equal(g21Threshold(st, "b", "top", 0, X.hits), A.hitBelow.top);
+  assert.equal(g21Threshold(st, "b", "bottom", 17, X.hits + 1), Math.max(19, A.fiveBelow));
+  // with the rule off the last card just ends his turn
+  const off = loadData(); off.config.ground.mode = "21"; off.config.ground21.fiveWin = false;
+  st = E.createGame(off, "poirier", "makhachev", 3); put(st, "a", ["cross"]); put(st, "b", ["cross"]); E.startClash(st);
+  st.c.ground = { top: "a", layer: 2, beat: 1, hands: { a: [1, 1, 1, 1], b: [10, 10] }, hits: { a: X.hits - 1, b: 0 }, stood: { a: false, b: false }, phase: "top", gap: 0 };
+  act(st, "a", "hit");
+  assert.equal(evs(st, "g21end").length, 0);
+  assert.equal(st.c.ground.phase, "bottom");
 });
 
 test("21 ground: the cards on the board change the hand: ground cards give the top man a head start, a submission card finishes on 20, a get-up card moves the bottom man's line to 22", () => {

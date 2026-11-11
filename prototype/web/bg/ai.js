@@ -130,10 +130,12 @@ export const grounders = { read: (st, s) => (s === "a" ? groundRead(st, s) : gro
 // ---------- the blackjack ground game (ground.mode "21") ----------
 const ai21 = (st, s) => ({ ...st.cfg.ground21.ai, ...(st[s].f.ai?.ground21 || {}) });
 /** The total below which side s asks for another card, given what it could see with `foeShown` on the table. This is the number the screen shows.
- *  The top man uses his own number. The bottom man moves second, so he also keeps going until he could beat what the top man shows (shown + 2), up to standCap. */
-export function g21Threshold(st, s, role, foeShown = 0) {
-  const A = ai21(st, s);
-  return role === "top" ? A.hitBelow.top : Math.min(A.standCap, Math.max(A.hitBelow.bottom, foeShown + 2));
+ *  The top man uses his own number. The bottom man moves second, so he also keeps going until he could beat what the top man shows (shown + 2), up to standCap.
+ *  One card short of a full hand (`cards` held, fiveWin on) either of them reaches a little further: one more safe card wins outright. */
+export function g21Threshold(st, s, role, foeShown = 0, cards = 2) {
+  const A = ai21(st, s), X = st.cfg.ground21;
+  const th = role === "top" ? A.hitBelow.top : Math.min(A.standCap, Math.max(A.hitBelow.bottom, foeShown + 2));
+  return X.fiveWin && cards === X.hits + 1 ? Math.max(th, A.fiveBelow) : th;
 }
 /** The opponent's decision: hit below its threshold (give or take the jitter), else stand; after a win, cash in unless it pays less than deepBelow. */
 export function g21Pick(st, s) {
@@ -142,7 +144,7 @@ export function g21Pick(st, s) {
   const A = ai21(st, s);
   if (v.phase === "decide") return v.actions.includes("deeper") && v.cash < A.deepBelow ? "deeper" : "cash";
   if (!v.actions.includes("hit")) return "stand";
-  const th = g21Threshold(st, s, v.role, v.foe.shownSum) + Math.floor(E.rand(st) * (2 * A.jitter + 1)) - A.jitter;
+  const th = g21Threshold(st, s, v.role, v.foe.shownSum, v.mine.cards.length) + Math.floor(E.rand(st) * (2 * A.jitter + 1)) - A.jitter;
   return v.mine.total < th ? "hit" : "stand";
 }
 /** A player who does the sums: uses only what side s can see (g21View) plus the opponent's published threshold. */
@@ -161,19 +163,24 @@ export function g21Smart(st, s) {
   if (v.role === "top") {
     // the bottom man will play his threshold against what I show him; his hidden card is any number
     const hidden = v.mine.cards[1], shownTo = (total) => total - hidden;
-    const botEnd = (th, bust, t, k, p, out) => { if (t >= th || k === 0) return void (out[t] = (out[t] || 0) + p); for (let d = 1; d <= N; d++) { const n = t + d; if (n > bust) out.bust = (out.bust || 0) + p / N; else botEnd(th, bust, n, k - 1, p / N, out); } };
-    const memo = new Map(), ends = (th, start) => { const key = th * 100 + start; if (!memo.has(key)) { const out = {}; botEnd(th, v.foe.bust, start, X.hits, 1 / N, out); memo.set(key, out); } return memo.get(key); };
-    const stand = (T) => {
-      const th = g21Threshold(st, foe, "bottom", shownTo(T));
+    // where the bottom man ends up from total t with k cards still to take: a total, "bust", or "five" (a full hand, which wins)
+    const botEnd = (shown, bust, t, k, p, out) => {
+      if (k === 0 || t >= g21Threshold(st, foe, "bottom", shown, 2 + X.hits - k)) return void (out[t] = (out[t] || 0) + p);
+      for (let d = 1; d <= N; d++) { const n = t + d; if (n > bust) out.bust = (out.bust || 0) + p / N; else if (k === 1 && X.fiveWin) out.five = (out.five || 0) + p / N; else botEnd(shown, bust, n, k - 1, p / N, out); }
+    };
+    const memo = new Map(), ends = (shown, start) => { const key = shown * 100 + start; if (!memo.has(key)) { const out = {}; botEnd(shown, v.foe.bust, start, X.hits, 1 / N, out); memo.set(key, out); } return memo.get(key); };
+    const stood = new Map(), stand = (T) => {
+      if (stood.has(T)) return stood.get(T);
       let val = 0;
       for (let h = 1; h <= N; h++) {
-        for (const [k, p] of Object.entries(ends(th, v.foe.shownSum + h))) { const tb = k === "bust" ? null : Number(k); val += p * (tb == null ? winVal(X.bustGap, T, null) : T > tb ? winVal(T - tb, T, tb) : T < tb ? -SLIP : 0); }
+        for (const [k, p] of Object.entries(ends(shownTo(T), v.foe.shownSum + h))) { const tb = k === "bust" || k === "five" ? null : Number(k); val += p * (k === "five" ? -SLIP : tb == null ? winVal(X.bustGap, T, null) : T > tb ? winVal(T - tb, T, tb) : T < tb ? -SLIP : 0); }
       }
+      stood.set(T, val);
       return val;
     };
     const best = (T, k) => Math.max(stand(T), k > 0 ? hit(T, k) : -Infinity);
-    const hit = (T, k) => { let val = 0; for (let d = 1; d <= N; d++) val += (T + d > v.mine.bust ? -SLIP : best(T + d, k - 1)) / N; return val; };
-    return v.actions.includes("hit") && hit(v.mine.total, Math.min(v.mine.hitsLeft, 2)) > stand(v.mine.total) ? "hit" : "stand";
+    const hit = (T, k) => { let val = 0; for (let d = 1; d <= N; d++) val += (T + d > v.mine.bust ? -SLIP : k === 1 && X.fiveWin ? winVal(X.fiveGap, T + d, null) : best(T + d, k - 1)) / N; return val; };
+    return v.actions.includes("hit") && hit(v.mine.total, v.mine.hitsLeft) > stand(v.mine.total) ? "hit" : "stand";
   }
   // bottom: the top man has finished. His hidden card is whatever keeps him under the line; if he chose to stop, he is probably at or over his threshold
   const th = g21Threshold(st, foe, "top"), post = [];
@@ -187,7 +194,7 @@ export function g21Smart(st, s) {
   const stand = (t) => post.reduce((n, [T, w]) => n + (w / sum) * (t > T ? SLIP : t === T ? 0 : -winVal(T - t, T, t)), 0);
   const lose = post.reduce((n, [T, w]) => n + (w / sum) * -winVal(X.bustGap, T, null), 0);
   const best = (t, k) => Math.max(stand(t), k > 0 ? hit(t, k) : -Infinity);
-  const hit = (t, k) => { let val = 0; for (let d = 1; d <= N; d++) val += (t + d > v.mine.bust ? lose : best(t + d, k - 1)) / N; return val; };
+  const hit = (t, k) => { let val = 0; for (let d = 1; d <= N; d++) val += (t + d > v.mine.bust ? lose : k === 1 && X.fiveWin ? SLIP : best(t + d, k - 1)) / N; return val; };
   return v.actions.includes("hit") && hit(v.mine.total, v.mine.hitsLeft) > stand(v.mine.total) ? "hit" : "stand";
 }
 /** Hit or stand on a coin flip, cash or go deeper on a coin flip. */
