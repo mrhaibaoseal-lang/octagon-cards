@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>地面撲克草圖</title>
+<style>
+/* 地面「德州撲克，籌碼＝體力」草圖：只畫畫面，不接引擎。數字是範例。
+   預設：四個畫面直排，每個 844×390。網址加 #f1 … #f4 或 ?f=1…4 只顯示單一畫面（截圖用）。
+   選手圖來自 gitignore 的 assets/private；沒有時用色塊假人。 */
+:root{
+  --bg:#0a0d12; --panel:#141923; --line:#283042; --text:#f1f4f9; --dim:#8d97aa;
+  --blue:#4c8dff; --red:#f0524f; --gold:#f5c542; --green:#3ecf8e; --sta:#35d0a0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#040507;color:var(--text);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif}
+body{padding:16px 0 40px}
+.shot{width:844px;margin:0 auto 22px}
+.shot h3{font-size:14px;margin:0 0 6px;color:#cfd7e6}
+.shot h3 small{font-weight:400;color:var(--dim);margin-left:8px;font-size:12px}
+body.solo{padding:0}
+body.solo .shot:not(.pick){display:none}
+body.solo .shot.pick h3{display:none}
+body.solo .shot.pick{margin:0}
+
+.frame{position:relative;width:844px;height:390px;background:var(--bg);overflow:hidden;border-radius:8px;box-shadow:0 0 0 1px var(--line)}
+.frame::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(42% 46% at 50% 60%,#2b3653 0%,transparent 72%),
+  radial-gradient(40% 34% at 0% 0%,#1d3a7a66 0%,transparent 70%),
+  radial-gradient(40% 34% at 100% 0%,#7a1d1d66 0%,transparent 70%),
+  linear-gradient(#0b0f17,#06080c)}
+.frame>*{position:absolute}
+.you{--c:var(--blue)} .foe{--c:var(--red)}
+
+/* 上方：轉播計分條（耐久＋體力） */
+.sb{top:0;height:44px;width:300px;display:flex;align-items:center;gap:8px;padding:0 10px}
+.sb.you{left:0;background:linear-gradient(90deg,#16346e,#16346e00)}
+.sb.foe{right:0;flex-direction:row-reverse;background:linear-gradient(270deg,#6e1a18,#6e1a1800)}
+.face{width:34px;height:34px;border-radius:6px;background:color-mix(in srgb,var(--c) 45%,#10141c);box-shadow:0 0 0 2px var(--c);overflow:hidden;flex:none}
+.face img{width:100%;height:100%;object-fit:cover;object-position:50% 12%}
+.nmx{line-height:1.15;min-width:0}.sb.foe .nmx{text-align:right}
+.nmx b{display:block;font-size:13px;font-weight:800;letter-spacing:.03em;font-style:italic;white-space:nowrap}
+.nmx small{font-size:10.5px;font-weight:700;color:color-mix(in srgb,var(--c) 60%,#fff)}
+.hp{min-width:38px;height:28px;line-height:28px;text-align:center;font-size:18px;font-weight:800;border-radius:8px;background:linear-gradient(#e2574c,#a52c25);box-shadow:0 2px 0 #5d1410;flex:none}
+.sta{display:flex;align-items:center;gap:5px;flex:none}
+.sb.foe .sta{flex-direction:row-reverse}
+.sta i{display:block;width:54px;height:9px;border-radius:5px;background:#10261f;box-shadow:0 0 0 1px #1f5a47 inset;overflow:hidden}
+.sta i b{display:block;height:100%;background:linear-gradient(90deg,#1e9e78,var(--sta))}
+.sta i b.low{background:linear-gradient(90deg,#b8401f,#ff8a4c)}
+.sta em{font-style:normal;font-size:11px;font-weight:800;color:var(--sta);white-space:nowrap}
+.sta em.low{color:#ff9a6a}
+.mid{left:300px;width:244px;top:3px;text-align:center;line-height:1.2}
+.mid b{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.12em;background:#f5c542;color:#1d1500;padding:1px 10px;border-radius:4px;transform:skewX(-10deg)}
+.mid span{display:block;font-size:12px;color:#cfd7e6;margin-top:3px}
+
+/* 位置三層 */
+.lad{left:196px;width:452px;top:48px;height:33px;display:flex;gap:3px}
+.lad div{flex:1;transform:skewX(-12deg);background:#151b27;border:1px solid var(--line);color:#6f7a90;font-size:12px;font-weight:700;text-align:center;line-height:15px;padding-top:2px;position:relative}
+.lad div>*{display:inline-block;transform:skewX(12deg)}
+.lad u{text-decoration:none;font-weight:400;margin-left:4px}
+.lad small{display:block;font-size:9.5px;font-weight:600;line-height:12px;opacity:.85;white-space:nowrap}
+.lad .out{flex:.8;border-style:dashed}
+.lad .on{background:linear-gradient(#f5c542,#c98f0c);border-color:#ffe08a;color:#1d1500}
+.lad .tag{position:absolute;right:2px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:#fff;color:#111;font-weight:800}
+
+/* 兩側 */
+.side{top:88px;width:250px;height:228px;padding:8px 10px;border-radius:10px;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 14%,#10141d),#0e121a);border:1px solid color-mix(in srgb,var(--c) 45%,#283042)}
+.side.you{left:10px;border-left:4px solid var(--c)}
+.side.foe{right:10px;border-right:4px solid var(--c)}
+.side h4{font-size:12px;font-weight:800;display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.side h4 i{font-style:normal;font-size:11px;padding:0 7px;line-height:17px;border-radius:4px;background:var(--c);color:#fff}
+.side h4 small{font-weight:400;color:var(--dim);font-size:11px;margin-left:auto}
+.hole{display:flex;gap:6px;height:76px;align-items:center}
+
+/* 撲克牌 */
+.pc{position:relative;width:50px;height:70px;border-radius:7px;flex:none;background:linear-gradient(#fbfcff,#dfe5f1);color:#1b2233;box-shadow:0 2px 0 #0009;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;font-weight:800}
+.pc b{font-size:26px}.pc u{text-decoration:none;font-size:20px;margin-top:2px}
+.pc.r{color:#d0302b}
+.pc.down{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--c) 40%,#10141c) 0 5px,color-mix(in srgb,var(--c) 22%,#10141c) 5px 10px);color:#ffffffcc;box-shadow:0 2px 0 #0009,0 0 0 2px color-mix(in srgb,var(--c) 60%,#000) inset}
+.pc.down b{font-size:24px}
+.pc.slot{background:none;border:2px dashed #3a4459;box-shadow:none;color:#4a5469}
+.pc.slot b,.pc.sm.slot b{font-size:11px;font-weight:600}
+.pc.hl{box-shadow:0 0 0 3px var(--gold),0 2px 0 #0009}
+.pc.sm{width:40px;height:56px}.pc.sm b{font-size:20px}.pc.sm u{font-size:15px}
+
+.hand{margin-top:6px;font-size:13px;line-height:1.3}
+.hand b{font-size:19px;font-weight:800;color:var(--gold);font-style:italic}
+.hand small{display:block;font-size:11px;color:var(--dim)}
+.stake{margin-top:6px;display:flex;align-items:center;gap:6px;font-size:12px;color:#cfd7e6}
+.stake em{font-style:normal;font-weight:800;color:var(--sta)}
+.warn{margin-top:6px;font-size:11.5px;line-height:1.35;padding:4px 7px;border-radius:6px;background:#3a1512;border:1px solid #8a2c24;color:#ffb3a8}
+.warn b{color:#ff7a6a}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.chips span{font-size:11px;line-height:18px;padding:0 7px;border-radius:9px;background:#2a2410;border:1px solid #7a6114;color:var(--gold);font-weight:700}
+.chips u{text-decoration:none;font-weight:400;color:#e6d9a8;margin-left:4px}
+
+/* 對手的打法（真實數字） */
+.style{margin-top:2px;border-radius:7px;background:#241d06;border:1px solid #6a5310;padding:5px 8px;font-size:11.5px;line-height:1.55}
+.style h5{font-size:10.5px;font-weight:700;color:#c9b77a;margin-bottom:1px}
+.style div{display:flex;justify-content:space-between;gap:6px}
+.style div b{color:var(--gold);font-weight:800}
+.last{margin-top:6px;font-size:12.5px;font-weight:800;color:#ff9d9b}
+.last small{font-weight:400;color:var(--dim);font-size:11px;margin-left:4px}
+
+/* 中間：桌面＋彩池＋八角籠 */
+.table{left:268px;width:308px;top:90px;height:226px}
+.board{position:absolute;left:0;right:0;top:0;display:flex;gap:5px;justify-content:center}
+.board .lab{position:absolute;left:0;top:-1px;font-size:10px;color:var(--dim)}
+.pot{position:absolute;left:0;right:0;top:64px;text-align:center;font-size:13px;color:#cfd7e6}
+.pot b{display:inline-block;font-size:17px;font-weight:800;color:var(--sta);padding:0 12px;border-radius:12px;background:#0f2a22;box-shadow:0 0 0 1px #1f6a52}
+.cage{position:absolute;left:0;right:0;top:90px;height:110px}
+.mat{position:absolute;left:24px;right:24px;bottom:0;height:56px;clip-path:polygon(22% 0,78% 0,100% 30%,100% 70%,78% 100%,22% 100%,0 70%,0 30%);background:radial-gradient(closest-side,#4a5674,#262f45 75%,#1a2133)}
+.fz{position:absolute;bottom:16px;height:96px;display:flex;align-items:flex-end;justify-content:center;width:120px}
+.fz img{max-height:96px;max-width:150px;image-rendering:pixelated}
+.fz.flip img,.fz.flip .dm{transform:scaleX(-1)}
+.fz .dm{display:none;border-radius:12px;background:linear-gradient(var(--c) 40%,color-mix(in srgb,var(--c) 45%,#000) 40%)}
+.fz.noimg img{display:none}.fz.noimg .dm{display:block}
+.fz.up .dm{width:34px;height:70px;transform:rotate(38deg) translateY(8px)}
+.fz.dn .dm{width:84px;height:26px}
+.cap{position:absolute;left:-6px;right:-6px;bottom:0;text-align:center;font-size:12.5px;color:#dfe6f3;line-height:1.3}
+.cap b{color:var(--gold)} .cap.red b{color:#ff7a76}
+.stamp{position:absolute;left:50%;top:40px;transform:translateX(-50%) rotate(-8deg);border:3px solid var(--gold);color:var(--gold);background:#2a2208e6;font-size:30px;font-weight:800;letter-spacing:.12em;padding:0 14px;border-radius:8px;white-space:nowrap;z-index:3;text-align:center;line-height:1.25}
+.stamp small{display:block;font-size:12px;letter-spacing:0;font-weight:700;color:#ffe9a8}
+
+/* 下方：操作 */
+.act{left:100px;right:100px;top:324px;height:58px;display:flex;gap:9px}
+.btn{flex:1;border-radius:8px;border:0;color:#fff;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;text-align:center;box-shadow:0 3px 0 #0009;transform:skewX(-6deg)}
+.btn>*{transform:skewX(6deg)}
+.btn b{font-size:18px;font-weight:800;letter-spacing:.05em}.btn small{font-size:11.5px;opacity:.9}
+.btn.fold{background:linear-gradient(#566178,#394358);flex:.8}
+.btn.call{background:linear-gradient(#4c8dff,#2c5fcf)}
+.btn.raise{background:linear-gradient(#e2574c,#a52c25)}
+.btn.allin{background:linear-gradient(#f5c542,#c47f08);color:#231700;flex:1.15;box-shadow:0 3px 0 #0009,0 0 14px #f5c54266}
+.btn.go{background:linear-gradient(#e9b52f,#b27a0c);color:#241a00}
+.note{top:328px;width:92px;font-size:10.5px;color:var(--dim);line-height:1.35}
+.note.l{left:6px}.note.r{right:6px;text-align:right}
+</style>
+</head>
+<body>
+<script>
+// 草圖資料：四個靜態畫面。這裡沒有規則邏輯，數字都是寫死的範例。
+const P = "assets/private/";
+const F = { mak: { id: "makhachev", name: "MAKHACHEV" }, poi: { id: "poirier", name: "POIRIER" } };
+const RED = new Set(["♥", "♦"]);
+const card = (c, cls = "") => {
+  if (c === "?") return `<div class="pc down ${cls}"><b>?</b></div>`;
+  if (c === "_") return `<div class="pc slot ${cls}"><b>待翻</b></div>`;
+  const [r, s] = [c.slice(0, -1), c.slice(-1)];
+  return `<div class="pc ${RED.has(s) ? "r" : ""} ${cls}"><b>${r}</b><u>${s}</u></div>`;
+};
+const sta = (n, max = 20) => `<span class="sta"><i><b class="${n <= 5 ? "low" : ""}" style="width:${(n / max) * 100}%"></b></i><em class="${n <= 5 ? "low" : ""}">體力 ${n}</em></span>`;
+const LAYERS = [["站起來", "", "脫出半防守"], ["半防守", "×1", "不能全押・不會降伏"], ["側壓", "×2", "可全押・可降伏"], ["騎乘", "×4", "可全押・兩對就鎖死"]];
+
+function frame(d) {
+  const you = F[d.you], foe = F[d.foe], youTop = d.role === "top";
+  const lad = LAYERS.map(([n, m, r], i) => `<div class="${i ? "" : "out"} ${i === d.layer ? "on" : ""}"><span>${n}<u>${m}</u><small>${r}</small></span>${i === d.layer ? `<span class="tag">第 ${d.hand}／3 手</span>` : ""}</div>`).join("");
+  const top = youTop ? you : foe, bot = youTop ? foe : you;
+  const fz = (f, who, pose, cls, x) => `<div class="fz ${who} ${cls}" style="left:${x}px"><img src="${P}${f.id}/${pose}.png" alt="" onerror="this.parentNode.classList.add('noimg')"><div class="dm"></div></div>`;
+  const stage = youTop ? fz(bot, "foe", "down", "dn flip", 122) + fz(top, "you", "shoot", "up", 74) : fz(bot, "you", "down", "dn", 66) + fz(top, "foe", "shoot", "up flip", 114);
+  return `<section class="shot" id="${d.id}"><h3>${d.title}<small>${d.sub}</small></h3><div class="frame">
+    <div class="sb you"><div class="face"><img src="${P}${you.id}/portrait.png" alt="" onerror="this.remove()"></div><div class="nmx"><b>${you.name}</b><small>你・${youTop ? "上位" : "下位"}</small></div><span class="hp">${d.hp[0]}</span>${sta(d.sta[0])}</div>
+    <div class="sb foe"><div class="face"><img src="${P}${foe.id}/portrait.png" alt="" onerror="this.remove()"></div><div class="nmx"><b>${foe.name}</b><small>對手・${youTop ? "下位" : "上位"}</small></div><span class="hp">${d.hp[1]}</span>${sta(d.sta[1])}</div>
+    <div class="mid"><b>R${d.round}　GROUND</b><span>${d.head}</span></div>
+    <div class="lad">${lad}</div>
+    <div class="side you"><h4><i>你</i>${youTop ? "上位・壓制" : "下位・掙脫"}<small>${d.me.left}</small></h4>
+      <div class="hole">${d.me.cards.map((c) => card(c, d.me.hl?.includes(c) ? "hl" : "")).join("")}</div>
+      <div class="hand">你現在：<b>${d.me.hand}</b><small>${d.me.handSub || ""}</small></div>
+      <div class="stake">這手已押 <em>${d.me.in} 體力</em></div>
+      ${d.me.warn ? `<div class="warn">${d.me.warn}</div>` : ""}
+      ${d.me.chips ? `<div class="chips">${d.me.chips.map(([k, v]) => `<span>${k}<u>${v}</u></span>`).join("")}</div>` : ""}</div>
+    <div class="table"><div class="board"><span class="lab">桌面</span>${d.board.map((c) => card(c, "sm " + (d.hl?.includes(c) ? "hl" : ""))).join("")}</div>
+      <div class="pot">彩池 <b>${d.pot} 體力</b></div>
+      <div class="cage"><div class="mat"></div>${stage}${d.stamp ? `<div class="stamp">${d.stamp}</div>` : ""}</div>
+      <div class="cap ${d.capCls || ""}">${d.cap}</div></div>
+    <div class="side foe"><h4><i>他</i>${youTop ? "下位・掙脫" : "上位・壓制"}<small>${d.him.left}</small></h4>
+      <div class="hole">${d.him.cards.map((c) => card(c, d.him.hl?.includes(c) ? "hl" : "")).join("")}${d.him.hand ? `<div class="hand" style="margin:0 0 0 6px">${d.him.hand}</div>` : ""}</div>
+      ${d.him.last ? `<div class="last">${d.him.last}</div>` : ""}
+      ${d.him.style ? `<div class="style"><h5>他的打法（真實數字）</h5>${d.him.style.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>` : ""}</div>
+    ${d.noteL ? `<div class="note l">${d.noteL}</div>` : ""}${d.noteR ? `<div class="note r">${d.noteR}</div>` : ""}
+    <div class="act">${d.btns.map(([c, b, s]) => `<button class="btn ${c}"><b>${b}</b><small>${s}</small></button>`).join("")}</div>
+  </div></section>`;
+}
+
+const FRAMES = [
+  { id: "f1", title: "1　上位・第一輪：他先動，你看完再決定", sub: "半防守：只能加壓，不能全押、不會降伏。對手的打法是真實數字",
+    you: "mak", foe: "poi", role: "top", hp: [38, 41], sta: [17, 15], round: 2, layer: 1, hand: 1, head: "他先動，你看完再決定",
+    me: { cards: ["K♥", "7♣"], hl: ["K♥"], hand: "一對 K", handSub: "桌上的 K 跟你的 K 湊成一對", left: "輪到你", in: 1, chips: [["地面技 ×1", "贏一手多磨他 1"]] },
+    board: ["K♠", "9♦", "4♣", "_", "_"], hl: ["K♠"], pot: 4,
+    him: { cards: ["?", "?"], left: "已出手", last: "他加壓 +2<small>（押了 3）</small>", style: [["加壓", "一對以上"], ["虛張", "15%"], ["被加壓還跟", "一對以上"], ["全押", "兩對以上"]] },
+    cap: "他一對以上才加壓，<b>但有 15% 是虛張</b>",
+    btns: [["fold", "鬆手", "放棄・輸掉押的 1"], ["call", "跟", "再押 2"], ["raise", "再加壓", "再押 4"]] },
+  { id: "f2", title: "2　上位・側壓・第二輪：他快沒力了", sub: "側壓以上才有「全押」。他只剩 5 體力：全押贏了＝磨光他＝降伏，比賽直接結束",
+    you: "mak", foe: "poi", role: "top", hp: [38, 37], sta: [13, 5], round: 2, layer: 2, hand: 2, head: "他撐住了，換你",
+    me: { cards: ["9♥", "9♣"], hl: ["9♥", "9♣"], hand: "三條 9", handSub: "你的一對 9 加上桌上的 9", left: "輪到你", in: 3 },
+    board: ["9♠", "Q♦", "3♣", "Q♥", "6♠"], hl: ["9♠"], pot: 6,
+    him: { cards: ["?", "?"], left: "已出手", last: "他撐住<small>（過牌，押了 3）</small>", style: [["加壓", "一對以上"], ["虛張", "15%"], ["沒力時", "只跟不加"], ["全押", "兩對以上"]] },
+    cap: "全押他就得用最後 5 體力跟，<b>他輸＝被磨光＝降伏</b>",
+    noteR: "他剩 5，跟不起就只能全部押上",
+    btns: [["fold", "鬆手", "放棄・輸掉押的 3"], ["call", "穩住", "過牌・直接攤牌"], ["raise", "加壓", "再押 4"], ["allin", "拚了・全押", "押上 10・他輸就降伏"]] },
+  { id: "f3", title: "3　降伏：大牌鎖死，比賽結束", sub: "騎乘：上位攤牌贏、而且兩對以上＝降伏（側壓要葫蘆以上）。另一種是把他磨光",
+    you: "mak", foe: "poi", role: "top", hp: [38, 37], sta: [11, 8], round: 3, layer: 3, hand: 3, head: "攤牌",
+    me: { cards: ["A♠", "6♥"], hl: ["A♠", "6♥"], hand: "葫蘆", handSub: "三條 6＋一對 A", left: "攤牌", in: 4 },
+    board: ["6♣", "A♦", "6♦", "J♠", "2♥"], hl: ["6♣", "A♦", "6♦"], pot: 8,
+    him: { cards: ["J♥", "10♣"], hl: ["J♥"], hand: "<b>一對 J</b>", left: "攤牌", last: "" },
+    stamp: "降伏！<small>比賽結束・SUB・第 3 回合</small>",
+    cap: "你在騎乘亮出葫蘆，<b>他拍地認輸</b>",
+    btns: [["go", "看結果", "整場比賽的計分"]] },
+  { id: "f4", title: "4　下位・側壓：你先動", sub: "你在下面要先決定，他看完再動。體力只剩 4：這層再被磨光就會被降伏",
+    you: "poi", foe: "mak", role: "bottom", hp: [41, 38], sta: [4, 12], round: 2, layer: 2, hand: 2, head: "你被壓在側壓，你先動",
+    me: { cards: ["8♦", "7♦"], hl: ["8♦", "7♦"], hand: "高牌", handSub: "差一張同花（桌上兩張 ♦）、差一張順子", left: "輪到你", in: 1,
+      warn: "只剩 <b>4 體力</b>：在側壓輸到 0＝<b>被降伏</b>（起身牌：第一次先回 3）" },
+    board: ["6♦", "K♦", "5♣", "_", "_"], pot: 2,
+    him: { cards: ["?", "?"], left: "之後才動", style: [["加壓", "一對以上"], ["虛張", "10%"], ["你撐住時", "高牌也加壓 40%"], ["全押", "你剩 4 以下就全押"]] },
+    cap: "掙扎贏了＝脫出到半防守；<b>鬆手</b>只輸掉押的 1",
+    btns: [["fold", "鬆手", "放棄・輸掉押的 1"], ["call", "撐住", "過牌"], ["raise", "掙扎", "押 2"], ["allin", "拚了・全押", "押上 4・贏了脫出"]] },
+];
+document.body.insertAdjacentHTML("afterbegin", FRAMES.map(frame).join(""));
+// 只為了截圖：網址 #f1…#f4 或 ?f=1…4 時只顯示單一畫面
+const m = location.hash.match(/f(\d)/) || location.search.match(/f=(\d)/), el = m && document.getElementById("f" + m[1]);
+if (el) { document.body.classList.add("solo"); el.classList.add("pick"); }
+</script>
+</body>
+</html>
