@@ -175,7 +175,7 @@ export function tierUp(st, s) {
 const view = (st) => {
   if (!st.c) return null;
   const unitView = (u) => (u ? { uid: u.uid, id: u.id, gold: u.gold, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
-  return { a: st.c.a.map(unitView), b: st.c.b.map(unitView), ground: st.c.ground ? { ...st.c.ground } : null };
+  return { a: st.c.a.map(unitView), b: st.c.b.map(unitView), ground: st.c.ground ? structuredClone(st.c.ground) : null };
 };
 function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, view: view(st) }; st.log.push(e); return e; }
 
@@ -246,6 +246,7 @@ function takedown(st, u) {
   c.ground = { top: s, layer: st.cfg.ground.start, beat: 1 };
   c.grounds++;
   ev(st, "ground", { s, uid: u.uid });
+  if (is21(st)) deal21(st);
 }
 function standUp(st, s = null, uid = null) { st.c.ground = null; ev(st, "standup", { s, uid }); }
 const canHit = (st, u) => u && u.hp > 0 && power(st, u) > 0;
@@ -326,7 +327,7 @@ function swing(st, u, t, mul) {
 export function step(st, grade = null) {
   const c = st.c;
   if (st.phase !== "clash" || !c) return false;
-  if (c.ground) { runBeat(st); return true; }
+  if (c.ground) { if (is21(st)) run21(st); else runBeat(st); return true; }
   const react = grade ? needsReact(st) : null, p = upcoming(st);
   if (!p) { endClash(st); return true; }
   c.pending = null; c.opt = null; c.n++;
@@ -357,11 +358,12 @@ export function groundMoves(st, s) {
 /** What the ground game looks like right now: { top, layer, beat, max, moves: { a, b }, last } or null. */
 export function groundOptions(st) {
   const c = st.c, g = c?.ground;
-  if (st.phase !== "clash" || !g || c.ko) return null;
+  if (st.phase !== "clash" || !g || c.ko || is21(st)) return null;
   return { top: g.top, layer: g.layer, beat: g.beat, max: st.cfg.ground.beats, moves: { a: groundMoves(st, "a"), b: groundMoves(st, "b") }, last: c.glast };
 }
 /** Side s picks its move for this beat (hidden until both have). False when it is not allowed. */
 export function chooseGround(st, s, move) {
+  if (is21(st)) { const o = g21Options(st); if (!o || o.turn !== s || !o.actions.includes(move)) return false; st.c.gchoice = { [s]: move }; return true; }
   if (!groundOptions(st) || !groundMoves(st, s).includes(move)) return false;
   (st.c.gchoice ||= {})[s] = move;
   return true;
@@ -402,6 +404,106 @@ function groundBeat(st, mv) {
   ev(st, "gbeat", { top, moves: mv, res, dmg, drop, flip, layer: g.layer, beat: n });
   if (st[bot].hp <= 0) { c.ko = bot; c.ground = null; return; } // finished on the mat
   if (g.layer < 1 || g.beat > G.beats) standUp(st);
+}
+
+// ---------- the ground game, blackjack style (ground.mode "21"; numbers in rules/bg ground21) ----------
+// Each hand both sides get two numbers (1..max, drawn with replacement). The top man hits or stands first, then the bottom man.
+// Over the bust line loses the hand. Otherwise the higher total wins: the bottom man slips out one layer and the ground goes on;
+// the top man either cashes the gap in as damage (times the layer) or passes one layer deeper and plays another hand for more.
+// Each side hides its second card from the other until the hand is decided: g21View(st, s) is what side s may know.
+const is21 = (st) => st.cfg.ground.mode === "21";
+const draw21 = (st) => 1 + Math.floor(rand(st) * st.cfg.ground21.max);
+const hasKw = (st, s, kw) => alive(st.c[s]).some((u) => u.kw[kw]);
+function deal21(st) {
+  const g = st.c.ground;
+  g.hands = { a: [draw21(st), draw21(st)], b: [draw21(st), draw21(st)] };
+  g.hits = { a: 0, b: 0 }; g.stood = { a: false, b: false }; g.phase = "top"; g.gap = 0;
+  // what the board gives each side this hand (the cards cannot change while they grapple): for the screen
+  g.info = { bonus: { a: g21Bonus(st, "a"), b: g21Bonus(st, "b") }, bust: { a: g21Bust(st, "a"), b: g21Bust(st, "b") }, subAt: g21SubAt(st) };
+  ev(st, "g21deal", { top: g.top, layer: g.layer, hand: g.beat });
+}
+/** The top man's head start: one point for each of his ground cards (a golden one counts double), up to startCap. */
+export function g21Bonus(st, s) {
+  const X = st.cfg.ground21, g = st.c?.ground;
+  if (!g || g.top !== s) return 0;
+  return Math.min(X.startCap, alive(st.c[s]).filter((u) => u.kw[X.startKw]).reduce((n, u) => n + mulOf(st, u), 0));
+}
+export const g21Total = (st, s) => st.c.ground.hands[s].reduce((n, v) => n + v, 0) + g21Bonus(st, s);
+/** The total side s may not go over: the bottom man gets one more with a get-up card. */
+export const g21Bust = (st, s) => { const X = st.cfg.ground21; return st.c.ground.top !== s && hasKw(st, s, X.upKw) ? X.upBust : X.bust; };
+/** The total the top man needs for a submission: the bust line, or lower with a submission card. */
+export const g21SubAt = (st) => { const X = st.cfg.ground21; return hasKw(st, st.c.ground.top, X.subKw) ? X.subAt : X.bust; };
+/** Damage for cashing in a win by `gap` on `layer`. */
+export const g21Cash = (st, gap, layer) => { const X = st.cfg.ground21; return Math.min(X.cap, Math.ceil(gap / X.div) * X.layerMul[layer - 1]); };
+/** Whose decision it is and what it may be: { top, layer, hand, hands, phase, turn, actions } or null. */
+export function g21Options(st) {
+  const c = st.c, g = c?.ground, X = st.cfg.ground21;
+  if (st.phase !== "clash" || !g || c.ko || !is21(st)) return null;
+  const turn = g.phase === "bottom" ? other(g.top) : g.top;
+  const actions = g.phase === "decide" ? (g.layer < st.cfg.ground.layers && g.beat < X.hands ? ["cash", "deeper"] : ["cash"]) : g.hits[turn] < X.hits ? ["hit", "stand"] : ["stand"];
+  return { top: g.top, layer: g.layer, hand: g.beat, hands: X.hands, phase: g.phase, turn, actions };
+}
+/** What side s can see of the hand: everything of its own, and the other side's cards except the hidden second one (shown once the hand is decided). */
+export function g21View(st, s) {
+  const o = g21Options(st);
+  if (!o) return null;
+  const g = st.c.ground, X = st.cfg.ground21, f = other(s), open = g.phase === "decide";
+  const shown = g.hands[f].filter((_, i) => open || i !== 1);
+  return { ...o, role: g.top === s ? "top" : "bottom", subAt: g21SubAt(st), gap: g.gap, cash: open ? g21Cash(st, g.gap, g.layer) : 0,
+    mine: { cards: [...g.hands[s]], bonus: g21Bonus(st, s), total: g21Total(st, s), bust: g21Bust(st, s), hitsLeft: X.hits - g.hits[s], stood: g.stood[s] },
+    foe: { shown, hidden: !open, bonus: g21Bonus(st, f), shownSum: shown.reduce((n, v) => n + v, 0) + g21Bonus(st, f), bust: g21Bust(st, f), hitsLeft: X.hits - g.hits[f], stood: g.stood[f] } };
+}
+function run21(st) {
+  const c = st.c, g = c.ground, X = st.cfg.ground21, o = g21Options(st), s = o.turn;
+  const act = o.actions.includes(c.gchoice?.[s]) ? c.gchoice[s] : pickOne(st, o.actions);
+  c.gchoice = null;
+  if (g.phase === "decide") {
+    if (act === "deeper") { g.layer++; g.beat++; ev(st, "g21deep", { s, layer: g.layer }); return deal21(st); }
+    const dmg = g21Cash(st, g.gap, g.layer);
+    hurt21(st, dmg);
+    ev(st, "g21cash", { s, dmg, layer: g.layer });
+    return end21(st);
+  }
+  if (act === "hit") {
+    const card = draw21(st);
+    g.hands[s].push(card); g.hits[s]++;
+    ev(st, "g21hit", { s, card });
+    if (g21Total(st, s) > g21Bust(st, s)) return show21(st, s);
+    if (g.hits[s] < X.hits) return;
+  }
+  g.stood[s] = true;
+  const last = g.phase === "bottom";
+  if (!last) g.phase = "bottom"; // the event already shows whose decision is next
+  ev(st, "g21stand", { s });
+  if (last) show21(st, null);
+}
+/** The hand is decided: `bust` is the side that went over, or null for a showdown. */
+function show21(st, bust) {
+  const g = st.c.ground, X = st.cfg.ground21, top = g.top, bot = other(top), tt = g21Total(st, top), tb = g21Total(st, bot);
+  const res = bust ? (bust === top ? "bottom" : "top") : tt > tb ? "top" : tb > tt ? "bottom" : "tie";
+  const out = { top, why: bust ? "bust" : "show", bust, totals: { [top]: tt, [bot]: tb }, layer: g.layer };
+  if (res === "top") {
+    g.gap = bust ? X.bustGap : tt - tb;
+    if (tt >= g21SubAt(st) && tb !== X.bust) { // a submission: never worth less than cashing in
+      const dmg = Math.max(X.submit, g21Cash(st, g.gap, g.layer));
+      hurt21(st, dmg);
+      ev(st, "g21end", { ...out, res: "sub", gap: g.gap, dmg });
+      return end21(st);
+    }
+    g.phase = "decide";
+    return void ev(st, "g21end", { ...out, res, gap: g.gap, cash: g21Cash(st, g.gap, g.layer) });
+  }
+  if (res === "tie") { ev(st, "g21end", { ...out, res }); return end21(st); }
+  g.layer--; g.beat++;
+  ev(st, "g21end", { ...out, res, to: g.layer });
+  if (g.layer < 1 || g.beat > X.hands) return end21(st);
+  deal21(st);
+}
+function hurt21(st, dmg) { const top = st.c.ground.top, bot = other(top); st[bot].hp = Math.max(0, st[bot].hp - dmg); st[top].stats.dmg += dmg; }
+function end21(st) {
+  const c = st.c, bot = other(c.ground.top);
+  if (st[bot].hp <= 0) { c.ko = bot; c.ground = null; return; } // finished on the mat
+  standUp(st);
 }
 
 function endClash(st) {

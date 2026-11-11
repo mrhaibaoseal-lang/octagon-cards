@@ -1,12 +1,12 @@
 {
- "_doc": "選手。power 選手技能（fx 用和招式卡同一套效果；to:bought 表示剛買進的那張）。ai 當對手時怎麼逛商店：prefer 偏好的流派（價值加成）、skill 每次挑牌時選到最佳的機率（其餘亂選），越低越弱；bias 偏好流派的加成有多大（越大越照自己的風格買）；ground 地面猜拳時各招的偏好倍率。",
+ "_doc": "選手。power 選手技能（fx 用和招式卡同一套效果；to:bought 表示剛買進的那張）。ai 當對手時怎麼逛商店：prefer 偏好的流派（價值加成）、skill 每次挑牌時選到最佳的機率（其餘亂選），越低越弱；bias 偏好流派的加成有多大（越大越照自己的風格買）；ground 地面猜拳時各招的偏好倍率；ground21 是 21 點地面：hitBelow 總和低於幾點會要牌（上位 top／下位 bottom），deepBelow 上位贏了之後兌現低於幾點會往深一層賭（沒寫就用 config 的 ground21.ai）。",
  "poirier": { "name": "Dustin Poirier", "short": "Poirier", "style": "拳擊壓迫",
   "power": { "text": "買進的拳 +1 攻擊", "fx": [{ "when": "buy", "school": "punch", "do": "buff", "to": "bought", "atk": 1 }] },
-  "ai": { "prefer": "punch", "skill": 0.75, "bias": 4, "ground": { "strike": 1.4, "guard": 1.2 } } },
+  "ai": { "prefer": "punch", "skill": 0.75, "bias": 4, "ground": { "strike": 1.4, "guard": 1.2 }, "ground21": { "hitBelow": { "top": 17, "bottom": 15 }, "deepBelow": 3 } } },
  "holloway": { "name": "Max Holloway", "short": "Holloway", "style": "高頻打擊",
   "power": { "text": "每段開始：最左邊的牌 +3 攻擊", "fx": [{ "when": "start", "do": "buff", "to": "leftmost", "atk": 3 }] },
-  "ai": { "prefer": "kick", "skill": 0.75, "bias": 4, "ground": { "rise": 1.4, "turn": 1.2 } } },
+  "ai": { "prefer": "kick", "skill": 0.75, "bias": 4, "ground": { "rise": 1.4, "turn": 1.2 }, "ground21": { "hitBelow": { "top": 16, "bottom": 16 }, "deepBelow": 3 } } },
  "makhachev": { "name": "Islam Makhachev", "short": "Makhachev", "style": "摔角壓制",
   "power": { "text": "買進的摔 +1 耐力", "fx": [{ "when": "buy", "school": "grap", "do": "buff", "to": "bought", "hp": 1 }] },
-  "ai": { "prefer": "grap", "skill": 0.75, "bias": 4, "ground": { "press": 1.4, "sub": 1.3, "guard": 1.2 } } }
+  "ai": { "prefer": "grap", "skill": 0.75, "bias": 4, "ground": { "press": 1.4, "sub": 1.3, "guard": 1.2 }, "ground21": { "hitBelow": { "top": 16, "bottom": 15 }, "deepBelow": 6 } } }
 }

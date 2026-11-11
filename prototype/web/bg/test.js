@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadData } from "./load.node.js";
 import * as E from "./engine.js";
-import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders } from "./ai.js";
+import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders, g21Threshold, g21Pick, g21Smart, grounders21 } from "./ai.js";
 
 const data = loadData();
 const fresh = (a = "holloway", b = "makhachev", seed = 3) => E.createGame(data, a, b, seed);
@@ -311,6 +311,186 @@ test("ground AI: the table sums to one over the moves it may play, leans toward 
   assert.ok(E.groundMoves(st, "b").includes(groundPick(st, "b")));
   assert.ok(E.groundMoves(st, "a").includes(groundRead(st, "a")));
   assert.ok(E.groundMoves(st, "a").includes(grounders.guess(st, "a")));
+});
+
+// ---------- the blackjack ground game (ground.mode "21") ----------
+const d21 = loadData(); d21.config.ground.mode = "21";
+const X = d21.config.ground21;
+/** A clash already on the ground in 21 mode with the hands stacked: h = { a: [..], b: [..] }. */
+const down21 = (a, b, h, top = "a", layer = 1, who = ["poirier", "makhachev"]) => {
+  const st = E.createGame(d21, ...who, 3); put(st, "a", a); put(st, "b", b); E.startClash(st);
+  st.c.ground = { top, layer, beat: 1, hands: { a: [...h.a], b: [...h.b] }, hits: { a: 0, b: 0 }, stood: { a: false, b: false }, phase: "top", gap: 0 };
+  return st;
+};
+const act = (st, s, m) => { assert.ok(E.chooseGround(st, s, m), `${s} may ${m}`); E.step(st); };
+const last = (st, t) => evs(st, t).at(-1);
+
+test("21 ground: a takedown deals two numbers a side, the top man decides first, and the cards wait", () => {
+  const st = E.createGame(d21, "holloway", "makhachev", 3);
+  put(st, "a", ["doubleleg", "elbows", "highguard"]); put(st, "b", ["ironwall", "highkick"]);
+  E.startClash(st); E.step(st);
+  assert.equal(evs(st, "ground").length, 1);
+  assert.equal(evs(st, "g21deal").length, 1);
+  const g = st.c.ground;
+  for (const s of ["a", "b"]) { assert.equal(g.hands[s].length, 2); for (const v of g.hands[s]) assert.ok(Number.isInteger(v) && v >= 1 && v <= X.max); }
+  assert.equal(E.options(st), null, "no card attacks while they grapple");
+  assert.equal(E.groundOptions(st), null, "the guessing game is off in 21 mode");
+  const o = E.g21Options(st);
+  assert.deepEqual({ top: o.top, layer: o.layer, phase: o.phase, turn: o.turn, actions: o.actions }, { top: "a", layer: G.start, phase: "top", turn: "a", actions: ["hit", "stand"] });
+  assert.equal(E.chooseGround(st, "b", "stand"), false, "the bottom man waits for the top man");
+  assert.equal(E.chooseGround(st, "a", "cash"), false, "nothing to cash yet");
+  act(st, "a", "stand");
+  assert.equal(E.g21Options(st).turn, "b");
+});
+
+test("21 ground: the higher total wins; the top man cashes the gap in (half, rounded up, times the layer, capped) and they stand up", () => {
+  for (const [layer, ha, hb, dmg] of [[1, [10, 9], [10, 4], 3], [2, [10, 9], [10, 4], 6], [3, [10, 9], [10, 4], 12], [3, [10, 9], [1, 1], X.cap]]) {
+    const st = down21(["cross"], ["cross"], { a: ha, b: hb }, "a", layer), hp = st.b.hp;
+    act(st, "a", "stand"); act(st, "b", "stand");
+    const e = last(st, "g21end");
+    assert.equal(e.res, "top"); assert.equal(e.gap, 19 - (hb[0] + hb[1])); assert.equal(e.cash, dmg);
+    assert.equal(E.g21Options(st).phase, "decide");
+    act(st, "a", "cash");
+    assert.equal(st.b.hp, hp - dmg, `layer ${layer}`);
+    assert.equal(st.c.ground, null);
+    assert.equal(evs(st, "standup").length, 1);
+  }
+});
+
+test("21 ground: going deeper gives up the cash for a new hand one layer in; not from the last layer or the last hand", () => {
+  let st = down21(["cross"], ["cross"], { a: [10, 9], b: [10, 4] }), hp = st.b.hp;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.deepEqual(E.g21Options(st).actions, ["cash", "deeper"]);
+  act(st, "a", "deeper");
+  assert.equal(st.b.hp, hp, "nothing was cashed");
+  assert.deepEqual({ layer: st.c.ground.layer, beat: st.c.ground.beat, phase: st.c.ground.phase }, { layer: 2, beat: 2, phase: "top" });
+  assert.equal(evs(st, "g21deal").length, 1, "a new hand was dealt");
+  st = down21(["cross"], ["cross"], { a: [10, 9], b: [10, 4] }, "a", G.layers);
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.deepEqual(E.g21Options(st).actions, ["cash"], "the last layer only cashes");
+  st = down21(["cross"], ["cross"], { a: [10, 9], b: [10, 4] });
+  st.c.ground.beat = X.hands;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.deepEqual(E.g21Options(st).actions, ["cash"], "no hand left to play");
+});
+
+test("21 ground: the bottom man winning slips out one layer and the ground goes on; out of the first layer, or level, they stand up", () => {
+  let st = down21(["cross"], ["cross"], { a: [10, 5], b: [10, 9] }, "a", 2), hp = { a: st.a.hp, b: st.b.hp };
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "bottom");
+  assert.deepEqual({ top: st.c.ground.top, layer: st.c.ground.layer, beat: st.c.ground.beat, phase: st.c.ground.phase }, { top: "a", layer: 1, beat: 2, phase: "top" });
+  assert.deepEqual({ a: st.a.hp, b: st.b.hp }, hp);
+  st = down21(["cross"], ["cross"], { a: [10, 5], b: [10, 9] }, "a", 1);
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(st.c.ground, null, "out of the first layer");
+  st = down21(["cross"], ["cross"], { a: [10, 8], b: [9, 9] }, "a", 3);
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "tie");
+  assert.equal(st.c.ground, null, "the referee stands them up");
+  assert.deepEqual({ a: st.a.hp, b: st.b.hp }, hp);
+  assert.ok(E.options(st), "the cards carry on");
+});
+
+test("21 ground: going over the line loses the hand; a top bust lets the bottom man out, a bottom bust counts as a gap of bustGap", () => {
+  let st = down21(["cross"], ["cross"], { a: [10, 10, 1], b: [5, 5] }, "a", 2);
+  act(st, "a", "hit");
+  assert.deepEqual({ res: last(st, "g21end").res, why: last(st, "g21end").why, bust: last(st, "g21end").bust }, { res: "bottom", why: "bust", bust: "a" });
+  assert.equal(st.c.ground.layer, 1);
+  st = down21(["cross"], ["cross"], { a: [5, 5], b: [10, 10, 1] }, "a", 2);
+  act(st, "a", "stand"); act(st, "b", "hit");
+  const e = last(st, "g21end");
+  assert.deepEqual({ res: e.res, why: e.why, gap: e.gap, cash: e.cash }, { res: "top", why: "bust", gap: X.bustGap, cash: E.g21Cash(st, X.bustGap, 2) });
+  st = down21(["cross"], ["cross"], { a: [1, 1], b: [5, 5] });
+  st.c.ground.hits.a = X.hits;
+  assert.deepEqual(E.g21Options(st).actions, ["stand"], "no more cards after the limit");
+  st = down21(["cross"], ["cross"], { a: [1, 1], b: [5, 5] });
+  for (let i = 0; i < X.hits && E.g21Options(st)?.turn === "a" && st.c.ground.beat === 1; i++) act(st, "a", "hit");
+  assert.ok(st.c.ground.beat > 1 || st.c.ground.phase === "bottom", "after the last card he has stood (or bust)");
+});
+
+test("21 ground: the cards on the board change the hand: ground cards give the top man a head start, a submission card finishes on 20, a get-up card moves the bottom man's line to 22", () => {
+  let st = down21(["elbows", "groundpound"], ["cross"], { a: [5, 5], b: [5, 5] });
+  assert.equal(E.g21Bonus(st, "a"), 2); assert.equal(E.g21Total(st, "a"), 12);
+  assert.equal(E.g21Bonus(st, "b"), 0, "only the top man gets it");
+  st = down21(["elbows", "elbows", "groundpound", "groundpound"], ["cross"], { a: [5, 5], b: [5, 5] });
+  assert.equal(E.g21Bonus(st, "a"), X.startCap, "capped");
+  st = down21(["cross"], ["shrimp"], { a: [10, 9], b: [10, 10, 2] });
+  assert.equal(E.g21Bust(st, "b"), X.upBust); assert.equal(E.g21Bust(st, "a"), X.bust);
+  st.c.ground.hits.b = 1;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "bottom", "22 is still alive with a get-up card, and it wins");
+  st = down21(["cross"], ["cross"], { a: [10, 9], b: [10, 10, 2] });
+  assert.equal(E.g21Bust(st, "b"), X.bust);
+  // a submission
+  st = down21(["guillotine"], ["cross"], { a: [10, 10], b: [10, 5] });
+  let hp = st.b.hp;
+  assert.equal(E.g21SubAt(st), X.subAt);
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "sub");
+  assert.equal(hp - st.b.hp, Math.max(X.submit, E.g21Cash(st, 5, 1)));
+  assert.equal(st.c.ground, null);
+  st = down21(["cross"], ["cross"], { a: [10, 10], b: [10, 5] });
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "top", "20 without the card is a plain win");
+  st = down21(["cross"], ["cross"], { a: [10, 10, 1], b: [10, 5] });
+  st.c.ground.hits.a = 1; hp = st.b.hp;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "sub", "21 on the nose finishes without a card");
+  st = down21(["guillotine"], ["cross"], { a: [10, 10, 1], b: [10, 10, 1] });
+  st.c.ground.hits.a = 1; st.c.ground.hits.b = 1;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(last(st, "g21end").res, "tie", "21 against 21 is level");
+});
+
+test("21 ground: each side hides its second card until the hand is decided; a finish on the mat is a knockout", () => {
+  let st = down21(["elbows"], ["cross"], { a: [7, 6], b: [3, 8] });
+  let v = E.g21View(st, "a");
+  assert.deepEqual(v.foe.shown, [3]); assert.equal(v.foe.shownSum, 3); assert.equal(v.foe.hidden, true);
+  assert.deepEqual(v.mine.cards, [7, 6]); assert.equal(v.mine.total, 14); assert.equal(v.role, "top");
+  v = E.g21View(st, "b");
+  assert.deepEqual(v.foe.shown, [7]); assert.equal(v.foe.shownSum, 8, "what he shows includes his head start");
+  act(st, "a", "stand"); act(st, "b", "stand");
+  v = E.g21View(st, "b");
+  assert.deepEqual(v.foe.shown, [7, 6]); assert.equal(v.foe.hidden, false);
+  st = down21(["cross"], ["cross"], { a: [10, 9], b: [10, 4] }, "a", 3);
+  st.b.hp = 5;
+  act(st, "a", "stand"); act(st, "b", "stand"); act(st, "a", "cash");
+  assert.equal(st.b.hp, 0);
+  E.step(st);
+  assert.deepEqual({ winner: st.over?.winner, how: st.over?.how }, { winner: "a", how: "KO" });
+});
+
+test("21 ground AI: it hits below its published threshold and stands above it; the bottom man chases what the top man shows; players only act on their turn", () => {
+  const A = { ...X.ai, ...d21.fighters.makhachev.ai.ground21 };
+  let st = down21(["cross"], ["cross"], { a: [2, 2], b: [5, 5] }, "b");
+  assert.equal(g21Threshold(st, "b", "top"), A.hitBelow.top);
+  assert.equal(g21Threshold(st, "b", "bottom", 3), A.hitBelow.bottom);
+  assert.equal(g21Threshold(st, "b", "bottom", 17), 19, "he needs two more than he can see");
+  assert.equal(g21Threshold(st, "b", "bottom", 20), A.standCap);
+  for (const [hand, want] of [[[A.hitBelow.top - A.jitter - 6, 5], "hit"], [[A.hitBelow.top + A.jitter - 5, 5], "stand"]]) {
+    for (let seed = 1; seed < 30; seed++) { st = down21(["cross"], ["cross"], { a: [2, 2], b: hand }, "b"); st.rng = seed; assert.equal(g21Pick(st, "b"), want); }
+  }
+  assert.equal(g21Pick(st, "a"), null, "not his turn");
+  assert.equal(g21Smart(st, "a"), null);
+  st = down21(["cross"], ["cross"], { a: [10, 4], b: [10, 5 + 0] }, "b", 1);
+  act(st, "b", "stand"); act(st, "a", "stand");
+  assert.equal(E.g21Options(st).phase, "decide");
+  assert.equal(g21Pick(st, "b"), 1 < A.deepBelow ? "deeper" : "cash");
+  // the player who does the sums
+  st = down21(["cross"], ["cross"], { a: [10, 10], b: [5, 5] });
+  assert.equal(g21Smart(st, "a"), "stand");
+  st = down21(["cross"], ["cross"], { a: [4, 4], b: [5, 5] });
+  assert.equal(g21Smart(st, "a"), "hit");
+  st = down21(["cross"], ["cross"], { a: [10, 2], b: [10, 9] }, "b");
+  act(st, "b", "stand");
+  assert.equal(g21Smart(st, "a"), "hit", "12 cannot beat a man who stood");
+  for (const k of Object.keys(grounders21)) {
+    const g = runGame(d21, "makhachev", "poirier", 21, shoppers.smart, undefined, undefined, grounders21[k]);
+    assert.ok(g.over && ["KO", "DEC"].includes(g.over.how), k);
+  }
+  const a = runGame(d21, "makhachev", "holloway", 5), b = runGame(d21, "makhachev", "holloway", 5);
+  assert.deepEqual(a.over, b.over); assert.equal(a.log.length, b.log.length);
+  assert.ok(evs(a, "g21deal").length > 0, "the bout reached the ground");
 });
 
 test("combo cards hit harder in a row; a long-range strike is not hit back", () => {

@@ -226,3 +226,72 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #gpanel.done button{pointer-events:none}
 .gfight{flex:none;width:92px;background:linear-gradient(#e2574c,#b5332b);border:1px solid #ff8a7a;border-radius:10px;color:#fff;font-size:16px;font-weight:800;box-shadow:0 3px 0 #6b1712}
 .gfight:active{transform:translateY(2px);box-shadow:0 1px 0 #6b1712}
+
+/* 地面 21 點（ground.mode＝21）：左邊是你、右邊是對手，選手在中間 */
+.g21mode #rowA,.g21mode #rowB{display:none}
+.g21mode #cue{visibility:hidden}
+.g21mode #fa{left:388px} .g21mode #fb{left:456px}
+#g21{position:absolute;inset:0;z-index:2;pointer-events:none}
+#g21>*{position:absolute}
+#g21 .you{--c:var(--blue)} #g21 .foe{--c:var(--red)}
+#g21 .lad{left:212px;width:420px;top:46px;height:26px;display:flex;gap:3px}
+#g21 .lad div{flex:1;transform:skewX(-12deg);background:#151b27;border:1px solid var(--line);color:#6f7a90;font-size:12px;font-weight:700;text-align:center;line-height:24px;position:relative}
+#g21 .lad div>*{display:inline-block;transform:skewX(12deg)}
+#g21 .lad u{text-decoration:none;font-weight:400;margin-left:4px}
+#g21 .lad .out{flex:.8;border-style:dashed}
+#g21 .lad .on{background:linear-gradient(#f5c542,#c98f0c);border-color:#ffe08a;color:#1d1500}
+#g21 .lad .tag{position:absolute;right:2px;top:-9px;font-size:10px;line-height:14px;padding:0 6px;border-radius:7px;background:#fff;color:#111;font-weight:800}
+#g21 .side{top:80px;width:268px;height:236px;padding:8px 10px;border-radius:10px;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 14%,#10141d),#0e121a);border:1px solid color-mix(in srgb,var(--c) 45%,#283042)}
+#g21 .side.you{left:10px;border-left:4px solid var(--c)}
+#g21 .side.foe{right:10px;border-right:4px solid var(--c)}
+#g21 h4{font-size:12px;font-weight:800;display:flex;align-items:center;gap:6px;margin-bottom:7px}
+#g21 h4 i{font-style:normal;font-size:11px;padding:0 7px;line-height:17px;border-radius:4px;background:var(--c);color:#fff}
+#g21 h4 small{font-weight:400;color:var(--dim);font-size:11px;margin-left:auto}
+#g21 .cards{display:flex;gap:5px;height:62px;align-items:center}
+#g21 .c{position:relative;width:42px;height:60px;border-radius:6px;flex:none;background:linear-gradient(160deg,#2a3246,#161b27);border:1px solid #55617c;border-top:5px solid var(--c);
+  color:#fff;font-size:28px;font-weight:800;font-style:italic;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #0009}
+#g21 .c.down{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--c) 38%,#10141c) 0 5px,color-mix(in srgb,var(--c) 20%,#10141c) 5px 10px);color:#ffffffcc;font-style:normal}
+#g21 .c.new{box-shadow:0 0 0 2px var(--gold),0 2px 0 #0009;animation:g21in .25s ease-out}
+@keyframes g21in{from{transform:translateY(-14px);opacity:0}}
+#g21 .c.new::after{content:"新";position:absolute;top:-11px;right:-6px;font-size:10px;font-weight:800;font-style:normal;background:var(--gold);color:#251c00;border-radius:7px;padding:0 5px;line-height:14px}
+#g21 .c.hid::after{content:"蓋著";position:absolute;bottom:2px;left:2px;right:2px;font-size:10px;font-weight:700;font-style:normal;color:#dfe6f3;background:#000a;border-radius:3px;line-height:13px;text-align:center}
+#g21 .bonus{width:38px;height:60px;border-radius:6px;border:2px dashed var(--gold);color:var(--gold);font-size:18px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;flex:none}
+#g21 .bonus small{font-size:9.5px;font-weight:700}
+#g21 .sum{display:flex;align-items:baseline;gap:6px;margin-top:6px}
+#g21 .sum b{font-size:34px;font-weight:800;font-style:italic;line-height:1}
+#g21 .sum b.q{font-size:28px;color:#c3ccdb}
+#g21 .sum b.win{color:var(--gold)} #g21 .sum b.bad{color:var(--red)}
+#g21 .sum span{font-size:12px;color:var(--dim)}
+#g21 .sum em{font-style:normal;margin-left:auto;font-size:11px;font-weight:700;padding:1px 8px;border-radius:4px;background:#1c2331;color:#aab4c7}
+#g21 .sum em.v22,#g21 .sum em.won{background:#143a2d;color:var(--green);box-shadow:0 0 0 1px var(--green)}
+#g21 .sum em.ovr{background:#4a1a19;color:#ff9d9b;box-shadow:0 0 0 1px var(--red)}
+#g21 .gauge{position:relative;height:12px;margin-top:5px;background:#0b0e14;border:1px solid #2d3649;border-radius:3px}
+#g21 .gauge .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 60%,#000),var(--c));border-radius:2px;transition:width .25s}
+#g21 .gauge .unk{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,#ffffff38 0 4px,transparent 4px 8px)}
+#g21 .gauge .bust{position:absolute;top:-3px;bottom:-3px;width:2px;background:#ff5b57}
+#g21 .gauge .red{position:absolute;right:0;top:0;bottom:0;background:#ff5b5733}
+#g21 .gauge .th{position:absolute;top:-5px;bottom:-5px;width:3px;background:var(--gold);box-shadow:0 0 0 1px #000}
+#g21 .gl{position:relative;height:14px;font-size:10px;color:var(--dim)}
+#g21 .gl i{position:absolute;top:1px;font-style:normal;transform:translateX(-50%);white-space:nowrap}
+#g21 .gl i.b{color:#ff8f8b} #g21 .gl i.t{color:var(--gold);font-weight:700}
+#g21 .tell{margin-top:4px;padding:3px 8px;border-radius:6px;background:#241d06;border:1px solid #6a5310;font-size:12px;line-height:20px;white-space:nowrap;overflow:hidden}
+#g21 .tell b{font-size:17px;font-weight:800;font-style:italic;color:var(--gold)}
+#g21 .tell small{font-size:10.5px;color:#c9b77a;margin-left:6px}
+#g21 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+#g21 .chips span{font-size:11px;line-height:18px;padding:0 7px;border-radius:9px;background:#2a2410;border:1px solid #7a6114;color:var(--gold);font-weight:700}
+#g21 .chips u{text-decoration:none;font-weight:400;color:#e6d9a8;margin-left:4px}
+#g21 .chips .none{background:none;border:1px dashed #3a4459;color:#6f7a90;font-weight:400}
+#g21 .cap{left:284px;width:276px;top:282px;height:34px;display:flex;align-items:flex-end;justify-content:center;text-align:center;font-size:12.5px;color:#dfe6f3;line-height:1.3}
+#g21 .cap b{color:var(--gold)} #g21 .cap.red b{color:#ff7a76}
+#g21 .stamp{left:50%;top:152px;transform:translateX(-50%) rotate(-8deg);border:3px solid var(--red);color:#ff7a76;font-size:28px;font-weight:800;letter-spacing:.12em;background:#2a0e0dd9;padding:0 14px;border-radius:8px;white-space:nowrap;z-index:3;animation:g21stamp .2s ease-out}
+@keyframes g21stamp{from{transform:translateX(-50%) rotate(-8deg) scale(1.6);opacity:0}}
+#g21 .stamp.good{border-color:var(--green);color:#6df0b4;background:#0b2118d9}
+#g21 .stamp.gold{border-color:var(--gold);color:var(--gold);background:#2a2208d9}
+#g21 .act{left:120px;right:120px;top:324px;height:58px;display:flex;gap:10px;pointer-events:auto;z-index:4}
+#g21 .act .b{flex:1;border-radius:8px;border:0;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.2;text-align:center;box-shadow:0 3px 0 #0009;transform:skewX(-6deg)}
+#g21 .act .b>*{transform:skewX(6deg)}
+#g21 .act .b b{font-size:19px;font-weight:800;letter-spacing:.06em} #g21 .act .b small{font-size:12px;opacity:.9}
+#g21 .act .b:active{transform:skewX(-6deg) translateY(2px);box-shadow:0 1px 0 #0009}
+#g21 .act .hit,#g21 .act .deep{background:linear-gradient(#e2574c,#a52c25)}
+#g21 .act .stand{background:linear-gradient(#566178,#394358)}
+#g21 .act .cash{background:linear-gradient(#e9b52f,#b27a0c);color:#241a00}

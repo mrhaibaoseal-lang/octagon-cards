@@ -127,6 +127,77 @@ export const groundGuess = (st, s) => { const ok = E.groundMoves(st, s); return 
 /** How side a plays the ground in the simulation: read the table, or guess blind. Side b always plays its own table. */
 export const grounders = { read: (st, s) => (s === "a" ? groundRead(st, s) : groundPick(st, s)), guess: (st, s) => (s === "a" ? groundGuess(st, s) : groundPick(st, s)) };
 
+// ---------- the blackjack ground game (ground.mode "21") ----------
+const ai21 = (st, s) => ({ ...st.cfg.ground21.ai, ...(st[s].f.ai?.ground21 || {}) });
+/** The total below which side s asks for another card, given what it could see with `foeShown` on the table. This is the number the screen shows.
+ *  The top man uses his own number. The bottom man moves second, so he also keeps going until he could beat what the top man shows (shown + 2), up to standCap. */
+export function g21Threshold(st, s, role, foeShown = 0) {
+  const A = ai21(st, s);
+  return role === "top" ? A.hitBelow.top : Math.min(A.standCap, Math.max(A.hitBelow.bottom, foeShown + 2));
+}
+/** The opponent's decision: hit below its threshold (give or take the jitter), else stand; after a win, cash in unless it pays less than deepBelow. */
+export function g21Pick(st, s) {
+  const v = E.g21View(st, s);
+  if (!v || v.turn !== s) return null;
+  const A = ai21(st, s);
+  if (v.phase === "decide") return v.actions.includes("deeper") && v.cash < A.deepBelow ? "deeper" : "cash";
+  if (!v.actions.includes("hit")) return "stand";
+  const th = g21Threshold(st, s, v.role, v.foe.shownSum) + Math.floor(E.rand(st) * (2 * A.jitter + 1)) - A.jitter;
+  return v.mine.total < th ? "hit" : "stand";
+}
+/** A player who does the sums: uses only what side s can see (g21View) plus the opponent's published threshold. */
+export function g21Smart(st, s) {
+  const v = E.g21View(st, s);
+  if (!v || v.turn !== s) return null;
+  const X = st.cfg.ground21, G = st.cfg.ground, foe = s === "a" ? "b" : "a", F = ai21(st, foe), N = X.max;
+  const cash = (gap, layer) => E.g21Cash(st, gap, layer);
+  // what a fresh hand one layer deeper is worth to the top man: about 60% to win it (the head start and moving first help), by an average gap
+  const fresh = (layer) => (layer > G.layers ? 0 : 0.6 * Math.max(cash(6, layer), fresh(layer + 1)));
+  const canDeep = v.layer < G.layers && v.hand < X.hands;
+  /** What winning by `gap` is worth to the top man with total `tt` (bottom total tb; null = he bust). */
+  const winVal = (gap, tt, tb) => (tt >= v.subAt && tb !== X.bust ? Math.max(X.submit, cash(gap, v.layer)) : Math.max(cash(gap, v.layer), canDeep ? fresh(v.layer + 1) : 0));
+  if (v.phase === "decide") return v.actions.includes("deeper") && fresh(v.layer + 1) > v.cash ? "deeper" : "cash";
+  const SLIP = 4; // what getting out one layer is worth, in damage points
+  if (v.role === "top") {
+    // the bottom man will play his threshold against what I show him; his hidden card is any number
+    const hidden = v.mine.cards[1], shownTo = (total) => total - hidden;
+    const botEnd = (th, bust, t, k, p, out) => { if (t >= th || k === 0) return void (out[t] = (out[t] || 0) + p); for (let d = 1; d <= N; d++) { const n = t + d; if (n > bust) out.bust = (out.bust || 0) + p / N; else botEnd(th, bust, n, k - 1, p / N, out); } };
+    const memo = new Map(), ends = (th, start) => { const key = th * 100 + start; if (!memo.has(key)) { const out = {}; botEnd(th, v.foe.bust, start, X.hits, 1 / N, out); memo.set(key, out); } return memo.get(key); };
+    const stand = (T) => {
+      const th = g21Threshold(st, foe, "bottom", shownTo(T));
+      let val = 0;
+      for (let h = 1; h <= N; h++) {
+        for (const [k, p] of Object.entries(ends(th, v.foe.shownSum + h))) { const tb = k === "bust" ? null : Number(k); val += p * (tb == null ? winVal(X.bustGap, T, null) : T > tb ? winVal(T - tb, T, tb) : T < tb ? -SLIP : 0); }
+      }
+      return val;
+    };
+    const best = (T, k) => Math.max(stand(T), k > 0 ? hit(T, k) : -Infinity);
+    const hit = (T, k) => { let val = 0; for (let d = 1; d <= N; d++) val += (T + d > v.mine.bust ? -SLIP : best(T + d, k - 1)) / N; return val; };
+    return v.actions.includes("hit") && hit(v.mine.total, Math.min(v.mine.hitsLeft, 2)) > stand(v.mine.total) ? "hit" : "stand";
+  }
+  // bottom: the top man has finished. His hidden card is whatever keeps him under the line; if he chose to stop, he is probably at or over his threshold
+  const th = g21Threshold(st, foe, "top"), post = [];
+  let sum = 0;
+  for (let h = 1; h <= N; h++) {
+    const T = v.foe.shownSum + h;
+    const w = T > v.foe.bust ? 0 : v.foe.hitsLeft === 0 ? 1 : T > th ? 1 : T === th ? 2 / 3 : T === th - 1 ? 1 / 3 : 0.02;
+    post.push([T, w]); sum += w;
+  }
+  if (!sum) return "stand";
+  const stand = (t) => post.reduce((n, [T, w]) => n + (w / sum) * (t > T ? SLIP : t === T ? 0 : -winVal(T - t, T, t)), 0);
+  const lose = post.reduce((n, [T, w]) => n + (w / sum) * -winVal(X.bustGap, T, null), 0);
+  const best = (t, k) => Math.max(stand(t), k > 0 ? hit(t, k) : -Infinity);
+  const hit = (t, k) => { let val = 0; for (let d = 1; d <= N; d++) val += (t + d > v.mine.bust ? lose : best(t + d, k - 1)) / N; return val; };
+  return v.actions.includes("hit") && hit(v.mine.total, v.mine.hitsLeft) > stand(v.mine.total) ? "hit" : "stand";
+}
+/** Hit or stand on a coin flip, cash or go deeper on a coin flip. */
+export const g21Random = (st, s) => { const o = E.g21Options(st); return o && o.turn === s ? o.actions[Math.floor(E.rand(st) * o.actions.length)] : null; };
+/** The textbook line: always draw to `n`, always cash in. */
+export const g21Fixed = (n) => (st, s) => { const v = E.g21View(st, s); return !v || v.turn !== s ? null : v.phase === "decide" ? "cash" : v.mine.total < n && v.actions.includes("hit") ? "hit" : "stand"; };
+/** How side a plays the blackjack ground in the simulation; side b always plays its own threshold. */
+const vs21 = (mine) => (st, s) => (s === "a" ? mine(st, s) : g21Pick(st, s));
+export const grounders21 = { smart: vs21(g21Smart), random: vs21(g21Random), fixed17: vs21(g21Fixed(17)) };
+
 export function cornerPick(st, s) { return st[s].hp <= st.cfg.hp - st.cfg.corner.heal - 3 ? "heal" : "discover"; }
 
 export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {} };
@@ -134,8 +205,9 @@ export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(
 export const fighters = { sharp: (st, o) => fight(st, o, o.s === "a" ? 1 : undefined), blind: (st, o) => (o.s === "a" ? null : fight(st, o)) };
 
 /** A whole bout: side a shops with `shopper`, side b with its own AI; timing(st, p) grades each timing bar. */
-export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp, gpick = grounders.read) {
+export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing = () => "miss", pick = fighters.sharp, gpick = null) {
   const st = E.createGame(data, aId, bId, seed);
+  gpick ||= st.cfg.ground.mode === "21" ? grounders21.smart : grounders.read;
   let guard = 0;
   while (!st.over && guard++ < 60) {
     if (st.phase === "corner") { E.corner(st, "a", shopper === shoppers.none ? "heal" : cornerPick(st, "a")); E.corner(st, "b", cornerPick(st, "b")); continue; }

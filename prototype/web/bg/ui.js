@@ -1,6 +1,6 @@
 // Octagon Cards — one-on-one board battler, browser front end. Rules live in engine.js / ai.js; this file draws and forwards clicks.
 import * as E from "./engine.js";
-import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead } from "./ai.js";
+import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead, g21Threshold, g21Pick, g21Smart } from "./ai.js";
 
 const params = new URLSearchParams(location.search);
 const load = async (n) => (await fetch(`rules/bg/${n}.json`)).json();
@@ -11,11 +11,11 @@ const SCHOOL = { punch: "拳", kick: "踢", grap: "摔", def: "防" };
 const KW = { guard: "架擋", slip: "閃躲", flurry: "連打", sweep: "掃", sub: "降伏", takedown: "抱摔", sprawl: "防摔", getup: "起身", ground: "地面技", combo: "連段", reach: "長距離" };
 const KW_TEXT = {
   guard: () => "對手必須先打這張", slip: () => "躲掉打向它的第一下", flurry: () => "一次出手打兩下", sweep: () => "同時打到目標左右兩張",
-  sub: (c) => `地面猜拳：降伏傷害依位置 ${c.ground.moves.sub.hit.byLayer.join(" / ")}（${c.ground.layerNames.join(" / ")}）；你有這張時算深一層`,
-  takedown: (c) => `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
+  sub: (c) => c.ground.mode === "21" ? `地面：你在上位時，總和 ${c.ground21.subAt} 就算降伏（本來要剛好 ${c.ground21.bust}），傷害 ${c.ground21.submit}` : `地面猜拳：降伏傷害依位置 ${c.ground.moves.sub.hit.byLayer.join(" / ")}（${c.ground.layerNames.join(" / ")}）；你有這張時算深一層`,
+  takedown: (c) => c.ground.mode === "21" ? "打中就把這一段帶到地面，你在上位，開始比點數（一段一次）" : `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
   sprawl: () => "只要這張還在場上，對手的抱摔都不成功",
-  getup: (c) => `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
-  ground: (c) => `地面猜拳：你每有一張，砸擊多 ${c.ground.moves.strike.hit.perCard} 傷害`,
+  getup: (c) => c.ground.mode === "21" ? `地面：你在下位時，爆牌線從 ${c.ground21.bust} 變成 ${c.ground21.upBust}` : `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
+  ground: (c) => c.ground.mode === "21" ? `地面：你在上位時，每有一張起手總和 +1（最多 +${c.ground21.startCap}）` : `地面猜拳：你每有一張，砸擊多 ${c.ground.moves.strike.hit.perCard} 傷害`,
   combo: (c) => `前一張出手的也是連段牌：這一下 +${c.combo.atk} 攻擊，可累積到 +${c.combo.atk * c.combo.max}`,
   reach: () => "這張出手時不會被反擊",
 };
@@ -35,6 +35,7 @@ addEventListener("resize", fit);
 async function boot() {
   const [config, skills, fighters] = await Promise.all([load("config"), load("skills"), load("fighters")]);
   data = E.prepare({ config, skills: strip(skills), fighters: strip(fighters) });
+  if (params.has("ground")) data.config.ground.mode = params.get("ground") === "21" ? "21" : "rps"; // ?ground=21 / ?ground=rps picks the ground game
   const ids = Object.keys(data.fighters);
   choice = { a: params.get("a") || ids[0], b: params.get("b") || ids[1] };
   fit();
@@ -292,9 +293,12 @@ function rows(v) {
 function setGround(g) {
   const was = ground, b = $("#gnd"), G = st.cfg.ground;
   ground = g || null;
-  frame.classList.toggle("gmode", !!ground);
-  if (!ground) { $("#gpanel")?.remove(); $("#gtend")?.remove(); }
-  if (b) {
+  const m21 = G.mode === "21";
+  frame.classList.toggle("gmode", !!ground && !m21);
+  frame.classList.toggle("g21mode", !!ground && m21);
+  if (!ground) { $("#gpanel")?.remove(); $("#gtend")?.remove(); $("#g21")?.remove(); }
+  if (b && m21) b.innerHTML = "";
+  else if (b) {
     b.className = ground ? (ground.top === "a" ? "good" : "bad") : "";
     b.innerHTML = ground ? `<span>${ground.top === "a" ? "你在上位" : "你被壓在下面"}</span><span class="lad">${G.layerNames.map((n, i) => `<i class="${i + 1 === ground.layer ? "on" : ""}">${n}</i>`).join("")}</span><small>第 ${Math.min(ground.beat, G.beats)}／${G.beats} 拍</small>` : "";
   }
@@ -346,8 +350,9 @@ async function showEvent(e, prev) {
     case "slip": { const n = el(e.uid), p = n && pos(n); rows(e.view); act(sideOf(e.view, e.uid), "slip"); float(p, "閃開！", "buff"); return 300; }
     case "sub": float(el(e.uid) && pos(el(e.uid)), "降伏！", "dmg"); return 280;
     case "weaken": rows(e.view); float(el(e.uid) && pos(el(e.uid)), e.lasting ? "腿傷：攻擊下降" : "攻擊下降", "dmg"); return 240;
-    case "ground": float(el(e.uid) && pos(el(e.uid)), "抱摔成功", "buff"); act(e.s, "attack", "grap"); rows(e.view); say(e.s === "a" ? "帶到地面！你在上位" : "被帶到地面！你在下面", e.s === "a" ? "good" : "bad", "地面猜拳：每拍暗選一招，同時翻開"); return 1200;
+    case "ground": float(el(e.uid) && pos(el(e.uid)), "抱摔成功", "buff"); act(e.s, "attack", "grap"); rows(e.view); say(e.s === "a" ? "帶到地面！你在上位" : "被帶到地面！你在下面", e.s === "a" ? "good" : "bad", st.cfg.ground.mode === "21" ? "" : "地面猜拳：每拍暗選一招，同時翻開"); return 1200;
     case "gbeat": return gbeat(e);
+    case "g21deal": case "g21hit": case "g21stand": case "g21end": case "g21cash": case "g21deep": return g21Event(e);
     case "stuffed": float(el(e.uid) && pos(el(e.uid)), "防摔！", "buff"); say(e.s === "a" ? "你擋下了抱摔" : "他擋下了抱摔", e.s === "a" ? "good" : "bad", "防摔牌還在場上，抱摔就不會成功"); return 700;
     case "standup": rows(e.view); if (e.uid) float(el(e.uid) && pos(el(e.uid)), "起身", "buff"); say(e.uid ? (e.s === "a" ? "你站回來了" : "他站回來了") : "站起來了", "", e.uid ? "" : "回到站立"); return 800;
     case "stun": rows(e.view); float(el(e.uid) && pos(el(e.uid)), "被壓制", "dmg"); return 240;
@@ -467,12 +472,112 @@ function pickGround(o) {
   });
 }
 
+// ---------- the ground game, blackjack style (ground.mode "21") ----------
+// Drawn from the snapshot each event carries, so the screen never runs ahead of the engine. You are always on the left.
+const G21 = { open: false, fresh: null, res: null, stamp: null, cap: "", capCls: "" };
+const SCALE21 = 24, pc21 = (n) => (Math.max(0, Math.min(SCALE21, n)) / SCALE21 * 100).toFixed(1) + "%";
+const VERB = { top: { hit: "加壓", stand: "穩住", role: "上位・壓制", sum: "壓制" }, bottom: { hit: "掙扎", stand: "撐住", role: "下位・掙脫", sum: "掙脫" } };
+function draw21(g) {
+  if (!g || !g.hands) return;
+  let n = $("#g21");
+  if (!n) { n = document.createElement("div"); n.id = "g21"; frame.appendChild(n); }
+  const X = st.cfg.ground21, G = st.cfg.ground, I = g.info, top = g.top, open = G21.open;
+  const total = (s) => g.hands[s].reduce((a, v) => a + v, 0) + I.bonus[s];
+  const side = (s) => {
+    const me = s === "a", role = top === s ? "top" : "bottom", V = VERB[role], cs = g.hands[s], hide = !me && !open, tot = total(s), known = hide ? tot - cs[1] : tot, bust = I.bust[s];
+    const over = !hide && tot > bust, res = G21.res;
+    const cls = !res || hide ? "" : over ? "bad" : res.win === s ? "win" : "";
+    const cards = cs.map((v, i) => (hide && i === 1 ? `<div class="c down">?</div>` : `<div class="c ${me && i === 1 && !open ? "hid" : ""} ${G21.fresh === s && i === cs.length - 1 && i > 1 ? "new" : ""}">${v}</div>`)).join("") + (I.bonus[s] ? `<div class="bonus">+${I.bonus[s]}<small>${KW[X.startKw]}</small></div>` : "");
+    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? `還能要 ${X.hits - g.hits[s]} 張` : role === "bottom" ? "之後才動" : "";
+    const tag = over ? `<em class="ovr">超過 ${bust}</em>` : res && !hide && res.win && res.gap ? `<em class="${res.win === s ? "won" : ""}">${res.win === s ? "贏" : "輸"} ${res.gap}</em>` : `<em class="${bust > X.bust ? "v22" : ""}">爆牌線 ${bust}</em>`;
+    // the opponent's real number: what you show him changes it when he is underneath
+    let tell = "", th = 0;
+    if (!me && !open) {
+      th = g21Threshold(st, "b", role, total("a") - g.hands.a[1]);
+      tell = `<div class="tell">他低於 <b>${th}</b> 會再${V.hit}<small>${g.stood.b ? `他停了＝約 ${th} 以上` : `真實數字 ±${X.ai.jitter}`}</small></div>`;
+    }
+    const chips = [];
+    if (role === "top") { if (I.bonus[s]) chips.push([KW[X.startKw], `起手 +${I.bonus[s]}`]); if (I.subAt < X.bust) chips.push([KW[X.subKw], `${I.subAt} 也算降伏`]); }
+    else if (bust > X.bust) chips.push([KW[X.upKw], `爆牌線 ${bust}`]);
+    return `<div class="side ${me ? "you" : "foe"}"><h4><i>${me ? "你" : "他"}</i>${V.role}<small>${left}</small></h4><div class="cards">${cards}</div>
+      <div class="sum"><b class="${hide ? "q" : cls}">${hide ? known + "＋？" : tot}</b><span>${V.sum}</span>${tag}</div>
+      <div class="gauge"><div class="red" style="left:${pc21(bust)}"></div><div class="fill" style="width:${pc21(known)}"></div>${hide ? `<div class="unk" style="left:${pc21(known + 1)};width:${pc21(Math.min(X.max - 1, SCALE21 - known - 1))}"></div>` : ""}<div class="bust" style="left:${pc21(bust)}"></div>${th ? `<div class="th" style="left:${pc21(th)}"></div>` : ""}</div>
+      <div class="gl">${th ? `<i class="t" style="left:${pc21(th)}">${th}</i>` : ""}<i class="b" style="left:${pc21(bust)}">爆 ${bust}</i></div>${tell}
+      <div class="chips">${chips.length ? chips.map(([k, d]) => `<span>${k}<u>${d}</u></span>`).join("") : `<span class="none">沒有地面牌</span>`}</div></div>`;
+  };
+  const lad = ["站起來", ...G.layerNames].map((name, i) => `<div class="${i ? "" : "out"} ${i === g.layer ? "on" : ""}"><span>${name}${i ? `<u>×${X.layerMul[i - 1]}</u>` : ""}</span>${i === g.layer ? `<span class="tag">第 ${g.beat}／${X.hands} 手</span>` : ""}</div>`).join("");
+  n.innerHTML = `<div class="lad">${lad}</div>${side("a")}${side("b")}${G21.stamp ? `<div class="stamp ${G21.stamp[1]}">${G21.stamp[0]}</div>` : ""}<div class="cap ${G21.capCls}">${G21.cap}</div><div class="act"></div>`;
+}
+/** Play one event of the blackjack ground game. */
+function g21Event(e) {
+  const g = e.view.ground, X = st.cfg.ground21, names = st.cfg.ground.layerNames, who = (s) => (s === "a" ? "你" : "他");
+  const hurt = (s, dmg) => { setHp(e.hp); $("#hud" + s)?.classList.add("hurt"); act(E.other(s), "attack", "grap"); act(s, e.hp[s] <= 0 ? "down" : "hit"); float(fighterPos(s), `−${dmg}`, "dmg"); };
+  switch (e.t) {
+    case "g21deal":
+      Object.assign(G21, { open: false, fresh: null, res: null, stamp: null, capCls: "", cap: e.top === "a" ? `${names[e.layer - 1]}：越接近 ${X.bust} 越穩，<b>超過就被他滑出去</b>` : `${names[e.layer - 1]}：你的總和<b>贏過他</b>才能脫出一層` });
+      rows(e.view); draw21(g);
+      say(e.top === "a" ? "你在上位，你先決定" : "你被壓在下位，他先決定", e.top === "a" ? "good" : "bad");
+      return 900;
+    case "g21hit": {
+      const role = g.top === e.s ? "top" : "bottom";
+      G21.fresh = e.s; draw21(g);
+      say(`${who(e.s)}${VERB[role].hit}：抽到 ${e.card}`, e.s === "a" ? "good" : "bad");
+      act(e.s, "attack", "grap");
+      return 900;
+    }
+    case "g21stand": { const role = g.top === e.s ? "top" : "bottom"; G21.fresh = null; draw21(g); say(`${who(e.s)}${VERB[role].stand}了`, e.s === "a" ? "good" : "bad"); return 700; }
+    case "g21end": {
+      const bot = E.other(e.top), win = e.res === "tie" ? null : e.res === "bottom" ? bot : e.top, mine = win === "a", t = e.totals, score = `${t.a} 對 ${t.b}`;
+      G21.open = true; G21.fresh = null;
+      G21.res = { win, gap: e.res === "top" || e.res === "sub" ? (e.why === "bust" ? 0 : e.gap) : e.why === "bust" ? 0 : Math.abs(t.a - t.b) };
+      if (e.res === "tie") { G21.stamp = ["平手", "gold"]; G21.cap = `${score}，裁判叫停，<b>站起來</b>`; }
+      else if (e.res === "sub") { G21.stamp = ["降伏！", mine ? "gold" : ""]; G21.cap = `${who(e.top)}鎖死了，<b>${who(bot)}耐久 −${e.dmg}</b>`; }
+      else if (e.res === "top") {
+        G21.stamp = [e.why === "bust" ? "力氣放盡" : "壓住了", mine ? "gold" : ""];
+        G21.cap = (e.why === "bust" ? `${who(bot)}爆牌，差距算 ${e.gap}` : `${score}，差距 ${e.gap}`) + ` ÷${X.div} 進位 × ${names[e.layer - 1]} ${X.layerMul[e.layer - 1]} ＝ <b>${e.cash}</b>`;
+      } else {
+        G21.stamp = [e.why === "bust" ? "壓過頭" : "脫出！", bot === "a" ? "good" : ""];
+        G21.cap = `${e.why === "bust" ? `${who(e.top)}爆牌` : score}，${who(bot)}脫出一層：${e.to >= 1 ? `${names[e.layer - 1]} → <b>${names[e.to - 1]}</b>，地面繼續` : "<b>站起來</b>"}`;
+      }
+      G21.capCls = win === "b" ? "red" : "";
+      // show the hand as it was decided: after an escape the snapshot is already the next position
+      const snap = structuredClone(g);
+      if (e.res === "bottom") { snap.layer = e.layer; snap.beat = Math.max(1, snap.beat - 1); }
+      draw21(snap);
+      say(win ? (mine ? "這手你贏" : "這手他贏") : "平手", win ? (mine ? "good" : "bad") : "");
+      if (e.dmg) hurt(bot, e.dmg);
+      return 2400;
+    }
+    case "g21cash":
+      G21.stamp = null; G21.capCls = e.s === "b" ? "red" : ""; G21.cap = `${who(e.s)}砸下去，<b>${who(E.other(e.s))}耐久 −${e.dmg}</b>`; draw21(g);
+      hurt(E.other(e.s), e.dmg);
+      say(e.s === "a" ? "砸下去！" : "他砸下來", e.s === "a" ? "good" : "bad");
+      return 1500;
+    case "g21deep": say(e.s === "a" ? `過腿！到${names[e.layer - 1]}` : `他過腿到${names[e.layer - 1]}`, e.s === "a" ? "good" : "bad"); act(e.s, "attack", "grap"); return 900;
+  }
+  return 0;
+}
+/** Your decision: two buttons under the cage. */
+function pick21(o) {
+  if (speed === 0) return Promise.resolve(g21Smart(st, "a"));
+  const X = st.cfg.ground21, G = st.cfg.ground, v = E.g21View(st, "a"), V = VERB[v.role], box = $("#g21 .act");
+  if (!box) return Promise.resolve(o.actions[0]);
+  return new Promise((res) => {
+    const btn = { hit: ["hit", V.hit, "要牌・再抽 1 張"], stand: ["stand", V.stand, `收手・停在 ${v.mine.total}`],
+      cash: ["cash", `砸下去　打他 ${v.cash}`, "兌現・結束這段地面"], deeper: ["deep", `過腿　→ ${G.layerNames[v.layer] || ""} ×${X.layerMul[v.layer] || ""}`, `再賭一手・輸了這 ${v.cash} 點就沒了`] };
+    box.innerHTML = o.actions.map((a) => `<button class="b ${btn[a][0]}" data-a="${a}"><b>${btn[a][1]}</b><small>${btn[a][2]}</small></button>`).join("");
+    box.querySelectorAll("button").forEach((b) => (b.onclick = () => { box.replaceChildren(); res(b.dataset.a); }));
+    if (o.phase === "decide") say("壓住了：砸下去，還是過腿？", "good");
+    else say(`輪到你：${V.hit}或${V.stand}`, v.role === "top" ? "good" : "bad");
+  });
+}
+
 async function clash(id) {
   aiShop(st, "b");
   frame.innerHTML = `<div class="bgart"></div>${hud()}
     <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
     <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
-  ground = null; frame.classList.remove("gmode");
+  ground = null; frame.classList.remove("gmode", "g21mode");
   pose("a", "idle"); pose("b", "idle");
   $("#quit").onclick = pickScreen;
   const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);
@@ -491,6 +596,15 @@ async function clash(id) {
   };
   await flush();
   while (id === runId && st.phase === "clash") {
+    const o21 = E.g21Options(st);
+    if (o21) {
+      const m = o21.turn === "a" ? await pick21(o21) : g21Pick(st, "b");
+      if (id !== runId) return;
+      E.chooseGround(st, o21.turn, m);
+      E.step(st);
+      await flush();
+      continue;
+    }
     const go = E.groundOptions(st);
     if (go) {
       const m = await pickGround(go);
