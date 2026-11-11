@@ -234,9 +234,10 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #g21{position:absolute;inset:0;z-index:2;pointer-events:none}
 #g21>*{position:absolute}
 #g21 .you{--c:var(--blue)} #g21 .foe{--c:var(--red)}
-#g21 .lad{left:212px;width:420px;top:46px;height:26px;display:flex;gap:3px}
-#g21 .lad div{flex:1;transform:skewX(-12deg);background:#151b27;border:1px solid var(--line);color:#6f7a90;font-size:12px;font-weight:700;text-align:center;line-height:24px;position:relative}
+#g21 .lad{left:196px;width:452px;top:43px;height:33px;display:flex;gap:3px}
+#g21 .lad div{flex:1;transform:skewX(-12deg);background:#151b27;border:1px solid var(--line);color:#6f7a90;font-size:12px;font-weight:700;text-align:center;line-height:15px;padding-top:2px;position:relative}
 #g21 .lad div>*{display:inline-block;transform:skewX(12deg)}
+#g21 .lad small{display:block;font-size:9.5px;font-weight:600;line-height:12px;opacity:.85;white-space:nowrap}
 #g21 .lad u{text-decoration:none;font-weight:400;margin-left:4px}
 #g21 .lad .out{flex:.8;border-style:dashed}
 #g21 .lad .on{background:linear-gradient(#f5c542,#c98f0c);border-color:#ffe08a;color:#1d1500}

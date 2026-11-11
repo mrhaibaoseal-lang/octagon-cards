@@ -135,7 +135,8 @@ const ai21 = (st, s) => ({ ...st.cfg.ground21.ai, ...(st[s].f.ai?.ground21 || {}
 export function g21Threshold(st, s, role, foeShown = 0, cards = 2) {
   const A = ai21(st, s), X = st.cfg.ground21;
   const th = role === "top" ? A.hitBelow.top : Math.min(A.standCap, Math.max(A.hitBelow.bottom, foeShown + 2));
-  return X.fiveWin && cards === X.hits + 1 ? Math.max(th, A.fiveBelow) : th;
+  const limit = role === "top" || !st.c?.ground ? X.hits : E.g21Layer(st).botHits ?? X.hits; // pinned at this layer he may take fewer
+  return X.fiveWin && limit >= X.hits && cards === X.hits + 1 ? Math.max(th, A.fiveBelow) : th;
 }
 /** The opponent's decision: hit below its threshold (give or take the jitter), else stand; after a win, cash in unless it pays less than deepBelow. */
 export function g21Pick(st, s) {
@@ -153,22 +154,33 @@ export function g21Smart(st, s) {
   if (!v || v.turn !== s) return null;
   const X = st.cfg.ground21, G = st.cfg.ground, foe = s === "a" ? "b" : "a", F = ai21(st, foe), ODDS = E.g21Odds(st);
   const cash = (gap, layer) => E.g21Cash(st, gap, layer);
-  // what a fresh hand one layer deeper is worth to the top man: about 60% to win it (the head start and moving first help), by an average gap
+  const after = X.hands - v.hand, canDeep = v.layer < G.layers && after > 0;
+  // what sitting on top at `layer` with h hands still to play is worth: about 45% of hands won and cashed, by an average gap
+  const pos = (layer, h) => (layer > G.layers || h <= 0 ? 0 : h * 0.45 * cash(6, layer));
+  // without stay a cash ends the ground, so the only future is the hand one layer deeper
   const fresh = (layer) => (layer > G.layers ? 0 : 0.6 * Math.max(cash(6, layer), fresh(layer + 1)));
-  const canDeep = v.layer < G.layers && v.hand < X.hands;
   /** What winning by `gap` is worth to the top man with total `tt` (bottom total tb; null = he bust). */
-  const winVal = (gap, tt, tb) => (tt >= v.subAt && tb !== X.bust ? Math.max(X.submit, cash(gap, v.layer)) : Math.max(cash(gap, v.layer), canDeep ? fresh(v.layer + 1) : 0));
-  if (v.phase === "decide") return v.actions.includes("deeper") && fresh(v.layer + 1) > v.cash ? "deeper" : "cash";
+  const winVal = (gap, tt, tb) => {
+    if (tt >= v.subAt && tb !== X.bust) return Math.max(X.submit, cash(gap, v.layer));
+    return X.stay ? Math.max(cash(gap, v.layer) + pos(v.layer, after), canDeep ? pos(v.layer + 1, after) : 0) : Math.max(cash(gap, v.layer), canDeep ? fresh(v.layer + 1) : 0);
+  };
+  if (v.phase === "decide") {
+    if (!v.actions.includes("deeper")) return "cash";
+    return (X.stay ? pos(v.layer + 1, after) > v.cash + pos(v.layer, after) : fresh(v.layer + 1) > v.cash) ? "deeper" : "cash";
+  }
+  const full = X.hits + 2; // a hand this long that has not gone over wins outright (fiveWin)
   const SLIP = 4; // what getting out one layer is worth, in damage points
   if (v.role === "top") {
     // the bottom man will play his threshold against what I show him; his hidden card is any number
     const hidden = v.mine.cards[1], shownTo = (total) => total - hidden;
     // where the bottom man ends up from total t with k cards still to take: a total, "bust", or "five" (a full hand, which wins)
+    const lim = v.foe.hitsLeft;
     const botEnd = (shown, bust, t, k, p, out) => {
-      if (k === 0 || t >= g21Threshold(st, foe, "bottom", shown, 2 + X.hits - k)) return void (out[t] = (out[t] || 0) + p);
-      for (const [d, q] of ODDS) { const n = t + d; if (n > bust) out.bust = (out.bust || 0) + p * q; else if (k === 1 && X.fiveWin) out.five = (out.five || 0) + p * q; else botEnd(shown, bust, n, k - 1, p * q, out); }
+      const cards = 2 + lim - k;
+      if (k === 0 || t >= g21Threshold(st, foe, "bottom", shown, cards)) return void (out[t] = (out[t] || 0) + p);
+      for (const [d, q] of ODDS) { const n = t + d; if (n > bust) out.bust = (out.bust || 0) + p * q; else if (X.fiveWin && cards + 1 >= full) out.five = (out.five || 0) + p * q; else botEnd(shown, bust, n, k - 1, p * q, out); }
     };
-    const memo = new Map(), ends = (shown, start) => { const key = shown * 100 + start; if (!memo.has(key)) { const out = {}; botEnd(shown, v.foe.bust, start, X.hits, 1, out); memo.set(key, out); } return memo.get(key); };
+    const memo = new Map(), ends = (shown, start) => { const key = shown * 100 + start; if (!memo.has(key)) { const out = {}; botEnd(shown, v.foe.bust, start, lim, 1, out); memo.set(key, out); } return memo.get(key); };
     const stood = new Map(), stand = (T) => {
       if (stood.has(T)) return stood.get(T);
       let val = 0;
@@ -179,7 +191,8 @@ export function g21Smart(st, s) {
       return val;
     };
     const best = (T, k) => Math.max(stand(T), k > 0 ? hit(T, k) : -Infinity);
-    const hit = (T, k) => { let val = 0; for (const [d, q] of ODDS) val += q * (T + d > v.mine.bust ? -SLIP : k === 1 && X.fiveWin ? winVal(X.fiveGap, T + d, null) : best(T + d, k - 1)); return val; };
+    const n0 = v.mine.cards.length + v.mine.hitsLeft; // cards held once every hit is taken
+    const hit = (T, k) => { let val = 0; for (const [d, q] of ODDS) val += q * (T + d > v.mine.bust ? -SLIP : X.fiveWin && n0 - k + 1 >= full ? winVal(X.fiveGap, T + d, null) : best(T + d, k - 1)); return val; };
     return v.actions.includes("hit") && hit(v.mine.total, v.mine.hitsLeft) > stand(v.mine.total) ? "hit" : "stand";
   }
   // bottom: the top man has finished. His hidden card is whatever keeps him under the line; if he chose to stop, he is probably at or over his threshold
@@ -194,7 +207,8 @@ export function g21Smart(st, s) {
   const stand = (t) => post.reduce((n, [T, w]) => n + (w / sum) * (t > T ? SLIP : t === T ? 0 : -winVal(T - t, T, t)), 0);
   const lose = post.reduce((n, [T, w]) => n + (w / sum) * -winVal(X.bustGap, T, null), 0);
   const best = (t, k) => Math.max(stand(t), k > 0 ? hit(t, k) : -Infinity);
-  const hit = (t, k) => { let val = 0; for (const [d, q] of ODDS) val += q * (t + d > v.mine.bust ? lose : k === 1 && X.fiveWin ? SLIP : best(t + d, k - 1)); return val; };
+  const n0 = v.mine.cards.length + v.mine.hitsLeft;
+  const hit = (t, k) => { let val = 0; for (const [d, q] of ODDS) val += q * (t + d > v.mine.bust ? lose : X.fiveWin && n0 - k + 1 >= full ? SLIP : best(t + d, k - 1)); return val; };
   return v.actions.includes("hit") && hit(v.mine.total, v.mine.hitsLeft) > stand(v.mine.total) ? "hit" : "stand";
 }
 /** Hit or stand on a coin flip, cash or go deeper on a coin flip. */

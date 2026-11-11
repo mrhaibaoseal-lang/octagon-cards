@@ -409,7 +409,8 @@ function groundBeat(st, mv) {
 // ---------- the ground game, blackjack style (ground.mode "21"; numbers in rules/bg ground21) ----------
 // Each hand both sides get two numbers (1..10 drawn with replacement, weighted like a real deck: ground21.deck). The top man hits or stands first, then the bottom man.
 // Over the bust line loses the hand. Otherwise the higher total wins: the bottom man slips out one layer and the ground goes on;
-// the top man either cashes the gap in as damage (times the layer) or passes one layer deeper and plays another hand for more.
+// the top man either cashes the gap in as damage (times the layer) and stays where he is, or passes one layer deeper without hitting.
+// Each layer may tighten the bottom man (ground21.layerRules: fewer cards to take, a lower bust line).
 // Each side hides its second card from the other until the hand is decided: g21View(st, s) is what side s may know.
 const is21 = (st) => st.cfg.ground.mode === "21";
 /** The odds of each number, as [[value, chance], ...]: ground21.deck gives a weight per value 1..10 (like a real deck, where 10 / J / Q / K all count 10). */
@@ -429,7 +430,7 @@ function deal21(st) {
   g.hands = { a: [draw21(st), draw21(st)], b: [draw21(st), draw21(st)] };
   g.hits = { a: 0, b: 0 }; g.stood = { a: false, b: false }; g.phase = "top"; g.gap = 0;
   // what the board gives each side this hand (the cards cannot change while they grapple): for the screen
-  g.info = { bonus: { a: g21Bonus(st, "a"), b: g21Bonus(st, "b") }, bust: { a: g21Bust(st, "a"), b: g21Bust(st, "b") }, subAt: g21SubAt(st) };
+  g.info = { bonus: { a: g21Bonus(st, "a"), b: g21Bonus(st, "b") }, bust: { a: g21Bust(st, "a"), b: g21Bust(st, "b") }, hits: { a: g21Hits(st, "a"), b: g21Hits(st, "b") }, subAt: g21SubAt(st) };
   ev(st, "g21deal", { top: g.top, layer: g.layer, hand: g.beat });
 }
 /** The top man's head start: one point for each of his ground cards (a golden one counts double), up to startCap. */
@@ -439,8 +440,16 @@ export function g21Bonus(st, s) {
   return Math.min(X.startCap, alive(st.c[s]).filter((u) => u.kw[X.startKw]).reduce((n, u) => n + mulOf(st, u), 0));
 }
 export const g21Total = (st, s) => st.c.ground.hands[s].reduce((n, v) => n + v, 0) + g21Bonus(st, s);
-/** The total side s may not go over: the bottom man gets one more with a get-up card. */
-export const g21Bust = (st, s) => { const X = st.cfg.ground21; return st.c.ground.top !== s && hasKw(st, s, X.upKw) ? X.upBust : X.bust; };
+/** What this layer does to the bottom man: { botHits, botBust } (either may be missing). */
+export const g21Layer = (st, layer = st.c.ground.layer) => st.cfg.ground21.layerRules?.[layer - 1] || {};
+/** The total side s may not go over: the layer may lower it for the bottom man, and a get-up card gives him upAdd more. */
+export const g21Bust = (st, s) => {
+  const X = st.cfg.ground21;
+  if (st.c.ground.top === s) return X.bust;
+  return (g21Layer(st).botBust ?? X.bust) + (hasKw(st, s, X.upKw) ? X.upAdd : 0);
+};
+/** How many cards side s may still ask for in a hand: hits, or fewer for the bottom man where the layer pins him. */
+export const g21Hits = (st, s) => (st.c.ground.top === s ? st.cfg.ground21.hits : g21Layer(st).botHits ?? st.cfg.ground21.hits);
 /** The total the top man needs for a submission: the bust line, or lower with a submission card. */
 export const g21SubAt = (st) => { const X = st.cfg.ground21; return hasKw(st, st.c.ground.top, X.subKw) ? X.subAt : X.bust; };
 /** Damage for cashing in a win by `gap` on `layer`. */
@@ -450,8 +459,8 @@ export function g21Options(st) {
   const c = st.c, g = c?.ground, X = st.cfg.ground21;
   if (st.phase !== "clash" || !g || c.ko || !is21(st)) return null;
   const turn = g.phase === "bottom" ? other(g.top) : g.top;
-  const actions = g.phase === "decide" ? (g.layer < st.cfg.ground.layers && g.beat < X.hands ? ["cash", "deeper"] : ["cash"]) : g.hits[turn] < X.hits ? ["hit", "stand"] : ["stand"];
-  return { top: g.top, layer: g.layer, hand: g.beat, hands: X.hands, phase: g.phase, turn, actions };
+  const actions = g.phase === "decide" ? (g.layer < st.cfg.ground.layers && g.beat < X.hands ? ["cash", "deeper"] : ["cash"]) : g.hits[turn] < g21Hits(st, turn) ? ["hit", "stand"] : ["stand"];
+  return { top: g.top, layer: g.layer, hand: g.beat, hands: X.hands, last: g.beat >= X.hands, phase: g.phase, turn, actions };
 }
 /** What side s can see of the hand: everything of its own, and the other side's cards except the hidden second one (shown once the hand is decided). */
 export function g21View(st, s) {
@@ -460,8 +469,8 @@ export function g21View(st, s) {
   const g = st.c.ground, X = st.cfg.ground21, f = other(s), open = g.phase === "decide";
   const shown = g.hands[f].filter((_, i) => open || i !== 1);
   return { ...o, role: g.top === s ? "top" : "bottom", subAt: g21SubAt(st), gap: g.gap, cash: open ? g21Cash(st, g.gap, g.layer) : 0,
-    mine: { cards: [...g.hands[s]], bonus: g21Bonus(st, s), total: g21Total(st, s), bust: g21Bust(st, s), hitsLeft: X.hits - g.hits[s], stood: g.stood[s] },
-    foe: { shown, hidden: !open, bonus: g21Bonus(st, f), shownSum: shown.reduce((n, v) => n + v, 0) + g21Bonus(st, f), bust: g21Bust(st, f), hitsLeft: X.hits - g.hits[f], stood: g.stood[f] } };
+    mine: { cards: [...g.hands[s]], bonus: g21Bonus(st, s), total: g21Total(st, s), bust: g21Bust(st, s), hitsLeft: g21Hits(st, s) - g.hits[s], stood: g.stood[s] },
+    foe: { shown, hidden: !open, bonus: g21Bonus(st, f), shownSum: shown.reduce((n, v) => n + v, 0) + g21Bonus(st, f), bust: g21Bust(st, f), hitsLeft: g21Hits(st, f) - g.hits[f], stood: g.stood[f] } };
 }
 function run21(st) {
   const c = st.c, g = c.ground, X = st.cfg.ground21, o = g21Options(st), s = o.turn;
@@ -471,16 +480,18 @@ function run21(st) {
     if (act === "deeper") { g.layer++; g.beat++; ev(st, "g21deep", { s, layer: g.layer }); return deal21(st); }
     const dmg = g21Cash(st, g.gap, g.layer);
     hurt21(st, dmg);
-    ev(st, "g21cash", { s, dmg, layer: g.layer });
-    return end21(st);
+    g.beat++;
+    const stay = X.stay && g.beat <= X.hands && st[other(g.top)].hp > 0; // he pounds and keeps the position: another hand on this layer
+    ev(st, "g21cash", { s, dmg, layer: g.layer, stay });
+    return stay ? deal21(st) : end21(st);
   }
   if (act === "hit") {
     const card = draw21(st);
     g.hands[s].push(card); g.hits[s]++;
     ev(st, "g21hit", { s, card });
     if (g21Total(st, s) > g21Bust(st, s)) return show21(st, s);
-    if (g.hits[s] < X.hits) return;
-    if (X.fiveWin) return show21(st, null, s); // every card he may take and still under the line: the hand is his
+    if (g.hits[s] < g21Hits(st, s)) return;
+    if (X.fiveWin && g.hits[s] >= X.hits) return show21(st, null, s); // a full hand of five and still under the line: the hand is his
   }
   g.stood[s] = true;
   const last = g.phase === "bottom";
@@ -491,6 +502,7 @@ function run21(st) {
 /** The hand is decided: `bust` is the side that went over; `five` the side that filled its hand without going over (it wins whatever the totals); neither = a showdown. */
 function show21(st, bust, five = null) {
   const g = st.c.ground, X = st.cfg.ground21, top = g.top, bot = other(top), tt = g21Total(st, top), tb = g21Total(st, bot);
+  if (!bust && !five) bust = tb > g21Bust(st, bot) ? bot : tt > g21Bust(st, top) ? top : null; // a total over the line at the showdown is a bust too
   const res = five ? (five === top ? "top" : "bottom") : bust ? (bust === top ? "bottom" : "top") : tt > tb ? "top" : tb > tt ? "bottom" : "tie";
   const out = { top, why: five ? "five" : bust ? "bust" : "show", bust, five, totals: { [top]: tt, [bot]: tb }, layer: g.layer };
   if (res === "top") {

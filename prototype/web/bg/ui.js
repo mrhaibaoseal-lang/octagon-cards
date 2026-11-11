@@ -14,7 +14,7 @@ const KW_TEXT = {
   sub: (c) => c.ground.mode === "21" ? `地面：你在上位時，總和 ${c.ground21.subAt} 就算降伏（本來要剛好 ${c.ground21.bust}），傷害 ${c.ground21.submit}` : `地面猜拳：降伏傷害依位置 ${c.ground.moves.sub.hit.byLayer.join(" / ")}（${c.ground.layerNames.join(" / ")}）；你有這張時算深一層`,
   takedown: (c) => c.ground.mode === "21" ? "打中就把這一段帶到地面，你在上位，開始比點數（一段一次）" : `打中就把這一段帶到地面，你在上位，開始最多 ${c.ground.beats} 拍的猜拳（一段一次）。你在下位時轉身逃脫贏了，會翻到上位`,
   sprawl: () => "只要這張還在場上，對手的抱摔都不成功",
-  getup: (c) => c.ground.mode === "21" ? `地面：你在下位時，爆牌線從 ${c.ground21.bust} 變成 ${c.ground21.upBust}` : `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
+  getup: (c) => c.ground.mode === "21" ? `地面：你在下位時，爆牌線 +${c.ground21.upAdd}` : `地面猜拳：你在下位時，爆發起身贏了多脫 ${c.ground.extra} 層`,
   ground: (c) => c.ground.mode === "21" ? `地面：你在上位時，每有一張起手總和 +1（最多 +${c.ground21.startCap}）` : `地面猜拳：你每有一張，砸擊多 ${c.ground.moves.strike.hit.perCard} 傷害`,
   combo: (c) => `前一張出手的也是連段牌：這一下 +${c.combo.atk} 攻擊，可累積到 +${c.combo.atk * c.combo.max}`,
   reach: () => "這張出手時不會被反擊",
@@ -488,7 +488,8 @@ function draw21(g) {
     const over = !hide && tot > bust, res = G21.res;
     const cls = !res || hide ? "" : over ? "bad" : res.win === s ? "win" : "";
     const cards = cs.map((v, i) => (hide && i === 1 ? `<div class="c down">?</div>` : `<div class="c ${me && i === 1 && !open ? "hid" : ""} ${G21.fresh === s && i === cs.length - 1 && i > 1 ? "new" : ""}">${v}</div>`)).join("") + (I.bonus[s] ? `<div class="bonus">+${I.bonus[s]}<small>${KW[X.startKw]}</small></div>` : "");
-    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? (X.fiveWin ? (X.hits - g.hits[s] === 1 ? "再 1 張不爆就贏" : `還能要 ${X.hits - g.hits[s]} 張・滿 ${X.hits + 2} 張不爆就贏`) : `還能要 ${X.hits - g.hits[s]} 張`) : role === "bottom" ? "之後才動" : "";
+    const lim = I.hits?.[s] ?? X.hits, rest = lim - g.hits[s], five = X.fiveWin && lim >= X.hits; // pinned in side control he may take fewer, and cannot reach five
+    const left = open ? "" : g.stood[s] ? "已收手" : g.phase === role ? (five ? (rest === 1 ? "再 1 張不爆就贏" : `還能要 ${rest} 張・滿 ${X.hits + 2} 張不爆就贏`) : `還能要 ${rest} 張`) : role === "bottom" ? "之後才動" : "";
     const tag = over ? `<em class="ovr">超過 ${bust}</em>` : res && !hide && res.win && res.gap ? `<em class="${res.win === s ? "won" : ""}">${res.win === s ? "贏" : "輸"} ${res.gap}</em>` : `<em class="${bust > X.bust ? "v22" : ""}">爆牌線 ${bust}</em>`;
     // the opponent's real number: what you show him changes it when he is underneath
     let tell = "", th = 0;
@@ -505,7 +506,9 @@ function draw21(g) {
       <div class="gl">${th ? `<i class="t" style="left:${pc21(th)}">${th}</i>` : ""}<i class="b" style="left:${pc21(bust)}">爆 ${bust}</i></div>${tell}
       <div class="chips">${chips.length ? chips.map(([k, d]) => `<span>${k}<u>${d}</u></span>`).join("") : `<span class="none">沒有地面牌</span>`}</div></div>`;
   };
-  const lad = ["站起來", ...G.layerNames].map((name, i) => `<div class="${i ? "" : "out"} ${i === g.layer ? "on" : ""}"><span>${name}${i ? `<u>×${X.layerMul[i - 1]}</u>` : ""}</span>${i === g.layer ? `<span class="tag">第 ${g.beat}／${X.hands} 手</span>` : ""}</div>`).join("");
+  // each layer's rule for the bottom man, read from ground21.layerRules
+  const rule = (i) => { const r = X.layerRules?.[i - 1] || {}; return [r.botHits != null && `下位只能要 ${r.botHits} 張`, r.botBust != null && `下位爆牌線 ${r.botBust}`].filter(Boolean).join("・") || "照常"; };
+  const lad = ["站起來", ...G.layerNames].map((name, i) => `<div class="${i ? "" : "out"} ${i === g.layer ? "on" : ""}"><span>${name}${i ? `<u>×${X.layerMul[i - 1]}</u>` : ""}<small>${i ? rule(i) : "脫出半防守"}</small></span>${i === g.layer ? `<span class="tag">第 ${g.beat}／${X.hands} 手</span>` : ""}</div>`).join("");
   n.innerHTML = `<div class="lad">${lad}</div>${side("a")}${side("b")}${G21.stamp ? `<div class="stamp ${G21.stamp[1]}">${G21.stamp[0]}</div>` : ""}<div class="cap ${G21.capCls}">${G21.cap}</div><div class="act"></div>`;
 }
 /** Play one event of the blackjack ground game. */
@@ -550,7 +553,7 @@ function g21Event(e) {
       return 2400;
     }
     case "g21cash":
-      G21.stamp = null; G21.capCls = e.s === "b" ? "red" : ""; G21.cap = `${who(e.s)}砸下去，<b>${who(E.other(e.s))}耐久 −${e.dmg}</b>`; draw21(g);
+      G21.stamp = null; G21.capCls = e.s === "b" ? "red" : ""; G21.cap = `${who(e.s)}砸下去，<b>${who(E.other(e.s))}耐久 −${e.dmg}</b>${e.stay ? `，還壓在${names[e.layer - 1]}` : ""}`; draw21(g);
       hurt(E.other(e.s), e.dmg);
       say(e.s === "a" ? "砸下去！" : "他砸下來", e.s === "a" ? "good" : "bad");
       return 1500;
@@ -565,7 +568,7 @@ function pick21(o) {
   if (!box) return Promise.resolve(o.actions[0]);
   return new Promise((res) => {
     const btn = { hit: ["hit", V.hit, "要牌・再抽 1 張"], stand: ["stand", V.stand, `收手・停在 ${v.mine.total}`],
-      cash: ["cash", `砸下去　打他 ${v.cash}`, "兌現・結束這段地面"], deeper: ["deep", `過腿　→ ${G.layerNames[v.layer] || ""} ×${X.layerMul[v.layer] || ""}`, `再賭一手・輸了這 ${v.cash} 點就沒了`] };
+      cash: ["cash", `砸下去　打他 ${v.cash}`, o.last || !X.stay ? "兌現・結束這段地面" : `兌現・留在${G.layerNames[v.layer - 1]}再來一手`], deeper: ["deep", `過腿　→ ${G.layerNames[v.layer] || ""} ×${X.layerMul[v.layer] || ""}`, `不砸這 ${v.cash} 點・換更深的位置`] };
     box.innerHTML = o.actions.map((a) => `<button class="b ${btn[a][0]}" data-a="${a}"><b>${btn[a][1]}</b><small>${btn[a][2]}</small></button>`).join("");
     box.querySelectorAll("button").forEach((b) => (b.onclick = () => { box.replaceChildren(); res(b.dataset.a); }));
     if (o.phase === "decide") say("壓住了：砸下去，還是過腿？", "good");

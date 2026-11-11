@@ -343,7 +343,7 @@ test("21 ground: a takedown deals two numbers a side, the top man decides first,
   assert.equal(E.g21Options(st).turn, "b");
 });
 
-test("21 ground: the higher total wins; the top man cashes the gap in (half, rounded up, times the layer, capped) and they stand up", () => {
+test("21 ground: the higher total wins; the top man cashes the gap in (half, rounded up, times the layer, capped) and stays on top for another hand", () => {
   for (const [layer, ha, hb, dmg] of [[1, [10, 9], [10, 4], 3], [2, [10, 9], [10, 4], 6], [3, [10, 9], [10, 4], 12], [3, [10, 9], [1, 1], X.cap]]) {
     const st = down21(["cross"], ["cross"], { a: ha, b: hb }, "a", layer), hp = st.b.hp;
     act(st, "a", "stand"); act(st, "b", "stand");
@@ -352,8 +352,52 @@ test("21 ground: the higher total wins; the top man cashes the gap in (half, rou
     assert.equal(E.g21Options(st).phase, "decide");
     act(st, "a", "cash");
     assert.equal(st.b.hp, hp - dmg, `layer ${layer}`);
-    assert.equal(st.c.ground, null);
-    assert.equal(evs(st, "standup").length, 1);
+    assert.equal(last(st, "g21cash").stay, true);
+    assert.deepEqual({ layer: st.c.ground.layer, beat: st.c.ground.beat, phase: st.c.ground.phase, top: st.c.ground.top }, { layer, beat: 2, phase: "top", top: "a" }, "same layer, next hand");
+    assert.equal(evs(st, "g21deal").length, 1);
+    assert.equal(evs(st, "standup").length, 0);
+  }
+  // on the last hand the cash ends the ground
+  const st = down21(["cross"], ["cross"], { a: [10, 9], b: [10, 4] });
+  st.c.ground.beat = X.hands;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.equal(E.g21Options(st).last, true);
+  act(st, "a", "cash");
+  assert.equal(last(st, "g21cash").stay, false);
+  assert.equal(st.c.ground, null);
+  assert.equal(evs(st, "standup").length, 1);
+  // with stay off a cash always ends it (the first version)
+  const off = loadData(); off.config.ground.mode = "21"; off.config.ground21.stay = false;
+  const s2 = E.createGame(off, "poirier", "makhachev", 3); put(s2, "a", ["cross"]); put(s2, "b", ["cross"]); E.startClash(s2);
+  s2.c.ground = { top: "a", layer: 1, beat: 1, hands: { a: [10, 9], b: [10, 4] }, hits: { a: 0, b: 0 }, stood: { a: false, b: false }, phase: "top", gap: 0 };
+  act(s2, "a", "stand"); act(s2, "b", "stand"); act(s2, "a", "cash");
+  assert.equal(s2.c.ground, null);
+});
+
+test("21 ground: each layer pins the bottom man harder: side control lets him take fewer cards, the mount lowers his bust line", () => {
+  const R = X.layerRules;
+  let st = down21(["cross"], ["cross"], { a: [10, 7], b: [5, 5] }, "a", 1);
+  assert.equal(E.g21Hits(st, "b"), X.hits); assert.equal(E.g21Bust(st, "b"), X.bust);
+  st = down21(["cross"], ["cross"], { a: [10, 7], b: [2, 2] }, "a", 2);
+  assert.equal(E.g21Hits(st, "b"), R[1].botHits); assert.equal(E.g21Hits(st, "a"), X.hits, "the top man is not pinned");
+  act(st, "a", "stand");
+  for (let i = 0; i < R[1].botHits; i++) { act(st, "b", "hit"); if (st.c.ground?.phase !== "bottom" || st.c.ground.beat > 1) break; }
+  if (st.c.ground?.phase === "bottom") assert.deepEqual(E.g21Options(st).actions, ["stand"], "no third card in side control");
+  assert.equal(evs(st, "g21end").filter((e) => e.why === "five").length, 0, "he cannot reach five cards there");
+  st = down21(["cross"], ["cross"], { a: [10, 7], b: [10, 10] }, "a", 3);
+  assert.equal(E.g21Bust(st, "b"), R[2].botBust); assert.equal(E.g21Bust(st, "a"), X.bust);
+  st = down21(["cross"], ["shrimp"], { a: [10, 7], b: [10, 10] }, "a", 3);
+  assert.equal(E.g21Bust(st, "b"), R[2].botBust + X.upAdd, "a get-up card still helps under the mount");
+  st = down21(["cross"], ["cross"], { a: [10, 7], b: [10, 10, 1] }, "a", 3);
+  st.c.ground.hits.b = 1;
+  act(st, "a", "stand"); act(st, "b", "stand");
+  assert.deepEqual({ res: last(st, "g21end").res, why: last(st, "g21end").why }, { res: "top", why: "bust" }, "21 is over the line under the mount");
+  // the screen gets the same limits with every deal
+  const g = runGame(d21, "makhachev", "poirier", 77);
+  for (const e of g.log.filter((x) => x.t === "g21deal")) {
+    const gi = e.view.ground, bot = gi.top === "a" ? "b" : "a";
+    assert.equal(gi.info.hits[bot], R[e.layer - 1].botHits ?? X.hits);
+    assert.equal(gi.info.hits[gi.top], X.hits);
   }
 });
 
@@ -432,13 +476,13 @@ test("21 ground: the numbers come in a real deck's odds (10 / J / Q / K all coun
 test("21 ground: a full hand that has not gone over wins outright, whatever the totals; the opponent reaches for it one card short", () => {
   assert.equal(X.fiveWin, true);
   // the bottom man fills his hand: he is out a layer although the top man holds more
-  let st = down21(["cross"], ["cross"], { a: [10, 10], b: [1, 1, 1, 1] }, "a", 2);
+  let st = down21(["cross"], ["cross"], { a: [10, 10], b: [1, 1, 1, 1] }, "a", 1);
   st.c.ground.hits.b = X.hits - 1;
   act(st, "a", "stand"); act(st, "b", "hit");
   let e = last(st, "g21end");
-  assert.deepEqual({ res: e.res, why: e.why, five: e.five, to: e.to }, { res: "bottom", why: "five", five: "b", to: 1 });
+  assert.deepEqual({ res: e.res, why: e.why, five: e.five, to: e.to }, { res: "bottom", why: "five", five: "b", to: 0 });
   assert.ok(e.totals.b < e.totals.a, "he won with the smaller total");
-  assert.equal(st.c.ground.layer, 1);
+  assert.equal(st.c.ground, null, "out of the first layer: on his feet");
   // the top man fills his: the bottom man never gets to answer, and the win counts as a gap of fiveGap
   st = down21(["cross"], ["cross"], { a: [1, 1, 1, 1], b: [10, 10] }, "a", 2);
   st.c.ground.hits.a = X.hits - 1;
@@ -461,14 +505,14 @@ test("21 ground: a full hand that has not gone over wins outright, whatever the 
   assert.equal(st.c.ground.phase, "bottom");
 });
 
-test("21 ground: the cards on the board change the hand: ground cards give the top man a head start, a submission card finishes on 20, a get-up card moves the bottom man's line to 22", () => {
+test("21 ground: the cards on the board change the hand: ground cards give the top man a head start, a submission card finishes on 20, a get-up card moves the bottom man's line up one", () => {
   let st = down21(["elbows", "groundpound"], ["cross"], { a: [5, 5], b: [5, 5] });
   assert.equal(E.g21Bonus(st, "a"), 2); assert.equal(E.g21Total(st, "a"), 12);
   assert.equal(E.g21Bonus(st, "b"), 0, "only the top man gets it");
   st = down21(["elbows", "elbows", "groundpound", "groundpound"], ["cross"], { a: [5, 5], b: [5, 5] });
   assert.equal(E.g21Bonus(st, "a"), X.startCap, "capped");
   st = down21(["cross"], ["shrimp"], { a: [10, 9], b: [10, 10, 2] });
-  assert.equal(E.g21Bust(st, "b"), X.upBust); assert.equal(E.g21Bust(st, "a"), X.bust);
+  assert.equal(E.g21Bust(st, "b"), X.bust + X.upAdd); assert.equal(E.g21Bust(st, "a"), X.bust);
   st.c.ground.hits.b = 1;
   act(st, "a", "stand"); act(st, "b", "stand");
   assert.equal(last(st, "g21end").res, "bottom", "22 is still alive with a get-up card, and it wins");
