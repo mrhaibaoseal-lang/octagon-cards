@@ -27,7 +27,7 @@ const loadImage = (src) => new Promise((r) => { const i = new Image(); i.onload 
 async function loadArt(ids) {
   let manifest = {};
   try {
-    const res = await fetch("assets/private/manifest.json");
+    const res = await fetch("../assets/private/manifest.json");
     if (res.ok) manifest = await res.json();
   } catch {}
   for (const id of ids) {
@@ -36,7 +36,7 @@ async function loadArt(ids) {
     const meta = manifest.fighters?.[id];
     if (!meta) continue;
     for (const pose of ["idle", "punch", "kick", "hit", "down"]) {
-      const img = await loadImage(`assets/private/${id}/${pose}.png`);
+      const img = await loadImage(`../assets/private/${id}/${pose}.png`);
       if (img) art[id].poses[pose] = { img, anchorX: meta[pose]?.anchorX ?? img.width / 2 };
     }
     art[id].h = meta.idle?.h ?? 200;

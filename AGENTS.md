@@ -8,7 +8,7 @@
 - 戰鬥先在 `prototype/web/` 驗證，通過後移植成完全原生的 Swift，不用網頁殼。
 - 規則與數值放 `prototype/web/rules/*.json`；引擎不比對牌名、不寫死數值。模擬必須跑和遊戲相同的引擎、手牌與 AI。
 - 新系統要答得出「讓玩家多了什麼決定」，答不出就不加。對手傾向顯示的是真實數字。
-- 美術：約 300 人；2026-11-08 起改為「共用 3D 骨架＋Gemini 畫的皮膚與 2D 頭 → 渲染成像素精靈圖（A＋卡通光影，量級白模）」，見 `pipeline/model3d/README.md`。不再嘗試：程式畫身體、手寫像素、Q 版、照片切割綁骨架、照片投影到 3D、臉畫在 3D 頭上。提示詞不放 UFC 商標。
+- 美術：1.0 先做 40～50 人，之後逐步增加（2026-11-13 使用者決定，原定約 300 人）；2026-11-08 起改為「共用 3D 骨架＋Gemini 畫的皮膚與 2D 頭 → 渲染成像素精靈圖（A＋卡通光影，量級白模）」，見 `pipeline/model3d/README.md`。不再嘗試：程式畫身體、手寫像素、Q 版、照片切割綁骨架、照片投影到 3D、臉畫在 3D 頭上。提示詞不放 UFC 商標。
 - repo 是公開的：選手圖、官方照及衍生圖只放 gitignore 的 `prototype/web/assets/private/`；沒有私人素材時要能用占位圖運作。
 - 只用免費服務；未經同意不觸發可能計費的流程。`.p12`、`.mobileprovision` 永不上傳。
 
@@ -28,7 +28,7 @@
 - 現階段在 `prototype/web/` 驗證玩法（見 `prototype/web/README.md`）。除非 `docs/TASKS.md` 排到移植，否則**不要改 `App/` 和 `Packages/`**。
 - 改規則或數值：改 `prototype/web/rules/*.json`，然後跑：
   - 目前在驗證的是戰場式玩法（`prototype/web/bg/`，數值在 `rules/bg/*.json`）：`node --test prototype/web/bg/test.js`（引擎不變量）、`node prototype/web/bg/sim.js`（各種打法的勝率，約 4 分鐘）。
-  - 其他原型（`index`／`deck`／`bout`／`rt`／`v2`）已停止更新。它們和 `App/`、`Packages/`、`docs/archive/`（`TASKS_ARCHIVE.md` 除外）在 `.claude/settings.json` 設了禁讀（2026-11-13 使用者同意，為了省用量）；真的要回頭看或改，先問使用者、把那條規則拿掉。
+  - 其他原型已停止更新：`deck`／`bout`／`rt`／`v2` 與舊草圖在 `prototype/web/_old/`（2026-11-13 搬過去，測試照過）；`index`（`engine.js`、`game.js`）留在原地，因為 `stage.js` 掛在它上面。它們和 `App/`、`Packages/`、`docs/archive/`（`TASKS_ARCHIVE.md` 除外）在 `.claude/settings.json` 設了禁讀（2026-11-13 使用者同意，為了省用量）；真的要回頭看或改，先問使用者、把那條規則拿掉。
 - 大檔（`bg/engine.js`、`bg/ui.js`、`bg/test.js`）先搜尋再讀指定行數，不整份讀；驗畫面先讀頁面文字與主控台，最後只截一張圖。
 - 改畫面：用 `.claude/launch.json` 的 `prototype` 開起來，在瀏覽器看過 844×390 橫向才算完成。
 - 不要加沒有被要求的系統。新想法寫進 `docs/TASKS.md` 的「之後再說」。

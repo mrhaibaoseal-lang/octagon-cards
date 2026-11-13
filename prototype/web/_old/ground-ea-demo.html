@@ -151,7 +151,7 @@ body.solo .shot.pick{margin:0}
 <body>
 <script>
 // 草圖資料：四個靜態畫面。這裡沒有規則邏輯，數字都是寫死的範例。
-const P = "assets/private/";
+const P = "../assets/private/";
 const F = { mak: { id: "makhachev", name: "MAKHACHEV" }, poi: { id: "poirier", name: "POIRIER" } };
 const sta = (n, max = 20) => `<span class="sta"><i><b class="${n <= 5 ? "low" : ""}" style="width:${(n / max) * 100}%"></b></i><em class="${n <= 5 ? "low" : ""}">體力 ${n}</em></span>`;
 const LAYERS = [["站起來", "脫出半防守"], ["半防守", "降伏要撐 4 關"], ["側壓", "降伏要撐 3 關"], ["騎乘", "降伏要撐 2 關"]];

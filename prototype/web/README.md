@@ -33,14 +33,13 @@ node prototype/web/sim.js 2000
 uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.py --sheet <姿勢表.jpg> --fighter khabib --out prototype/web/assets/private
 ```
 
+> 上面講的是最早的 `index.html` 玩法（`engine.js`、`game.js`），已停止更新；留在原地是因為 `stage.js` 掛在它上面。
 
-## 卡牌版（2026-11-09，取代 M1.4 玩法）
-- 開 `http://localhost:5173/deck.html`（`.claude/launch.json` 的 `prototype`）。規格見 `docs/GAME_DESIGN.md`。
-- 規則與數值：`rules/deck/*.json`；引擎 `deck/engine.js`、出牌 AI `deck/ai.js`、模擬 `deck/sim.js`、逐手印出一場 `deck/trace.js`。
-- 檢查：`npm run test:deck`、`npm run sim:deck`（可加場數）。舊玩法的 `index.html` 與 `engine.js` 暫時保留，不再更新。
+## 戰場式玩法（目前在驗證的方向）
+- 開 `http://localhost:5173/bg.html`（`.claude/launch.json` 的 `prototype`）。地面可切：預設 21 點、`?ground=ea`、`?ground=poker`、`?ground=rps`；`?debug=1` 可在主控台用 `__bg` 改牌。規則在 `docs/GAME_DESIGN.md` 最上面一節。
+- 檔案：`bg/engine.js`（規則）、`bg/ai.js`、`bg/ui.js`、`bg/bg.css`、`rules/bg/{config,skills,fighters}.json`。
+- 驗證：`npm run test:bg`（58 項）、`npm run sim:bg`（約 4 分鐘）。
 
-## V2 解題式交鋒（2026-11-10，試玩中）
-- 開 `http://localhost:5173/v2.html`（可加 `?a=holloway&b=makhachev&seed=3`）。規則摘要在 `docs/GAME_DESIGN.md` 最上面的 V2 一節，提案全文在 `docs/REDESIGN_V2.md`。
-- 檔案：`v2/engine.js`（規則）、`v2/ai.js`（對手計畫 AI 與模擬用的回應機器人）、`v2/ui.js`、`v2/v2.css`、`rules/v2/{config,cards,fighters}.json`。
-- 驗證：`node --test prototype/web/v2/test.js`、`node prototype/web/v2/sim.js [每格場數]`。
-
+## 停止更新的原型（`_old/`）
+- 卡牌版 `deck`、回合版 `bout`、即時版 `rt`、V2 解題式交鋒與教練模式 `v2`／`auto`，以及地面草圖 `ground-*-demo.html`、`mock.html`。2026-11-13 搬進來，規則檔在 `_old/rules/`。
+- 還能玩：`http://localhost:5173/_old/deck.html`（其餘同理）。測試：`npm run test:deck`、`test:bout`、`test:rt`、`test:v2`。

@@ -4,13 +4,16 @@
   "type": "module",
   "scripts": {
     "start": "node serve.js",
+    "test:bg": "node --test bg/test.js",
+    "sim:bg": "node bg/sim.js",
     "test": "node test/engine.test.js",
     "sim": "node sim.js",
-    "test:deck": "node --test deck/test.js",
-    "sim:deck": "node deck/sim.js",
-    "test:bout": "node --test bout/test.js",
-    "sim:bout": "node bout/sim.js",
-    "test:v2": "node --test v2/test.js",
-    "sim:v2": "node v2/sim.js"
+    "test:deck": "node --test _old/deck/test.js",
+    "sim:deck": "node _old/deck/sim.js",
+    "test:bout": "node --test _old/bout/test.js",
+    "sim:bout": "node _old/bout/sim.js",
+    "test:rt": "node --test _old/rt/test.js",
+    "test:v2": "node --test _old/v2/test.js",
+    "sim:v2": "node _old/v2/sim.js"
   }
 }

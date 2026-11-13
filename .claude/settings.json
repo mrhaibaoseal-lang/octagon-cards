@@ -11,6 +11,7 @@
       "Read(./prototype/web/sim.js)",
       "Read(./prototype/web/style.css)",
       "Read(./prototype/web/test/**)",
+      "Read(./prototype/web/_old/**)",
       "Read(./prototype/web/deck/**)",
       "Read(./prototype/web/bout/**)",
       "Read(./prototype/web/rt/**)",

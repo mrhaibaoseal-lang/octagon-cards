@@ -6,7 +6,8 @@
 - **做了什麼**：刪掉已合併的 `claude/goofy-curran-4ed482`（worktree、本機與遠端分支）、`test_tmp/`、`.tmp/`；`scratch/` 加進 `.gitignore`；`AGENTS.md` §2 的驗證指令改成 `bg`；`TASKS.md` 從 27KB 瘦到 9KB，已實作的 EA／撲克／M1.4 規格與「目前」的歷程原文搬到 `docs/archive/TASKS_ARCHIVE.md` 最後。
 - **驗證**：沒改程式碼與規則；清理前六套原型測試全過（bg 58 項）；`node docs/brief.js` 重跑確認摘要變短。
 - **用量盤點結論**：約八成 Token 花在對話過長（每次呼叫中位數 221k）、整份讀大檔、截圖 829 張；一件事一個 session 最省。
-- **要使用者確認**：五套舊原型與四份草圖要不要移到 `_old/`、`App/`／`Packages/`／`docs/archive/` 要不要禁讀、pixellab 等連接器要不要關、文件的 300 人要不要改成 40～50 人。
+- **同日追加（使用者同意）**：`deck`／`bout`／`rt`／`v2` 與舊草圖搬到 `prototype/web/_old/`（測試照過；`index` 留原地因為 `stage.js` 掛在上面）；舊 Swift、舊原型、`docs/archive/`（`TASKS_ARCHIVE.md` 除外）在 `.claude/settings.json` 禁讀；文件的約 300 人改成 1.0 先做 40～50 人。
+- **要使用者確認**：連接器（pixellab、Wispr、Docs）還沒關，見當次對話的說明。
 - **下一步**：等使用者玩 `?ground=ea` 決定預設地面（見 `TASKS.md`「目前」）。
 
 ## 2026-11-13 · Claude Fable 5.2（EA 式地面：量測 → v2 草圖 → v2 實作）

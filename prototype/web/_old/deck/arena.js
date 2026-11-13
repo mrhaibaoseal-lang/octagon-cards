@@ -34,7 +34,7 @@ export function createArena(data) {
   async function load(ids) {
     if (manifest === null) {
       try {
-        const res = await fetch("assets/private/manifest.json");
+        const res = await fetch("../assets/private/manifest.json");
         manifest = res.ok ? await res.json() : {};
       } catch {
         manifest = {};
@@ -46,7 +46,7 @@ export function createArena(data) {
       const meta = manifest.fighters?.[id];
       if (!meta) continue;
       for (const pose of POSES) {
-        const img = await loadImage(`assets/private/${id}/${pose}.png`);
+        const img = await loadImage(`../assets/private/${id}/${pose}.png`);
         if (img) art[id].poses[pose] = { img, anchorX: meta[pose]?.anchorX ?? img.width / 2 };
       }
       art[id].h = meta.idle?.h ?? 200;
