@@ -750,6 +750,8 @@ function eaMods(st) {
   const top = st.c.ground.top, bot = other(top);
   return { poundPlus: eSum(st, top, "poundplus"), drainPlus: eSum(st, top, "drainplus"), stageCut: eSum(st, top, "stagecut"), passCut: eSum(st, top, "passcut"), quick: eSum(st, bot, "quick") > 0 };
 }
+/** A direction that is closed on this layer for both men: the submission before layer X.subFrom, the pass on the deepest layer. */
+export const eaLocked = (X, layers, layer, m) => (m === "sub" && layer < (X.subFrom || 1)) || (m === "pass" && layer >= layers);
 /** What an attack costs the top man in stamina. */
 export const eaCost = (X, M, t) => Math.max(1, X.cost[t] - (t === "pass" ? M.passCut : 0));
 /** The chance the bottom man gets out of one stage of a submission, from his stamina. */
@@ -780,7 +782,7 @@ export function eaBeat(X, layers, V, M, t, b) {
 /** Set up the EA ground on st.c.ground ({ top, layer, beat }): the cards on the board are read once, here. */
 export function startEA(st) {
   const g = st.c.ground;
-  Object.assign(g, { space: 0, covered: false, lastTop: null, lastBot: null, quickUsed: false, phase: "pick", sub: null, mods: eaMods(st) });
+  Object.assign(g, { space: 0, covered: false, lastTop: null, lastBot: null, hist: { top: [], bot: [] }, quickUsed: false, phase: "pick", sub: null, mods: eaMods(st) });
   ev(st, "eadeal", { top: g.top, layer: g.layer });
 }
 /** What may be picked now: { phase: "pick", top, layer, beat, beats, moves: { a, b } } or { phase: "sub", ... stage, stages, escape }. */
@@ -789,8 +791,8 @@ export function eaOptions(st) {
   if (st.phase !== "clash" || !g || c.ko || !isEA(st)) return null;
   const bot = other(g.top), base = { top: g.top, layer: g.layer, beat: g.beat, beats: X.beats };
   if (g.phase === "sub") return { ...base, phase: "sub", stage: g.sub.stage, stages: g.sub.stages, escape: eaEscape(X, st[bot].stam) };
-  const ok = EA_MOVES.filter((m) => eaCost(X, g.mods, m) <= st[g.top].stam && !(m === "pass" && g.layer >= st.cfg.ground.layers));
-  return { ...base, phase: "pick", moves: { [g.top]: ok.length ? ok : ["rest"], [bot]: [...EA_MOVES] } };
+  const open = EA_MOVES.filter((m) => !eaLocked(X, st.cfg.ground.layers, g.layer, m)), ok = open.filter((m) => eaCost(X, g.mods, m) <= st[g.top].stam);
+  return { ...base, phase: "pick", moves: { [g.top]: ok.length ? ok : ["rest"], [bot]: open } };
 }
 /** What side s sees: the options plus both stamina bars, the space, the cards' effects and what a move costs. */
 export function eaView(st, s) {
@@ -810,6 +812,7 @@ function runEA(st, grade) {
   const r = eaBeat(X, st.cfg.ground.layers, V, g.mods, t, b);
   st[top].stam = V.topSta; st[bot].stam = V.botSta;
   Object.assign(g, { layer: V.layer, space: V.space, covered: V.covered, quickUsed: V.quickUsed, lastTop: t, lastBot: b });
+  g.hist.top.push(t); g.hist.bot.push(b);
   const n = g.beat++;
   if (r.dmg) { st[bot].hp = Math.max(0, st[bot].hp - r.dmg); st[top].stats.dmg += r.dmg; }
   ev(st, "eabeat", { top, mt: t, mb: b, ...r, layer: g.layer, space: g.space, beat: n }); // (t is the event type, so the moves are mt / mb)

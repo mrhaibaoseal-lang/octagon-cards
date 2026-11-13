@@ -45,10 +45,10 @@
  },
  "_docEA": "ground.mode=ea（2026-11-12，EA UFC 式猜方向）：每拍雙方同時拖一個方向（上＝過腿／擋過腿、右＝砸擊／護頭、左＝降伏／防降伏）。同方向＝擋住：上位多扣 denied 體力，下位得 1 格空間，滿 need 格脫出一層（半防守再脫出站起來）；不同方向＝打中：過腿往深一層、砸擊傷害 pound[層]（＋牌）並磨掉他 drain 體力（他下一拍會護頭）、降伏進入分 stages[層] 關的時機條。每一關下位逃脫機率＝escBase＋escSta×（體力／stamina）（上限 escMax）；玩家按中時機條：進攻時他的機率 −timing、防守時 +timing；逃掉＝他掉 escDrain 體力、回到地面；全部撐不住＝降伏、比賽結束。cost 上位出招花的體力；體力不夠出任何招就喘口氣（回 rest、下位得 1 格空間）。stamina 油箱、regen 回合之間回復。beats 一次地面最多幾拍。names 畫面上三個方向各自的名字。ai：flat 摻平均的比例、memory 對手記得你上一拍（越大越容易被讀）、cover 剛被砸中時他護頭的加成、subTop／subBot 體力低時他想降伏／防降伏的加成；value 是模擬用的『會讀』玩家的估值（降伏、每層位置、體力差）。選手的偏好在 fighters.json 的 ai.groundEA（top／bot 各三個權重）。場上的牌效果寫在 skills.json 的 fx（when groundEA）：poundplus 砸擊傷害＋、drainplus 砸中多磨體力、stagecut 降伏少幾關、passcut 過腿少花體力、quick 下位第一次只要 1 格空間。",
  "groundEA": {
-  "stamina": 20, "regen": 6, "beats": 6, "layers": 3, "need": 2,
+  "stamina": 20, "regen": 6, "beats": 4, "layers": 3, "need": 2, "subFrom": 2, "showOdds": false,
   "cost": {"pass": 2, "pound": 1, "sub": 3}, "denied": 2, "rest": 3,
-  "pound": [1, 2, 3], "drain": 2,
-  "stages": [5, 4, 3], "escBase": 0.4, "escSta": 0.5, "escMax": 0.95, "escDrain": 2, "timing": {"good": 0.15, "perfect": 0.2},
+  "pound": [2, 3, 4], "drain": 2,
+  "stages": [3, 2, 1], "escBase": 0.5, "escSta": 0.5, "escMax": 0.95, "escDrain": 2, "timing": {"good": 0.15, "perfect": 0.2},
   "names": {"top": {"pass": "過腿", "pound": "砸擊", "sub": "降伏"}, "bot": {"pass": "擋過腿", "pound": "護頭", "sub": "防降伏"}},
   "ai": {"flat": 0.15, "memory": 1.4, "cover": 2.0, "subTop": 3, "subBot": 4, "value": {"sub": 30, "pos": 2.5, "sta": 0.1}}
  },

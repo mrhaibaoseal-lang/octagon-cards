@@ -328,7 +328,7 @@ function eaTableV(X, layers, style, role, V, M) {
   for (const m of E.EA_MOVES) {
     let x = style[m] ?? 3;
     if (role === "top") {
-      if (E.eaCost(X, M, m) > V.topSta || (m === "pass" && V.layer >= layers)) x = 0;
+      if (E.eaCost(X, M, m) > V.topSta || E.eaLocked(X, layers, V.layer, m)) x = 0;
       else {
         if (V.lastBot && V.lastBot !== m) x *= 1 + A.memory / 2;
         if (m === "sub") x *= 0.5 + odds * A.subTop;
@@ -337,13 +337,27 @@ function eaTableV(X, layers, style, role, V, M) {
       if (V.covered && m === "pound") x *= A.cover;
       if (V.lastTop === m) x *= 1 + A.memory;
       if (m === "sub") x *= 0.6 + odds * A.subBot;
-      if (m === "pass" && V.layer >= layers) x = 0;
+      if (E.eaLocked(X, layers, V.layer, m)) x = 0;
     }
     w[m] = x;
   }
   const ok = E.EA_MOVES.filter((m) => w[m] > 0), sum = ok.reduce((n, m) => n + w[m], 0);
   if (!ok.length) return { rest: 1 };
   return Object.fromEntries(E.EA_MOVES.map((m) => [m, w[m] > 0 ? (1 - A.flat) * (w[m] / sum) + A.flat / ok.length : 0]));
+}
+/** What the screen may say about the opponent's table without giving the odds: one clue per thing that moves it this beat, as { m, up, why }
+ *  (m = his direction, up = he does it more / less, why = the reason's key). Each clue is one of the multipliers in eaTableV, so none of them lies. */
+export function eaClues(X, layers, role, V, M) {
+  const A = X.ai, odds = E.eaSubOdds(X, M, V.layer, V.botSta), open = (m) => !E.eaLocked(X, layers, V.layer, m), out = [];
+  if (role === "bot") {
+    if (V.covered) out.push({ m: "pound", up: true, why: "covered" });
+    if (V.lastTop && V.lastTop !== "rest" && open(V.lastTop)) out.push({ m: V.lastTop, up: true, why: "memory" });
+    if (open("sub")) { const k = 0.6 + odds * A.subBot; if (k > 1.15) out.push({ m: "sub", up: true, why: "tired" }); else if (k < 0.85) out.push({ m: "sub", up: false, why: "fresh" }); }
+  } else {
+    if (V.lastBot && open(V.lastBot)) out.push({ m: V.lastBot, up: false, why: "memory" });
+    if (open("sub")) { const k = 0.5 + odds * A.subTop; if (k > 1.15) out.push({ m: "sub", up: true, why: "tired" }); else if (k < 0.85) out.push({ m: "sub", up: false, why: "fresh" }); }
+  }
+  return out;
 }
 /** The opponent's real table this beat, with the reasons the screen shows beside it: { w, why: [text] }. This is exactly what it draws from. */
 export function eaTable(st, s) {
@@ -360,7 +374,7 @@ export function eaTable(st, s) {
   }
   const fav = E.EA_MOVES.reduce((b, m) => ((style[m] ?? 3) > (style[b] ?? 3) ? m : b), "pass");
   why.push(`${st[s].f.short}：愛${(role === "top" ? N.top : N.bot)[fav]}（基本傾向）`);
-  return { w, why };
+  return { w, why, clues: eaClues(X, st.cfg.ground.layers, role, V, g.mods), habit: fav };
 }
 const eaDraw = (st, w) => { let r = E.rand(st); const es = Object.entries(w).filter(([, p]) => p > 0); for (const [m, p] of es) if ((r -= p) <= 0) return m; return es.at(-1)[0]; };
 /** The opponent's direction: drawn from its own table. */
@@ -426,6 +440,17 @@ const eaLowest = (skip) => (st, s) => {
   const mine = top && all.some((m) => m !== skip) ? all.filter((m) => m !== skip) : all;
   return mine.reduce((b, m) => ((top ? p(m) < p(b) : p(m) > p(b)) ? m : b));
 };
+/** The rule anyone can memorise from the clues alone (no table): count the arrows on each direction (his habit counts as half an arrow);
+ *  on top go where he guards least, underneath guard what he throws most. Ties go to the first open direction. */
+const eaByClues = (st, s) => {
+  const o = E.eaOptions(st);
+  if (!o || o.phase !== "pick") return null;
+  const mine = o.moves[s];
+  if (mine[0] === "rest") return "rest";
+  const top = st.c.ground.top === s, T = eaTable(st, E.other(s)), score = Object.fromEntries(E.EA_MOVES.map((m) => [m, m === T.habit ? 0.5 : 0]));
+  for (const c of T.clues) score[c.m] += c.up ? 1 : -1;
+  return mine.reduce((b, m) => ((top ? score[m] < score[b] : score[m] > score[b]) ? m : b));
+};
 const eaRandom = (st, s) => { const o = E.eaOptions(st); return o && o.phase === "pick" ? o.moves[s][Math.floor(E.rand(st) * o.moves[s].length)] : null; };
 const vsEA = (mine) => (st, s) => (s === "a" ? mine(st, s) : eaPick(st, s));
 /** Side a: reads the table, plays one of three memorised mixes, or picks at random; side b always plays its own table. */
@@ -434,6 +459,7 @@ export const groundersEA = {
   mixBal: vsEA(eaMix({ pass: 0.35, pound: 0.4, sub: 0.25 }, { pass: 0.35, pound: 0.4, sub: 0.25 })),
   mixPound: vsEA(eaMix({ pass: 0.2, pound: 0.6, sub: 0.2 }, { pass: 0.2, pound: 0.6, sub: 0.2 })),
   mixSub: vsEA(eaMix({ pass: 0.25, pound: 0.25, sub: 0.5 }, { pass: 0.25, pound: 0.25, sub: 0.5 })),
+  clues: vsEA(eaByClues),
   lowest: vsEA(eaLowest()),
   lowestNoSub: vsEA(eaLowest("sub")),
   random: vsEA(eaRandom),

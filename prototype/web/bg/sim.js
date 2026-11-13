@@ -105,13 +105,14 @@ const rowEA = (gpick, d = dea) => { const s = { w: 0, grounds: 0, gdmg: 0, hands
 const ea = Object.fromEntries(Object.entries(groundersEA).map(([k, g]) => [k, rowEA(g)]));
 const bestFixed = Math.max(ea.mixBal.w, ea.mixPound.w, ea.mixSub.w);
 console.log("\n六、地面 EA 式（ground.mode＝ea，猜方向＋體力；你這邊都是認真逛）");
-console.log(`會讀（看他的表，往前看兩拍）　${pc(ea.reader.w)}`);
+console.log(`會讀（知道他真正的表，往前看兩拍；玩家看不到表，這是動腦的上限）　${pc(ea.reader.w)}`);
 console.log(`固定打法（背一套出招比例，不看他的表）　均衡 ${pc(ea.mixBal.w)}　重砸擊 ${pc(ea.mixPound.w)}　重降伏 ${pc(ea.mixSub.w)}`);
 console.log(`亂猜　${pc(ea.random.w)}`);
 // Measurements only (no pass mark set): a rule anyone can memorise from the shown table, and the ground's own score with the shopping taken out.
-console.log(`背得起來的規則「上位挑他最少擋的、下位擋他最常出的」　${pc(ea.lowest.w)}　同一條但上位不碰降伏　${pc(ea.lowestNoSub.w)}`);
+console.log(`照線索背（畫面上每個方向數 ▲▼，習慣算半個；上位挑最少擋的、下位擋最常出的）　${pc(ea.clues.w)}`);
+console.log(`對照：偷看他的表挑最小數字（畫面已不顯示機率）　${pc(ea.lowest.w)}　同一條但上位不碰降伏　${pc(ea.lowestNoSub.w)}`);
 const net = (r) => `${r.gnet >= 0 ? "+" : ""}${r.gnet.toFixed(1)}／鎖死他 ${pc(r.sub - r.subBy).trim()}／被鎖 ${pc(r.subBy).trim()}`;
-console.log(`地面本身的帳（每場：你砸出的傷害−你挨的／降伏）　會讀 ${net(ea.reader)}　挑最少擋 ${net(ea.lowest)}　不碰降伏 ${net(ea.lowestNoSub)}　均衡 ${net(ea.mixBal)}　重砸擊 ${net(ea.mixPound)}　亂猜 ${net(ea.random)}`);
+console.log(`地面本身的帳（每場：你砸出的傷害−你挨的／降伏）　會讀 ${net(ea.reader)}　照線索背 ${net(ea.clues)}　偷看表 ${net(ea.lowest)}　不碰降伏 ${net(ea.lowestNoSub)}　均衡 ${net(ea.mixBal)}　重砸擊 ${net(ea.mixPound)}　亂猜 ${net(ea.random)}`);
 console.log(`每場進地面 ${ea.reader.grounds.toFixed(1)} 次，每次 ${(ea.reader.hands / Math.max(1, ea.reader.grounds * pairs.length * N)).toFixed(1)} 拍；地面傷害每場 ${ea.reader.gdmg.toFixed(1)}；降伏結束 ${pc(ea.reader.sub)} 的比賽（你鎖死他 ${pc(ea.reader.sub - ea.reader.subBy)}、被鎖 ${pc(ea.reader.subBy)}）；在騎乘層打的拍 ${(share(ea.reader) * 100).toFixed(1)}%`);
 const styleEA = {}, sea = loadData();
 sea.config.ground.mode = "ea"; sea.fighters = sdata.fighters;
@@ -156,6 +157,7 @@ const checks = [
   ["撲克：每次地面你的決定平均不超過 8 個", perGround(pk.reader) <= 8],
   ["撲克：認真逛仍在 50%～75%，流派對打在 35%～65%，六組選手對打在 25%～85%", pk.reader.w >= 0.5 && pk.reader.w <= 0.75 && Object.values(stylePk).every((w) => w >= 0.35 && w <= 0.65) && byPair.every((x) => x.w >= 0.25 && x.w <= 0.85)],
   ["EA 式：會讀比最好的固定打法高至少 3 個百分點：動腦比背起來有用", ea.reader.w - bestFixed >= 0.03],
+  ["EA 式：會讀比「照線索背」高至少 3 個百分點：線索不能直接背", ea.reader.w - ea.clues.w >= 0.03],
   ["EA 式：會讀比亂猜高至少 8 個百分點", ea.reader.w - ea.random.w >= 0.08],
   ["EA 式：降伏結束的比賽約 5%～10%", ea.reader.sub >= 0.05 && ea.reader.sub <= 0.1],
   ["EA 式：每場地面傷害約 10 點（7～13）", ea.reader.gdmg >= 7 && ea.reader.gdmg <= 13],

@@ -1185,17 +1185,20 @@ test("EA ground, a takedown starts it: both pick at once, the top man is limited
   assert.equal(E.options(st), null, "no card attacks while they grapple"); assert.equal(E.groundOptions(st), null);
   const o = E.eaOptions(st);
   assert.deepEqual({ phase: o.phase, top: o.top, layer: o.layer, beat: o.beat, beats: o.beats }, { phase: "pick", top: "a", layer: 1, beat: 1, beats: XE.beats });
-  assert.deepEqual(o.moves.a, ["pass", "pound", "sub"]); assert.deepEqual(o.moves.b, ["pass", "pound", "sub"]);
+  assert.deepEqual(o.moves.a, ["pass", "pound"], "no submission from the half guard (subFrom)"); assert.deepEqual(o.moves.b, ["pass", "pound"], "and nothing to defend there");
   assert.equal(E.chooseGround(st, "a", "rest"), false, "resting is only for a man who cannot attack");
-  assert.ok(E.chooseGround(st, "b", "sub")); assert.ok(E.chooseGround(st, "a", "pound"));
+  assert.equal(E.chooseGround(st, "a", "sub"), false, "the submission is closed on this layer");
+  assert.ok(E.chooseGround(st, "b", "pass")); assert.ok(E.chooseGround(st, "a", "pound"));
   E.step(st);
-  assert.deepEqual({ t: evs(st, "eabeat")[0].mt, b: evs(st, "eabeat")[0].mb }, { t: "pound", b: "sub" });
-  const s2 = downEA(["cross"], ["cross"]);
+  assert.deepEqual({ t: evs(st, "eabeat")[0].mt, b: evs(st, "eabeat")[0].mb }, { t: "pound", b: "pass" });
+  assert.deepEqual(st.c.ground.hist, { top: ["pound"], bot: ["pass"] }, "the directions used this ground are kept for the screen");
+  const s2 = downEA(["cross"], ["cross"], "a", 2);
+  assert.deepEqual(E.eaOptions(s2).moves, { a: ["pass", "pound", "sub"], b: ["pass", "pound", "sub"] }, "side control opens the submission");
   s2.a.stam = 2;
   assert.deepEqual(E.eaOptions(s2).moves.a, ["pass", "pound"], "he cannot pay for a submission with 2 stamina");
   s2.a.stam = 0;
   assert.deepEqual(E.eaOptions(s2).moves.a, ["rest"]);
-  const s3 = downEA(["cross"], ["cross"], "a", 3); assert.deepEqual(E.eaOptions(s3).moves.a, ["pound", "sub"], "no pass from the mount");
+  const s3 = downEA(["cross"], ["cross"], "a", 3); assert.deepEqual(E.eaOptions(s3).moves, { a: ["pound", "sub"], b: ["pound", "sub"] }, "no pass from the mount");
 });
 
 test("EA ground, a beat on the real engine: denials earn space and a layer, a pound hurts the fighter and drains him, the ground ends after the last beat", () => {
@@ -1215,7 +1218,7 @@ test("EA ground, a beat on the real engine: denials earn space and a layer, a po
   assert.equal(st.c.ground, null); assert.equal(evs(st, "standup").length, 1); assert.ok(E.options(st), "the cards carry on");
   // a finish on the mat
   st = downEA(["cross"], ["cross"], "a", 3); st.b.hp = 2;
-  beatEA(st, "pound", "pass");
+  beatEA(st, "pound", "sub");
   E.step(st);
   assert.deepEqual({ winner: st.over?.winner, how: st.over?.how }, { winner: "a", how: "KO" });
 });
@@ -1301,6 +1304,14 @@ test("EA ground AI: its table sums to one over what it may pick, is exactly what
   assert.ok(after.w.pound > before.pound, "he covers up after eating a strike");
   assert.ok(after.why.some((x) => x.includes("砸中")), "and says why");
   assert.ok(after.why.some((x) => x.includes("砸擊")), "he guards the thing you did");
+  // the clues the screen shows instead of the odds: one per thing that moved the table, never about a closed direction
+  assert.deepEqual(after.clues.filter((c) => c.m === "pound").map((c) => [c.up, c.why]), [[true, "covered"], [true, "memory"]]);
+  assert.ok(["pass", "pound", "sub"].includes(after.habit));
+  const half = downEA(["cross"], ["cross"], "a", 1); half.b.stam = 0;
+  assert.equal(eaTable(half, "b").w.sub, 0, "nothing to defend where the submission is closed");
+  assert.ok(!eaTable(half, "b").clues.some((c) => c.m === "sub"), "and no clue about it");
+  const low = downEA(["cross"], ["cross"], "a", 3); low.b.stam = 0;
+  assert.ok(eaTable(low, "b").clues.some((c) => c.m === "sub" && c.up && c.why === "tired"), "a spent man guards the finish harder, and the clue says so");
   // a tired bottom man guards the finish worse and the opponent wants it more
   const tired = downEA(["cross"], ["cross"], "b", 3), fresh = downEA(["cross"], ["cross"], "b", 3);
   tired.a.stam = 3;
@@ -1314,12 +1325,12 @@ test("EA ground AI: its table sums to one over what it may pick, is exactly what
   assert.deepEqual(eaTable(poor, "a").w, { rest: 1 });
   assert.equal(eaPick(poor, "a"), "rest");
   // the draw is from the table: with all weight on one move the pick is that move
-  const f = downEA(["cross"], ["cross"], "b"); f.a.f = { ...f.a.f, ai: { ...f.a.f.ai, groundEA: { bot: { pass: 0, pound: 0, sub: 1 }, top: { pass: 1, pound: 1, sub: 1 } } } };
+  const f = downEA(["cross"], ["cross"], "b", 2); f.a.f = { ...f.a.f, ai: { ...f.a.f.ai, groundEA: { bot: { pass: 0, pound: 0, sub: 1 }, top: { pass: 1, pound: 1, sub: 1 } } } };
   const flat = f.cfg.groundEA.ai.flat; f.cfg.groundEA.ai.flat = 0;
   for (let i = 0; i < 20; i++) { f.rng += 7; assert.equal(eaPick(f, "a"), "sub"); }
   f.cfg.groundEA.ai.flat = flat;
   // the opponent (a, underneath) never picks outside its options, and the players act only while a direction is wanted
-  const g = downEA(["cross"], ["cross"], "b");
+  const g = downEA(["cross"], ["cross"], "b", 2);
   for (const k of Object.keys(groundersEA)) { const m = groundersEA[k](g, "a"); assert.ok(["pass", "pound", "sub", "rest"].includes(m), k); }
   beatEA(g, "sub", "pound");
   assert.equal(eaPick(g, "a"), null); assert.equal(eaRead(g, "a"), null, "nobody picks a direction in the middle of a submission");
