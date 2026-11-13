@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>地面讓過草圖</title>
+<!-- 可玩草圖（2026-11-14）：地面「輪流發力＋可以讓過」（借昆特牌的讓過）。只有這一段，不接遊戲程式，數字全在 CFG。 -->
+<style>
+:root{--bg:#0d0f14;--line:#2c3342;--ink:#eef1f6;--dim:#8d97a8;--gold:#f0b52e;--red:#d8443a;--blue:#3b7be0}
+*{box-sizing:border-box;margin:0}
+body{background:#05060a;color:var(--ink);font:13px/1.4 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 16px;user-select:none}
+.frame{position:relative;width:844px;max-width:100%;height:390px;overflow:hidden;background:radial-gradient(ellipse at 50% 120%,#2a2f3c 0,#11141b 55%,#07080c 100%);border:1px solid #222}
+.bar{position:absolute;top:0;left:0;right:0;height:28px;display:flex;justify-content:space-between;align-items:center;padding:0 12px;background:linear-gradient(180deg,#1b2030,#0e1119);border-bottom:2px solid var(--gold);font-weight:700;letter-spacing:.08em;font-size:12px}
+.bar .c{color:var(--gold)}
+.hp{display:flex;gap:6px;align-items:center}.hp b{display:inline-block;width:90px;height:8px;background:#333;position:relative}.hp b i{position:absolute;inset:0 auto 0 0;background:var(--red)}
+.hp.me b i{background:var(--blue)}
+/* ladder */
+.lad{position:absolute;top:36px;left:20px;right:20px;height:46px;display:flex;gap:4px}
+.lad div{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;border:1px solid var(--line);background:#141821;font-size:12px;font-weight:700;color:var(--dim);position:relative}
+.lad div small{font-size:10px;font-weight:400}
+.lad div.on{border-color:var(--gold);color:#17130a;background:linear-gradient(180deg,#fff0bd,#f0b52e)}
+.lad div.on small{color:#3a2d08}
+.lad .end{background:#0e1a12}.lad .end2{background:#1e0f10}
+.dir{position:absolute;top:84px;left:20px;right:20px;display:flex;justify-content:space-between;font-size:10px;color:var(--dim)}
+/* table */
+.row{position:absolute;left:20px;right:150px;height:58px;display:flex;align-items:center;gap:6px}
+.row.op{top:102px}.row.me{top:166px}
+.row .who{width:62px;font-size:11px;color:var(--dim);line-height:1.2}
+.row .sum{width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;border:2px solid var(--line)}
+.row.op .sum{border-color:var(--red)}.row.me .sum{border-color:var(--blue)}
+.row .sum.lead{background:#2a2210;border-color:var(--gold)}
+.row .played{display:flex;gap:4px;flex:1}
+.pc{width:30px;height:42px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;background:linear-gradient(180deg,#f3efe4,#d9d3c4);color:#1b1a17;border-radius:3px}
+.pc.new{animation:pop .25s}
+@keyframes pop{from{transform:translateY(-10px);opacity:0}}
+.row .pass{font-size:12px;font-weight:800;color:var(--gold);letter-spacing:.1em;min-width:60px}
+.oph{position:absolute;top:110px;right:20px;width:120px;text-align:right;font-size:11px;color:var(--dim)}
+.oph .backs{display:flex;gap:3px;justify-content:flex-end;margin-top:4px}
+.oph .backs span{width:14px;height:20px;background:repeating-linear-gradient(45deg,#5a2020,#5a2020 3px,#3a1414 3px,#3a1414 6px);border:1px solid #844}
+.rounds{position:absolute;top:174px;right:20px;width:120px;text-align:right;font-size:11px;color:var(--dim)}
+.rounds b{display:inline-block;width:12px;height:12px;border:1px solid var(--line);margin-left:3px;vertical-align:middle}
+.rounds b.w{background:var(--blue);border-color:var(--blue)}.rounds b.l{background:var(--red);border-color:var(--red)}.rounds b.t{background:#666}
+/* call line */
+.call{position:absolute;top:230px;left:20px;right:20px;height:22px;font-size:13px;color:var(--gold);font-weight:700;text-align:center}
+/* hand */
+.hand{position:absolute;bottom:12px;left:20px;right:150px;height:96px;display:flex;gap:8px;align-items:flex-end;border-top:1px dashed #2a3040;padding-top:8px}
+.hc{width:52px;height:76px;border-radius:4px;background:linear-gradient(180deg,#f3efe4,#d9d3c4);color:#1b1a17;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:grab;box-shadow:0 2px 0 #000;touch-action:none}
+.hc b{font-size:28px;font-weight:900;line-height:1}.hc small{font-size:9px;color:#6b665a}
+.hc:hover{transform:translateY(-4px)}
+.hc.off{opacity:.35;cursor:default;transform:none}
+.hc.drag{position:fixed;z-index:9;pointer-events:none;transform:rotate(-4deg) scale(1.08)}
+.hand .note{font-size:11px;color:var(--dim);align-self:center;margin-left:auto;text-align:right}
+.btn{position:absolute;right:20px;bottom:26px;width:118px;height:56px;border:2px solid var(--gold);background:#1a160b;color:var(--gold);font:800 16px/1 inherit;letter-spacing:.1em;cursor:pointer}
+.btn small{display:block;font-size:10px;font-weight:400;color:var(--dim);letter-spacing:0;margin-top:4px}
+.btn:disabled{opacity:.3;cursor:default}
+.drop{position:absolute;left:20px;right:150px;top:100px;height:126px;border:2px dashed transparent}
+.drop.hot{border-color:var(--gold)}
+/* overlays */
+.ov{position:absolute;inset:28px 0 0 0;background:rgba(5,6,10,.93);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:0 40px}
+.ov.on{display:flex}
+.ov h2{font-size:22px;letter-spacing:.1em;color:var(--gold)}
+.ov p{color:var(--dim);max-width:640px}
+.ov .opts{display:flex;gap:8px}
+.ov button{padding:8px 16px;border:1px solid var(--line);background:#141821;color:var(--ink);font:700 13px inherit;cursor:pointer}
+.ov button.sel{border-color:var(--gold);color:var(--gold)}
+.ov button.go{border-color:var(--gold);background:var(--gold);color:#17130a;padding:10px 28px;font-size:15px}
+.ov .rev{display:flex;gap:4px;justify-content:center}
+.rules{max-width:844px;color:var(--dim);font-size:12px}
+.rules b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="frame" id="F">
+  <div class="bar"><span class="hp" id="hpOp"></span><span class="c" id="title">地面</span><span class="hp me" id="hpMe"></span></div>
+  <div class="lad" id="lad"></div>
+  <div class="dir"><span>← 下位往這邊逃</span><span>上位往這邊壓 →</span></div>
+  <div class="row op"><span class="who" id="opWho"></span><span class="sum" id="opSum">0</span><span class="played" id="opPlayed"></span><span class="pass" id="opPass"></span></div>
+  <div class="row me"><span class="who" id="meWho"></span><span class="sum" id="meSum">0</span><span class="played" id="mePlayed"></span><span class="pass" id="mePass"></span></div>
+  <div class="drop" id="drop"></div>
+  <div class="oph">對手手上<div class="backs" id="opBacks"></div></div>
+  <div class="rounds" id="rounds"></div>
+  <div class="call" id="call"></div>
+  <div class="hand" id="hand"></div>
+  <button class="btn" id="passBtn">不打了<small>這輪讓出，牌留著</small></button>
+
+  <div class="ov on" id="start">
+    <h2>地面交手</h2>
+    <p>輪流把發力牌拖上去，點數加總，高的那邊這輪贏、在梯子上走一格。<br>任何時候都可以按「不打了」：這輪就不能再出，但手上的牌留到下一輪。牌不會補，打三輪。</p>
+    <div class="opts" id="optSide"><button data-v="bottom" class="sel">我在下位</button><button data-v="top">我在上位</button></div>
+    <div class="opts" id="optSta"><button data-v="7" class="sel">體力充足（7 張）</button><button data-v="5">有點喘（5 張）</button><button data-v="3">快沒力（3 張）</button></div>
+    <div class="opts" id="optAi"><button data-v="greedy" class="sel">對手：硬壓型</button><button data-v="sly">對手：會讓型</button><button data-v="mix">對手：隨機</button></div>
+    <button class="go" id="goBtn">開打</button>
+  </div>
+  <div class="ov" id="end">
+    <h2 id="endT"></h2>
+    <p id="endP"></p>
+    <p>對手沒用到的牌：</p>
+    <div class="rev" id="endRev"></div>
+    <button class="go" id="againBtn">再打一次</button>
+  </div>
+</div>
+<div class="rules">
+<b>規則（草圖）</b>：梯子 起身 ← 全防守 ← 半防守 → 側壓 → 騎乘 → 背後，從半防守開始。每輪由上位先出（第 2 輪換下位先出，第 3 輪上位）。
+平手不動。上位每輪結束停在側壓／騎乘／背後，就砸拳 2／4／6 傷害；壓到背後直接裸絞降伏。下位退到起身就脫離地面。
+地面結束時，<b>沒用掉的牌每張換 1 點站立體力</b>。對手手上的牌是蓋著的，只看得到張數。牌值 1～4。可以拖牌，也可以點牌。
+</div>
+
+<script>
+const CFG={
+  ladder:[['起身','脫離'],['全防守',''],['半防守',''],['側壓','砸拳 2'],['騎乘','砸拳 4'],['背後','裸絞']],
+  start:2, rounds:3, gnp:{3:2,4:4,5:6},
+  deck:[1,1,2,2,2,3,3,4,4], // 抽牌比例
+};
+const $=id=>document.getElementById(id);
+const S={side:'bottom',sta:7,ai:'greedy'};
+let G;
+
+function draw(n){const h=[];for(let i=0;i<n;i++)h.push(CFG.deck[Math.random()*CFG.deck.length|0]);return h.sort((a,b)=>a-b)}
+function newGame(){
+  const aiStyle=S.ai==='mix'?(Math.random()<.5?'greedy':'sly'):S.ai;
+  G={pos:CFG.start,round:1,me:{hand:draw(S.sta),played:[],pass:false,hp:30},op:{hand:draw(6+(Math.random()*2|0)),played:[],pass:false,hp:30},
+     meTop:S.side==='top',aiStyle,results:[],turn:null,over:false,log:''};
+  G.op.start=G.op.hand.length;
+  startRound();
+}
+function leaderIsMe(){const topLeads=G.round%2===1;return topLeads===G.meTop}
+function startRound(){
+  for(const p of [G.me,G.op]){p.played=[];p.pass=false}
+  G.op.roundStart=G.op.hand.length;
+  G.turn=leaderIsMe()?'me':'op';
+  say(`第 ${G.round} 輪 · ${G.turn==='me'?'你先出':'對手先出'}`);
+  render();
+  if(G.turn==='op')setTimeout(aiAct,700);
+}
+const sum=p=>p.played.reduce((a,b)=>a+b,0);
+function say(t){G.log=t;$('call').textContent=t}
+
+function play(who,idx){
+  const p=G[who];const v=p.hand.splice(idx,1)[0];p.played.push(v);p.lastNew=true;
+  say(who==='me'?`你發力 +${v}`:`對手發力 +${v}`+(v>=4?'，他把力氣砸下去了':''));
+  next(who);
+}
+function pass(who){
+  G[who].pass=true;
+  say(who==='me'?'你不打了，這輪讓出':'對手不打了'+(sum(G.op)<sum(G.me)?'，他在留力氣':''));
+  next(who);
+}
+function next(who){
+  const other=who==='me'?'op':'me';
+  for(const k of ['me','op'])if(!G[k].hand.length&&!G[k].pass&&!(k===who&&false))G[k].autoOut=true;
+  const mDone=G.me.pass||!G.me.hand.length, oDone=G.op.pass||!G.op.hand.length;
+  if(mDone&&oDone){render();setTimeout(endRound,700);return}
+  G.turn=(G[other].pass||!G[other].hand.length)?who:other;
+  render();
+  if(G.turn==='op')setTimeout(aiAct,650);
+}
+function endRound(){
+  const m=sum(G.me),o=sum(G.op);let r='t';
+  if(m>o)r='w';else if(o>m)r='l';
+  G.results.push(r);
+  const topWon=(r==='w'&&G.meTop)||(r==='l'&&!G.meTop);
+  if(r!=='t')G.pos+=topWon?1:-1;
+  let msg=r==='t'?`${m} 比 ${o}，僵住了，沒動`:`${Math.max(m,o)} 比 ${Math.min(m,o)}，${topWon?'上位壓進一格':'下位退出一格'} → ${CFG.ladder[G.pos][0]}`;
+  const bottom=G.meTop?G.op:G.me;
+  if(G.pos>=5){render();return finish('sub',msg)}
+  if(G.pos<=0){render();return finish('up',msg)}
+  const dmg=CFG.gnp[G.pos]||0;
+  if(dmg){bottom.hp-=dmg;msg+=`，砸拳 ${dmg}`}
+  say(msg);render();
+  if(G.round>=CFG.rounds)return setTimeout(()=>finish('time',msg),1200);
+  G.round++;setTimeout(startRound,1600);
+}
+function finish(kind,msg){
+  G.over=true;
+  const meWin=(kind==='sub'&&G.meTop)||(kind==='up'&&!G.meTop);
+  const t={sub:G.meTop?'裸絞！你降伏了他':'被裸絞，你拍地了',up:G.meTop?'他站起來了':'你站起來了',time:'回合鐘響'}[kind];
+  $('endT').textContent=t;
+  $('endP').innerHTML=`${msg}。<br>你剩 ${G.me.hand.length} 張 → 站立體力 +${G.me.hand.length}；對手剩 ${G.op.hand.length} 張 → +${G.op.hand.length}。`+
+    `<br>你挨了 ${30-G.me.hp}，對手挨了 ${30-G.op.hp}。對手這場是「${G.aiStyle==='greedy'?'硬壓型':'會讓型'}」。`;
+  $('endRev').innerHTML=G.op.hand.length?G.op.hand.map(v=>`<span class="pc">${v}</span>`).join(''):'<span style="color:#8d97a8">全用光了</span>';
+  $('end').classList.add('on');
+}
+
+/* ---- 對手 AI：看得到自己的牌和你出過的牌，看不到你手上的 ---- */
+function aiAct(){
+  if(G.over||G.turn!=='op')return;
+  const me=G.me,op=G.op,h=op.hand;
+  if(!h.length)return pass('op');
+  const diff=sum(op)-sum(me);
+  const roundsLeft=CFG.rounds-G.round+1;
+  const usedThis=op.played.length;
+  const budget=Math.ceil(op.roundStart/roundsLeft)+(G.aiStyle==='greedy'?1:-1);
+  const cardsAdv=h.length-me.hand.length;
+  const smallestWin=need=>{const i=h.findIndex(v=>v>need);return i};
+  // 你已經不打了：只要用一張就贏，而且划得來，就補一張
+  if(me.pass||!me.hand.length){
+    if(diff>0)return pass('op');
+    const i=smallestWin(-diff);
+    if(i>=0&&(usedThis<budget+1||roundsLeft===1))return play('op',i);
+    if(roundsLeft===1&&h.length)return play('op',h.length-1);
+    return pass('op');
+  }
+  // 會讓型：開局手牌不比你多時，第一輪早早讓
+  if(G.aiStyle==='sly'&&roundsLeft>1&&usedThis===0&&cardsAdv<=0&&Math.random()<.6&&diff<=0)return pass('op');
+  if(G.aiStyle==='sly'&&roundsLeft>1&&usedThis>=1&&diff<0&&-diff>=3&&Math.random()<.7)return pass('op');
+  if(usedThis>=budget&&roundsLeft>1)return pass('op');
+  if(diff>=2&&Math.random()<.5)return pass('op');
+  if(diff>0)return play('op',0);
+  const i=smallestWin(-diff);
+  return play('op',i>=0?i:h.length-1);
+}
+
+/* ---- 畫面 ---- */
+function render(){
+  $('lad').innerHTML=CFG.ladder.map((l,i)=>`<div class="${i===G.pos?'on':''} ${i===0?'end':''} ${i===5?'end2':''}">${l[0]}<small>${l[1]||'&nbsp;'}</small></div>`).join('');
+  $('title').textContent=`地面 · 第 ${G.round} / ${CFG.rounds} 輪`;
+  $('hpOp').innerHTML=`對手 <b><i style="width:${Math.max(0,G.op.hp)/30*100}%"></i></b>`;
+  $('hpMe').innerHTML=`<b><i style="width:${Math.max(0,G.me.hp)/30*100}%"></i></b> 你`;
+  $('opWho').innerHTML=`對手<br>${G.meTop?'下位':'上位'}`;$('meWho').innerHTML=`你<br>${G.meTop?'上位':'下位'}`;
+  const m=sum(G.me),o=sum(G.op);
+  $('opSum').textContent=o;$('meSum').textContent=m;
+  $('opSum').classList.toggle('lead',o>m);$('meSum').classList.toggle('lead',m>o);
+  for(const [k,el] of [['op','opPlayed'],['me','mePlayed']]){
+    const p=G[k];$(el).innerHTML=p.played.map((v,i)=>`<span class="pc ${p.lastNew&&i===p.played.length-1?'new':''}">${v}</span>`).join('');p.lastNew=false;
+  }
+  $('opPass').textContent=G.op.pass?'不打了':(!G.op.hand.length?'沒牌了':(G.turn==='op'?'…':''));
+  $('mePass').textContent=G.me.pass?'不打了':(!G.me.hand.length?'沒牌了':'');
+  $('opBacks').innerHTML=G.op.hand.map(()=>'<span></span>').join('')+`<div style="margin-top:2px">${G.op.hand.length} 張</div>`;
+  $('rounds').innerHTML='三輪 '+[0,1,2].map(i=>`<b class="${G.results[i]||''}"></b>`).join('');
+  const myTurn=G.turn==='me'&&!G.me.pass&&!G.over;
+  $('hand').innerHTML=G.me.hand.map((v,i)=>`<div class="hc ${myTurn?'':'off'}" data-i="${i}"><b>${v}</b><small>發力</small></div>`).join('')+
+    `<span class="note">手上 ${G.me.hand.length} 張<br>沒用掉的 = 站立體力</span>`;
+  $('passBtn').disabled=!myTurn;
+}
+
+/* 拖牌（也可以點） */
+let drag=null;
+$('hand').addEventListener('pointerdown',e=>{
+  const c=e.target.closest('.hc');if(!c||c.classList.contains('off'))return;
+  drag={i:+c.dataset.i,el:c.cloneNode(true),x0:e.clientX,y0:e.clientY,moved:false};
+  drag.el.classList.add('drag');document.body.appendChild(drag.el);mv(e);
+});
+function mv(e){if(!drag)return;drag.el.style.left=e.clientX-26+'px';drag.el.style.top=e.clientY-38+'px';
+  if(Math.abs(e.clientY-drag.y0)>8)drag.moved=true;
+  const r=$('drop').getBoundingClientRect();$('drop').classList.toggle('hot',e.clientY<r.bottom+20&&e.clientY>r.top)}
+addEventListener('pointermove',mv);
+addEventListener('pointerup',e=>{
+  if(!drag)return;const d=drag;drag=null;d.el.remove();$('drop').classList.remove('hot');
+  const r=$('drop').getBoundingClientRect();
+  if(!d.moved||(e.clientY<r.bottom+20))if(G.turn==='me'&&!G.me.pass)play('me',d.i);
+});
+$('passBtn').onclick=()=>{if(G.turn==='me')pass('me')};
+
+for(const [id,key] of [['optSide','side'],['optSta','sta'],['optAi','ai']])
+  $(id).onclick=e=>{const b=e.target.closest('button');if(!b)return;
+    [...$(id).children].forEach(x=>x.classList.toggle('sel',x===b));S[key]=key==='sta'?+b.dataset.v:b.dataset.v};
+$('goBtn').onclick=()=>{$('start').classList.remove('on');newGame()};
+$('againBtn').onclick=()=>{$('end').classList.remove('on');$('start').classList.add('on')};
+G={pos:2,round:1,me:{hand:[],played:[],hp:30},op:{hand:[],played:[],hp:30},results:[],meTop:false};render();
+</script>
+</body>
+</html>
