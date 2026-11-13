@@ -747,7 +747,9 @@ function endPoker(st) {
 const isEA = (st) => st.cfg.ground.mode === "ea";
 export const eaOn = isEA;
 const EAX = (st) => st.cfg.groundEA;
-export const EA_MOVES = ["pass", "pound", "sub"];
+// The fourth direction, down, means a different thing to each man: on top HOLD (no attack: get stamina back, drain his, and stuff his burst);
+// underneath BURST (costs X.burst stamina, stops any attack and earns a point of space, but a hold stuffs it).
+export const EA_MOVES = ["pass", "pound", "sub", "down"];
 const eFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "groundEA" && x.do === kind).map((x) => ({ ...x, n: (x.n || 0) * mulOf(st, u) })));
 const eSum = (st, s, kind) => eFx(st, s, kind).reduce((n, x) => n + x.n, 0);
 /** What the cards on the board do in this ground (fixed for the ground: nobody swings while they grapple). */
@@ -758,7 +760,7 @@ function eaMods(st) {
 /** A direction that is closed on this layer for both men: the submission before layer X.subFrom, the pass on the deepest layer. */
 export const eaLocked = (X, layers, layer, m) => (m === "sub" && layer < (X.subFrom || 1)) || (m === "pass" && layer >= layers);
 /** What an attack costs the top man in stamina. */
-export const eaCost = (X, M, t) => Math.max(1, X.cost[t] - (t === "pass" ? M.passCut : 0));
+export const eaCost = (X, M, t) => (t === "down" ? X.cost.down || 0 : Math.max(1, X.cost[t] - (t === "pass" ? M.passCut : 0)));
 /** The chance the bottom man gets out of one stage of a submission, from his stamina. */
 export const eaEscape = (X, botSta) => Math.min(X.escMax, X.escBase + X.escSta * (botSta / X.stamina));
 /** The number of stages a submission has here. */
@@ -770,7 +772,12 @@ export const eaSubOdds = (X, M, layer, botSta) => (1 - eaEscape(X, botSta)) ** e
 export function eaBeat(X, layers, V, M, t, b) {
   V.covered = false;
   const r = { kind: "", dmg: 0, drain: 0, esc: false, up: false, stages: 0 };
+  if (b === "down") V.botSta = Math.max(0, V.botSta - X.burst);
   if (t === "rest") { V.topSta = Math.min(X.stamina, V.topSta + X.rest); V.space++; r.kind = "rest"; }
+  else if (t === "down") {
+    if (b === "down") { V.space = 0; r.kind = "stuff"; } // he burst into the hold: his stamina is gone and so is his space
+    else { V.topSta = Math.min(X.stamina, V.topSta + X.hold.regen); V.botSta = Math.max(0, V.botSta - X.hold.drain); r.drain = X.hold.drain; r.kind = "hold"; }
+  } else if (b === "down") { V.topSta = Math.max(0, V.topSta - eaCost(X, M, t)); V.space++; r.kind = "burst"; } // the burst stops any attack
   else {
     V.topSta = Math.max(0, V.topSta - eaCost(X, M, t));
     if (t === b) { V.topSta = Math.max(0, V.topSta - X.denied); V.space++; r.kind = "deny"; }
@@ -797,7 +804,8 @@ export function eaOptions(st) {
   const bot = other(g.top), base = { top: g.top, layer: g.layer, beat: g.beat, beats: X.beats };
   if (g.phase === "sub") return { ...base, phase: "sub", stage: g.sub.stage, stages: g.sub.stages, escape: eaEscape(X, st[bot].stam) };
   const open = EA_MOVES.filter((m) => !eaLocked(X, st.cfg.ground.layers, g.layer, m)), ok = open.filter((m) => eaCost(X, g.mods, m) <= st[g.top].stam);
-  return { ...base, phase: "pick", moves: { [g.top]: ok.length ? ok : ["rest"], [bot]: open } };
+  const guard = open.filter((m) => m !== "down" || st[bot].stam >= X.burst); // a burst needs the stamina for it
+  return { ...base, phase: "pick", moves: { [g.top]: ok.length ? ok : ["rest"], [bot]: guard } };
 }
 /** What side s sees: the options plus both stamina bars, the space, the cards' effects and what a move costs. */
 export function eaView(st, s) {

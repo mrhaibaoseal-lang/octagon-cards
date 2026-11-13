@@ -1167,6 +1167,19 @@ test("EA ground, the rule on a virtual state: a match is a denial, a miss lands;
   assert.deepEqual({ kind: r.kind, stages: r.stages }, { kind: "sub", stages: XE.stages[1] });
 });
 
+test("EA ground, down: a hold gives the top man stamina and drains the bottom man; a burst stops any attack for its price; a hold stuffs a burst", () => {
+  let V = vstate({ topSta: 10 }), r = E.eaBeat(XE, 3, V, M0, "down", "pound");
+  assert.deepEqual({ kind: r.kind, top: V.topSta, bot: V.botSta, space: V.space }, { kind: "hold", top: 10 + XE.hold.regen, bot: 20 - XE.hold.drain, space: 0 });
+  for (const t of ["pass", "pound", "sub"]) {
+    V = vstate({ layer: 2 }); r = E.eaBeat(XE, 3, V, M0, t, "down");
+    assert.deepEqual({ kind: r.kind, layer: V.layer, space: V.space, top: V.topSta, bot: V.botSta, dmg: r.dmg }, { kind: "burst", layer: 2, space: 1, top: 20 - XE.cost[t], bot: 20 - XE.burst, dmg: 0 }, t);
+  }
+  V = vstate({ space: 1 }); r = E.eaBeat(XE, 3, V, M0, "down", "down");
+  assert.deepEqual({ kind: r.kind, space: V.space, bot: V.botSta, esc: r.esc }, { kind: "stuff", space: 0, bot: 20 - XE.burst, esc: false }, "the burst is wasted and his space is gone");
+  V = vstate({ space: 1 }); r = E.eaBeat(XE, 3, V, M0, "pass", "down");
+  assert.equal(r.up, true, "a burst that fills his space gets him out");
+});
+
 test("EA ground, what the numbers are: the escape chance falls with stamina; deeper means fewer stages; submission odds are the product", () => {
   assert.ok(E.eaEscape(XE, 20) > E.eaEscape(XE, 10) && E.eaEscape(XE, 10) > E.eaEscape(XE, 0));
   assert.ok(Math.abs(E.eaEscape(XE, 20) - Math.min(XE.escMax, XE.escBase + XE.escSta)) < 1e-9);
@@ -1185,20 +1198,20 @@ test("EA ground, a takedown starts it: both pick at once, the top man is limited
   assert.equal(E.options(st), null, "no card attacks while they grapple"); assert.equal(E.groundOptions(st), null);
   const o = E.eaOptions(st);
   assert.deepEqual({ phase: o.phase, top: o.top, layer: o.layer, beat: o.beat, beats: o.beats }, { phase: "pick", top: "a", layer: 1, beat: 1, beats: XE.beats });
-  assert.deepEqual(o.moves.a, ["pass", "pound"], "no submission from the half guard (subFrom)"); assert.deepEqual(o.moves.b, ["pass", "pound"], "and nothing to defend there");
+  assert.deepEqual(o.moves.a, ["pass", "pound", "sub", "down"], "four directions from the half guard on (subFrom 1)"); assert.deepEqual(o.moves.b, ["pass", "pound", "sub", "down"]);
   assert.equal(E.chooseGround(st, "a", "rest"), false, "resting is only for a man who cannot attack");
-  assert.equal(E.chooseGround(st, "a", "sub"), false, "the submission is closed on this layer");
   assert.ok(E.chooseGround(st, "b", "pass")); assert.ok(E.chooseGround(st, "a", "pound"));
   E.step(st);
   assert.deepEqual({ t: evs(st, "eabeat")[0].mt, b: evs(st, "eabeat")[0].mb }, { t: "pound", b: "pass" });
   assert.deepEqual(st.c.ground.hist, { top: ["pound"], bot: ["pass"] }, "the directions used this ground are kept for the screen");
   const s2 = downEA(["cross"], ["cross"], "a", 2);
-  assert.deepEqual(E.eaOptions(s2).moves, { a: ["pass", "pound", "sub"], b: ["pass", "pound", "sub"] }, "side control opens the submission");
   s2.a.stam = 2;
-  assert.deepEqual(E.eaOptions(s2).moves.a, ["pass", "pound"], "he cannot pay for a submission with 2 stamina");
+  assert.deepEqual(E.eaOptions(s2).moves.a, ["pass", "pound", "down"], "he cannot pay for a submission with 2 stamina");
   s2.a.stam = 0;
-  assert.deepEqual(E.eaOptions(s2).moves.a, ["rest"]);
-  const s3 = downEA(["cross"], ["cross"], "a", 3); assert.deepEqual(E.eaOptions(s3).moves, { a: ["pound", "sub"], b: ["pound", "sub"] }, "no pass from the mount");
+  assert.deepEqual(E.eaOptions(s2).moves.a, ["down"], "with nothing left he can still hold");
+  s2.b.stam = XE.burst - 1;
+  assert.deepEqual(E.eaOptions(s2).moves.b, ["pass", "pound", "sub"], "a burst needs the stamina for it");
+  const s3 = downEA(["cross"], ["cross"], "a", 3); assert.deepEqual(E.eaOptions(s3).moves, { a: ["pound", "sub", "down"], b: ["pound", "sub", "down"] }, "no pass from the mount");
 });
 
 test("EA ground, a beat on the real engine: denials earn space and a layer, a pound hurts the fighter and drains him, the ground ends after the last beat", () => {
@@ -1296,7 +1309,7 @@ test("EA ground AI: its table sums to one over what it may pick, is exactly what
   let st = downEA(["cross"], ["cross"], "a", 2);
   let t = eaTable(st, "b");
   assert.ok(Math.abs(Object.values(t.w).reduce((n, v) => n + v, 0) - 1) < 1e-9);
-  assert.deepEqual(Object.keys(t.w).sort(), ["pass", "pound", "sub"]);
+  assert.deepEqual(Object.keys(t.w).sort(), ["down", "pass", "pound", "sub"]);
   const before = t.w;
   // you pounded and landed: he covers up next
   beatEA(st, "pound", "pass");
@@ -1307,7 +1320,7 @@ test("EA ground AI: its table sums to one over what it may pick, is exactly what
   // the clues the screen shows instead of the odds: one per thing that moved the table, never about a closed direction
   assert.deepEqual(after.clues.filter((c) => c.m === "pound").map((c) => [c.up, c.why]), [[true, "covered"], [true, "memory"]]);
   assert.ok(["pass", "pound", "sub"].includes(after.habit));
-  const half = downEA(["cross"], ["cross"], "a", 1); half.b.stam = 0;
+  const half = downEA(["cross"], ["cross"], "a", 1); half.b.stam = 0; half.cfg = { ...half.cfg, groundEA: { ...XE, subFrom: 2 } }; // a rule set that closes it on the first layer
   assert.equal(eaTable(half, "b").w.sub, 0, "nothing to defend where the submission is closed");
   assert.ok(!eaTable(half, "b").clues.some((c) => c.m === "sub"), "and no clue about it");
   const low = downEA(["cross"], ["cross"], "a", 3); low.b.stam = 0;
@@ -1322,16 +1335,16 @@ test("EA ground AI: its table sums to one over what it may pick, is exactly what
   const pt = eaTable(poor, "a");
   assert.equal(pt.w.rest, undefined);
   poor.a.stam = 0; poor.c.ground.top = "a";
-  assert.deepEqual(eaTable(poor, "a").w, { rest: 1 });
-  assert.equal(eaPick(poor, "a"), "rest");
+  assert.deepEqual(eaTable(poor, "a").w, { pass: 0, pound: 0, sub: 0, down: 1 }, "with nothing left he holds");
+  assert.equal(eaPick(poor, "a"), "down");
   // the draw is from the table: with all weight on one move the pick is that move
-  const f = downEA(["cross"], ["cross"], "b", 2); f.a.f = { ...f.a.f, ai: { ...f.a.f.ai, groundEA: { bot: { pass: 0, pound: 0, sub: 1 }, top: { pass: 1, pound: 1, sub: 1 } } } };
+  const f = downEA(["cross"], ["cross"], "b", 2); f.a.f = { ...f.a.f, ai: { ...f.a.f.ai, groundEA: { bot: { pass: 0, pound: 0, sub: 1, down: 0 }, top: { pass: 1, pound: 1, sub: 1 } } } };
   const flat = f.cfg.groundEA.ai.flat; f.cfg.groundEA.ai.flat = 0;
   for (let i = 0; i < 20; i++) { f.rng += 7; assert.equal(eaPick(f, "a"), "sub"); }
   f.cfg.groundEA.ai.flat = flat;
   // the opponent (a, underneath) never picks outside its options, and the players act only while a direction is wanted
   const g = downEA(["cross"], ["cross"], "b", 2);
-  for (const k of Object.keys(groundersEA)) { const m = groundersEA[k](g, "a"); assert.ok(["pass", "pound", "sub", "rest"].includes(m), k); }
+  for (const k of Object.keys(groundersEA)) { const m = groundersEA[k](g, "a"); assert.ok(["pass", "pound", "sub", "down", "rest"].includes(m), k); }
   beatEA(g, "sub", "pound");
   assert.equal(eaPick(g, "a"), null); assert.equal(eaRead(g, "a"), null, "nobody picks a direction in the middle of a submission");
 });
@@ -1344,7 +1357,7 @@ test("EA ground, the reader: it picks the direction worth most against the shown
   assert.equal(eaRead(st, "a"), "sub");
   // he is on top and only ever submits; you are underneath: the reader guards it
   const s2 = downEA(["cross"], ["cross"], "b", 3);
-  s2.a.stam = 2; s2.b.f = { ...s2.b.f, ai: { ...s2.b.f.ai, groundEA: { top: { pass: 0, pound: 0, sub: 1 }, bot: { pass: 1, pound: 1, sub: 1 } } } };
+  s2.a.stam = 2; s2.b.f = { ...s2.b.f, ai: { ...s2.b.f.ai, groundEA: { top: { pass: 0, pound: 0, sub: 1, down: 0 }, bot: { pass: 1, pound: 1, sub: 1 } } } };
   assert.equal(eaRead(s2, "a"), "sub");
   dea.config.groundEA.ai.flat = flat;
   // over many bouts the reader beats the best memorised mix (this is the point of the ground)

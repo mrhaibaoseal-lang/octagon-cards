@@ -323,20 +323,26 @@ const eaStyleOf = (st, s, role) => st[s].f.ai?.groundEA?.[role] || { pass: 3, po
 /** The chance each direction is picked by a man of `style` in `role` ("top" attacks, "bot" defends) on the virtual state V, as { move: 0..1 } (or { rest: 1 } when the top man can afford nothing).
  *  Style weights, then: the top man shies away from what the bottom man just guarded (he remembers) and goes for a submission when it is on;
  *  the bottom man covers up after eating a strike, guards what the top man just did (he remembers) and guards the finish harder when it is on. */
+/** The top man holds more the more winded he is; the bottom man bursts more when one more point of space gets him out. */
+const holdK = (X, V) => 0.5 + X.ai.holdTired * (1 - V.topSta / X.stamina);
+const burstK = (X, V) => (V.space >= X.need - 1 ? X.ai.burstNear : 1);
 function eaTableV(X, layers, style, role, V, M) {
   const A = X.ai, odds = E.eaSubOdds(X, M, V.layer, V.botSta), w = {};
   for (const m of E.EA_MOVES) {
-    let x = style[m] ?? 3;
+    let x = style[m] ?? (m === "down" ? A.down : 3);
     if (role === "top") {
       if (E.eaCost(X, M, m) > V.topSta || E.eaLocked(X, layers, V.layer, m)) x = 0;
       else {
-        if (V.lastBot && V.lastBot !== m) x *= 1 + A.memory / 2;
+        if (V.lastBot === "down") { if (m === "down") x *= 1 + A.memory; } // he burst last beat: hold him down this time
+        else if (V.lastBot && V.lastBot !== m && m !== "down") x *= 1 + A.memory / 2;
         if (m === "sub") x *= 0.5 + odds * A.subTop;
+        if (m === "down") x *= holdK(X, V);
       }
     } else {
       if (V.covered && m === "pound") x *= A.cover;
-      if (V.lastTop === m) x *= 1 + A.memory;
+      if (V.lastTop === m && m !== "down") x *= 1 + A.memory;
       if (m === "sub") x *= 0.6 + odds * A.subBot;
+      if (m === "down") x = V.botSta < X.burst ? 0 : x * burstK(X, V);
       if (E.eaLocked(X, layers, V.layer, m)) x = 0;
     }
     w[m] = x;
@@ -351,11 +357,15 @@ export function eaClues(X, layers, role, V, M) {
   const A = X.ai, odds = E.eaSubOdds(X, M, V.layer, V.botSta), open = (m) => !E.eaLocked(X, layers, V.layer, m), out = [];
   if (role === "bot") {
     if (V.covered) out.push({ m: "pound", up: true, why: "covered" });
-    if (V.lastTop && V.lastTop !== "rest" && open(V.lastTop)) out.push({ m: V.lastTop, up: true, why: "memory" });
+    if (V.lastTop && V.lastTop !== "rest" && V.lastTop !== "down" && open(V.lastTop)) out.push({ m: V.lastTop, up: true, why: "memory" });
     if (open("sub")) { const k = 0.6 + odds * A.subBot; if (k > 1.15) out.push({ m: "sub", up: true, why: "tired" }); else if (k < 0.85) out.push({ m: "sub", up: false, why: "fresh" }); }
+    if (V.botSta < X.burst) out.push({ m: "down", up: false, why: "spent" });
+    else if (burstK(X, V) > 1) out.push({ m: "down", up: true, why: "near" });
   } else {
-    if (V.lastBot && open(V.lastBot)) out.push({ m: V.lastBot, up: false, why: "memory" });
+    if (V.lastBot === "down") out.push({ m: "down", up: true, why: "memory" });
+    else if (V.lastBot && open(V.lastBot)) out.push({ m: V.lastBot, up: false, why: "memory" });
     if (open("sub")) { const k = 0.5 + odds * A.subTop; if (k > 1.15) out.push({ m: "sub", up: true, why: "tired" }); else if (k < 0.85) out.push({ m: "sub", up: false, why: "fresh" }); }
+    if (holdK(X, V) > 1.15) out.push({ m: "down", up: true, why: "winded" });
   }
   return out;
 }
@@ -367,8 +377,12 @@ export function eaTable(st, s) {
     if (V.covered) why.push("你剛<b>砸中他</b>：他想護頭");
     if (V.lastTop) why.push(`你上一拍<b>${N.top[V.lastTop]}</b>：他防著這招`);
     if (E.eaSubOdds(X, g.mods, V.layer, V.botSta) > 0.12) why.push(`他體力 ${V.botSta}：防降伏變弱`);
+    if (V.botSta < X.burst) why.push(`他體力 ${V.botSta}：爆發不起來`);
+    else if (burstK(X, V) > 1) why.push("他再 1 格就脫出：想爆發");
   } else {
-    if (V.lastBot) why.push(`你上一拍<b>${N.bot[V.lastBot]}</b>：他少用${N.top[V.lastBot]}`);
+    if (V.lastBot === "down") why.push("你上一拍<b>爆發</b>：他想壓住你");
+    else if (V.lastBot) why.push(`你上一拍<b>${N.bot[V.lastBot]}</b>：他少用${N.top[V.lastBot]}`);
+    if (holdK(X, V) > 1.15) why.push(`他體力 ${V.topSta}：想壓住喘口氣`);
     if (E.eaSubOdds(X, g.mods, V.layer, V.botSta) > 0.12) why.push(`你體力 ${V.botSta}：他想<b>降伏</b>`);
     if (w.rest) why.push(`他體力 ${V.topSta}：沒力出招，要喘口氣`);
   }
@@ -456,9 +470,10 @@ const vsEA = (mine) => (st, s) => (s === "a" ? mine(st, s) : eaPick(st, s));
 /** Side a: reads the table, plays one of three memorised mixes, or picks at random; side b always plays its own table. */
 export const groundersEA = {
   reader: vsEA(eaRead),
-  mixBal: vsEA(eaMix({ pass: 0.35, pound: 0.4, sub: 0.25 }, { pass: 0.35, pound: 0.4, sub: 0.25 })),
-  mixPound: vsEA(eaMix({ pass: 0.2, pound: 0.6, sub: 0.2 }, { pass: 0.2, pound: 0.6, sub: 0.2 })),
-  mixSub: vsEA(eaMix({ pass: 0.25, pound: 0.25, sub: 0.5 }, { pass: 0.25, pound: 0.25, sub: 0.5 })),
+  mixBal: vsEA(eaMix({ pass: 0.3, pound: 0.35, sub: 0.2, down: 0.15 }, { pass: 0.3, pound: 0.35, sub: 0.2, down: 0.15 })),
+  mixPound: vsEA(eaMix({ pass: 0.2, pound: 0.5, sub: 0.15, down: 0.15 }, { pass: 0.2, pound: 0.5, sub: 0.15, down: 0.15 })),
+  mixSub: vsEA(eaMix({ pass: 0.25, pound: 0.2, sub: 0.4, down: 0.15 }, { pass: 0.25, pound: 0.2, sub: 0.4, down: 0.15 })),
+  mixDown: vsEA(eaMix({ pass: 0.3, pound: 0.3, sub: 0.1, down: 0.3 }, { pass: 0.2, pound: 0.25, sub: 0.2, down: 0.35 })),
   clues: vsEA(eaByClues),
   lowest: vsEA(eaLowest()),
   lowestNoSub: vsEA(eaLowest("sub")),

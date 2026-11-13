@@ -103,10 +103,10 @@ console.log(`六組選手對打（會讀）　${byPair.map((x) => `${x.a.slice(0
 const dea = loadData(); dea.config.ground.mode = "ea";
 const rowEA = (gpick, d = dea) => { const s = { w: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0, sub: 0, subBy: 0, gnet: 0 }; for (const [a, b] of pairs) { const r = cell(a, b, shoppers.smart, undefined, undefined, gpick, d); for (const k in s) s[k] += r[k] / (k === "hands" || k === "mount" ? 1 : pairs.length); } return s; };
 const ea = Object.fromEntries(Object.entries(groundersEA).map(([k, g]) => [k, rowEA(g)]));
-const bestFixed = Math.max(ea.mixBal.w, ea.mixPound.w, ea.mixSub.w);
+const bestFixed = Math.max(ea.mixBal.w, ea.mixPound.w, ea.mixSub.w, ea.mixDown.w);
 console.log("\n六、地面 EA 式（ground.mode＝ea，猜方向＋體力；你這邊都是認真逛）");
 console.log(`會讀（知道他真正的表，往前看兩拍；玩家看不到表，這是動腦的上限）　${pc(ea.reader.w)}`);
-console.log(`固定打法（背一套出招比例，不看他的表）　均衡 ${pc(ea.mixBal.w)}　重砸擊 ${pc(ea.mixPound.w)}　重降伏 ${pc(ea.mixSub.w)}`);
+console.log(`固定打法（背一套出招比例，不看他的表）　均衡 ${pc(ea.mixBal.w)}　重砸擊 ${pc(ea.mixPound.w)}　重降伏 ${pc(ea.mixSub.w)}　重 ↓ ${pc(ea.mixDown.w)}`);
 console.log(`亂猜　${pc(ea.random.w)}`);
 // Measurements only (no pass mark set): a rule anyone can memorise from the shown table, and the ground's own score with the shopping taken out.
 console.log(`照線索背（畫面上每個方向數 ▲▼，習慣算半個；上位挑最少擋的、下位擋最常出的）　${pc(ea.clues.w)}`);

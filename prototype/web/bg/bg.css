@@ -374,7 +374,7 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 .eamode #cue{visibility:hidden}
 .eamode.eabar #cue{visibility:visible;position:relative;z-index:6}
 .eamode.eabar #g21 .act{display:none}
-#g21.ea .m-pass{--m:#4c8dff} #g21.ea .m-pound{--m:#f0524f} #g21.ea .m-sub{--m:#b06cff}
+#g21.ea .m-pass{--m:#4c8dff} #g21.ea .m-pound{--m:#f0524f} #g21.ea .m-sub{--m:#b06cff} #g21.ea .m-down{--m:#e8b23a}
 #g21.ea .lad{top:46px}
 #g21.ea .side{top:88px;width:236px;height:228px}
 #g21.ea .row{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;color:#cfd7e6;flex-wrap:wrap}
@@ -419,8 +419,9 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #g21.ea .pad .ar small{font-size:10.5px;color:#d6dcea}
 #g21.ea .pad .ar .k{font-size:15px;font-weight:800;color:var(--m)}
 #g21.ea .pad .ar.up{left:124px;top:2px}
-#g21.ea .pad .ar.lf{left:2px;top:122px}
-#g21.ea .pad .ar.rt{right:2px;top:122px}
+#g21.ea .pad .ar.lf{left:2px;top:91px}
+#g21.ea .pad .ar.rt{right:2px;top:91px}
+#g21.ea .pad .ar.dn{left:124px;top:170px}
 #g21.ea .pad .ar.sel{background:var(--m);box-shadow:0 0 0 3px #fff,0 0 18px var(--m)}
 #g21.ea .pad .ar.sel .k{color:#fff}
 #g21.ea .pad .ar.aim{box-shadow:0 0 0 3px #fff8,0 0 14px var(--m)}
@@ -429,7 +430,7 @@ h4 small{font-weight:400;color:var(--dim);font-size:10.5px}
 #g21.ea .reveal{left:0;right:0;top:112px;display:flex;justify-content:space-between;padding:0 6px;z-index:2;pointer-events:none}
 #g21.ea .reveal span{font-size:12px;font-weight:800;padding:3px 9px;border-radius:12px;background:#0a0d12d9;box-shadow:0 0 0 2px var(--m)}
 #g21.ea .stamp{left:50%;top:48px;font-size:25px;line-height:1.25;text-align:center;pointer-events:none}
-#g21.ea .cap{left:252px;width:340px;bottom:76px;font-size:12px;line-height:1.35}
+#g21.ea .cap{left:252px;width:340px;bottom:63px;font-size:12px;line-height:1.35}
 #g21.ea .act{left:84px;right:84px;top:326px;height:56px;gap:10px;align-items:center}
 #g21.ea .last,#g21.ea .hint{height:100%;border-radius:8px;display:flex;flex-direction:column;justify-content:center;font-size:12px;line-height:1.45}
 #g21.ea .last{flex:1;background:#121722;border:1px solid var(--line);padding:0 12px;color:#cfd7e6;pointer-events:none}
