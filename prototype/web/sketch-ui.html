@@ -65,6 +65,17 @@ body{display:flex;align-items:center;justify-content:center;font-family:"Bahnsch
 .ty b{width:22px;height:22px;display:flex;align-items:center;justify-content:center;
   clip-path:polygon(29% 0,71% 0,100% 29%,100% 71%,71% 100%,29% 100%,0 71%,0 29%)}
 .ty svg{width:16px;height:16px;display:block}
+.ty{flex-direction:column;gap:2px}
+.lv{font-style:normal;font-size:9.5px;line-height:1;letter-spacing:1px;color:#6c7180}
+.lv u{text-decoration:none;color:var(--gold);text-shadow:0 0 4px rgba(255,190,60,.9)}
+/* a gold card (three of a kind merged): gold stock, gold frame, two lit stars */
+.gold .card{background:linear-gradient(180deg,#fff6d6,#f3d586 62%,#dcae45)}
+.gold .ty{background:linear-gradient(180deg,#4a3608,#1d1503)}
+.cw.gold::before,.of.gold::before{content:"";position:absolute;inset:-2px;background:linear-gradient(180deg,#fff0b8,#e79c14);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%)}
+.col.b .cw.gold::before{clip-path:polygon(12px 0,100% 0,100% 100%,0 100%,0 12px)}
+.cw.gold{filter:drop-shadow(0 0 5px rgba(255,190,60,.55)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.cw.pair::after{content:"";position:absolute;inset:-3px;border:1.5px dashed var(--gold);opacity:.9}
+.flag{position:absolute;right:14px;top:-3px;z-index:3;font-size:10px;font-weight:700;color:#17130a;padding:2px 8px;background:linear-gradient(180deg,#fff0bd,#f6b93a);box-shadow:0 2px 0 #7a4d04,0 0 10px rgba(255,190,60,.7);transform:skewX(-12deg)}
 .k-p b{background:linear-gradient(160deg,#ffd98a,#e08a1c)}
 .k-k b{background:linear-gradient(160deg,#9ff0dc,#1f9f88)}
 .k-d b{background:linear-gradient(160deg,#cfe0ff,#5f86cc)}
@@ -116,6 +127,9 @@ body{display:flex;align-items:center;justify-content:center;font-family:"Bahnsch
 #grain{position:absolute;inset:0;background:var(--noise);opacity:.22;mix-blend-mode:overlay;pointer-events:none}
 
 /* ---- menu ---- */
+.art.in{filter:brightness(.74) contrast(1.12) saturate(.72) drop-shadow(0 -1.5px 0 rgba(255,236,200,.55)) drop-shadow(0 5px 4px rgba(0,0,0,.6))}
+.sha{position:absolute;bottom:42px;width:122px;height:26px;background:radial-gradient(ellipse at center,rgba(0,0,0,.72) 0,rgba(0,0,0,.38) 42%,rgba(0,0,0,0) 70%)}
+.haze{position:absolute;inset:0;background:radial-gradient(ellipse 300px 150px at 590px 120px,rgba(255,238,205,.16),rgba(255,238,205,0) 70%),linear-gradient(180deg,rgba(40,60,110,.10) 0,rgba(5,6,10,0) 55%,rgba(5,6,10,.45) 100%)}
 #s-menu .dim{background:linear-gradient(90deg,rgba(5,6,10,.96) 0,rgba(5,6,10,.86) 34%,rgba(5,6,10,.25) 62%,rgba(5,6,10,.05) 100%)}
 .strap{position:absolute;left:44px;top:30px;font-size:10px;letter-spacing:.3em;color:#17130a;font-weight:700;padding:3px 12px;background:linear-gradient(180deg,#ffe9a8,#f3b230);transform:skewX(-12deg)}
 .strap span{display:inline-block;transform:skewX(12deg)}
@@ -173,7 +187,7 @@ h1 span{color:transparent;-webkit-text-stroke:1.5px var(--gold);text-shadow:none
 .of{position:relative;height:68px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.7))}
 .of .card{flex-direction:column}
 .of .top{display:flex;height:40px;flex:none}
-.of .ty{padding-bottom:0}.of .st{padding-bottom:0}
+.of .ty{padding-bottom:0;gap:1px}.of .st{padding-bottom:0}
 .of .tx{padding-top:5px}
 .fxt{flex:1;display:flex;align-items:center;padding:0 8px 5px;font-size:10.5px;color:#3b382f;background:rgba(0,0,0,.07);border-top:1px solid rgba(0,0,0,.14);white-space:nowrap}
 .of.pickup{transform:translate(-5px,3px) rotate(-2deg);filter:drop-shadow(0 0 8px rgba(255,200,90,.9)) drop-shadow(0 4px 4px rgba(0,0,0,.8));z-index:2}
@@ -215,8 +229,10 @@ h1 span{color:transparent;-webkit-text-stroke:1.5px var(--gold);text-shadow:none
 
   <!-- ============ 1. menu ============ -->
   <section class="scr" id="s-menu">
-    <img class="art" style="left:500px;bottom:54px;height:200px" src="assets/private/poirier/idle.png" alt="" onerror="this.remove()">
-    <img class="art flip" style="left:630px;bottom:54px;height:200px" src="assets/private/holloway/idle.png" alt="" onerror="this.remove()">
+    <i class="sha" style="left:452px"></i><i class="sha" style="left:588px"></i>
+    <img class="art in" style="left:462px;bottom:54px;height:200px" src="assets/private/poirier/idle.png" alt="" onerror="this.remove()">
+    <img class="art in flip" style="left:598px;bottom:54px;height:200px" src="assets/private/holloway/idle.png" alt="" onerror="this.remove()">
+    <div class="haze"></div>
     <div class="dim"></div>
     <div class="strap"><span>FIGHT NIGHT</span></div>
     <h1 class="lat">OCTAGON<br><span>CARDS</span></h1>
@@ -273,9 +289,9 @@ h1 span{color:transparent;-webkit-text-stroke:1.5px var(--gold);text-shadow:none
     <div class="go" style="left:312px;width:220px;top:272px" data-go="result"><span>開打</span><small class="lat">FIGHT</small></div>
     <svg class="ov" viewBox="0 0 844 390">
       <defs><linearGradient id="dg" x1="1" x2="0"><stop offset="0" stop-color="#ffcf6b" stop-opacity="0"/><stop offset=".25" stop-color="#ffcf6b" stop-opacity=".9"/><stop offset="1" stop-color="#fff3cf"/></linearGradient></defs>
-      <path d="M300 142 Q250 236 176 246" fill="none" stroke="url(#dg)" stroke-width="5" stroke-linecap="round" opacity=".35"/>
-      <path d="M300 142 Q250 236 176 246" fill="none" stroke="url(#dg)" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
-      <path d="M186 237l-16 10 17 7z" fill="#fff3cf"/>
+      <path d="M300 142 Q250 290 176 301" fill="none" stroke="url(#dg)" stroke-width="5" stroke-linecap="round" opacity=".35"/>
+      <path d="M300 142 Q250 290 176 301" fill="none" stroke="url(#dg)" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
+      <path d="M186 292l-16 10 17 7z" fill="#fff3cf"/>
     </svg>
     <div class="cue"><span>把招式拖到左邊空位就買 · 把自己的牌拖回中間賣掉 +1 金</span></div>
   </section>
@@ -325,26 +341,26 @@ const ICON = {
   g: '<svg viewBox="0 0 24 24"><path d="M5 17V9.500a4.500 4.500 0 0 1 9 0V12" fill="none" stroke="#1a0c22" stroke-width="3.600" stroke-linecap="round"/><path d="M19 7v7.500a4.500 4.500 0 0 1-9 0V12" fill="none" stroke="#1a0c22" stroke-width="3.600" stroke-linecap="round"/></svg>',
 };
 const stats = (c) => `<div class="st atk"><b class="lat">${c.a}</b></div><div class="st dur"><b class="lat">${c.d}</b></div>`;
-const head = (c) => `<div class="ty k-${c.k}"><b>${ICON[c.k]}</b></div><div class="tx"><div class="nm">${c.n}${c.up ? "<s>強化</s>" : ""}</div><div class="tg">${c.t}</div></div>${stats(c)}`;
+const head = (c) => `<div class="ty k-${c.k}"><b>${ICON[c.k]}</b><i class="lv">${c.g ? "<u>★★</u>" : "<u>★</u>☆"}</i></div><div class="tx"><div class="nm">${c.n}${c.up ? "<s>強化</s>" : ""}</div><div class="tg">${c.t}</div></div>${stats(c)}`;
 const cardHtml = (c) => !c ? `<div class="cw empty"><div class="card">空位</div></div>`
   : c === "?" ? `<div class="cw back"><div class="card lat">?</div></div>`
   : c === "hot" ? `<div class="cw empty hot"><div class="card">空位</div></div>`
-  : `<div class="cw"><div class="card">${head(c)}</div></div>`;
+  : `<div class="cw${c.g ? " gold" : ""}${c.pair ? " pair" : ""}"><div class="card">${head(c)}</div></div>`;
 const offerHtml = (c) => !c ? `<div class="of sold"><div class="card">已買</div></div>`
-  : `<div class="of${c.pick ? " pickup" : ""}"><div class="card"><div class="top">${head(c)}</div><div class="fxt">${c.x}</div></div></div>`;
+  : `<div class="of${c.pick ? " pickup" : ""}">${c.flag ? `<div class="flag">${c.flag}</div>` : ""}<div class="card"><div class="top">${head(c)}</div><div class="fxt">${c.x}</div></div></div>`;
 const put = (id, list, f = cardHtml) => (document.getElementById(id).innerHTML = list.map(f).join(""));
 
 const jab = { k: "p", n: "刺拳", t: "連段 · 開場", a: 2, d: 1 }, cross = { k: "p", n: "直拳", t: "連段", a: 5, d: 2, up: 1 }, low = { k: "k", n: "低踢", t: "長距離 · 命中", a: 2, d: 2 };
-put("shopA", [jab, cross, low, "hot", null, null]);
+put("shopA", [{ ...jab, pair: 1 }, { ...jab, pair: 1 }, cross, { ...low, a: 4, d: 4, g: 1 }, "hot", null]);
 put("shopB", ["?", "?", "?", "?", "?", "?"]);
 put("offers", [
   { k: "p", n: "勾拳", t: "連段 · 上場", a: 4, d: 3, x: "上場：其他拳 +1 攻擊", pick: 1 },
-  { k: "k", n: "中段踢", t: "長距離 · 掃", a: 3, d: 2, x: "掃：同時打到目標兩旁" },
+  { ...jab, x: "每段開始：右邊那張 +2 攻擊", flag: "第三張 → 合成金卡 ★★" },
   { k: "d", n: "高位架擋", t: "架擋", a: 1, d: 4, x: "架擋：他得先打這張" },
   null,
 ], offerHtml);
-put("endA", [{ ...jab, a: 3 }, { k: "p", n: "勾拳", t: "連段 · 上場", a: 5, d: 3 }, { ...cross, a: 7, d: 3 }, { k: "p", n: "連打", t: "連打 · 連段", a: 3, d: 3 }, { k: "d", n: "高位架擋", t: "架擋", a: 1, d: 4 }, null]);
-put("endB", [{ ...jab, up: 0 }, { k: "k", n: "前踢", t: "長距離 · 開場", a: 1, d: 3 }, low, { k: "k", n: "中段踢", t: "長距離 · 掃", a: 4, d: 3 }, { k: "d", n: "側閃", t: "閃躲", a: 2, d: 1 }, { k: "g", n: "纏抱", t: "破解時", a: 1, d: 3 }]);
+put("endA", [{ ...jab, a: 3 }, { k: "p", n: "勾拳", t: "連段 · 上場", a: 5, d: 3 }, { ...cross, a: 10, d: 4, g: 1 }, { k: "p", n: "連打", t: "連打 · 連段", a: 3, d: 3 }, { k: "d", n: "高位架擋", t: "架擋", a: 1, d: 4 }, null]);
+put("endB", [{ ...jab, up: 0 }, { k: "k", n: "前踢", t: "長距離 · 開場", a: 1, d: 3 }, low, { k: "k", n: "中段踢", t: "長距離 · 掃", a: 6, d: 4, g: 1 }, { k: "d", n: "側閃", t: "閃躲", a: 2, d: 1 }, { k: "g", n: "纏抱", t: "破解時", a: 1, d: 3 }]);
 
 // roster strip: whoever has a portrait in the private art; the two picked ones are lifted
 const who = ["adesanya", "chimaev", "gaethje", "poirier", "jones", "khabib", "makhachev", "holloway", "oliveira", "omalley", "pereira", "topuria"];
