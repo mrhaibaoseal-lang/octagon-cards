@@ -46,7 +46,18 @@ async function boot() {
   const ids = Object.keys(data.fighters);
   choice = { a: params.get("a") || ids[0], b: params.get("b") || ids[1] };
   fit();
+  if (params.has("jump")) return jumpToGround();
   pickScreen();
+}
+/** ?jump=top / ?jump=bottom: skip the pick screen and the shop, give both sides the same three tier-1 cards and start the first clash on the mat (you on top or underneath). */
+let jumpSide = null;
+async function jumpToGround() {
+  await loadArt([choice.a, choice.b]);
+  st = E.createGame(data, choice.a, choice.b, Number(params.get("seed")) || (Date.now() % 2147483647));
+  const t1 = Object.keys(data.skills).filter((id) => data.skills[id].tier === 1).slice(0, 3);
+  for (const s of ["a", "b"]) t1.forEach((id, i) => (st[s].board[i] = E.make(st, id)));
+  jumpSide = params.get("jump") === "bottom" ? "b" : "a";
+  clash(++runId);
 }
 
 // ---------- fighters on the stage ----------
@@ -993,6 +1004,7 @@ async function clash(id) {
   label();
   let from = st.log.length, prev = null;
   E.startClash(st);
+  if (jumpSide) { E.startGround(st, jumpSide); jumpSide = null; } // ?jump: this clash starts on the mat
   const flush = async () => {
     for (const e of st.log.slice(from)) {
       if (id !== runId) return;

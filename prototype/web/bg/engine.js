@@ -245,9 +245,14 @@ function takedown(st, u) {
   if (c.ground || c.grounds >= st.cfg.ground.perClash) return; // one ground game a clash: after that a takedown is just a hit
   const stop = alive(c[other(s)]).find((x) => x.kw.sprawl);
   if (stop) { ev(st, "stuffed", { s: other(s), uid: stop.uid, from: u.uid }); return; }
+  startGround(st, s, u.uid);
+}
+/** Starts the ground game with side s on top (a takedown, or the ?jump test link going straight to the mat). */
+export function startGround(st, s, uid = null) {
+  const c = st.c;
   c.ground = { top: s, layer: st.cfg.ground.start, beat: 1 };
   c.grounds++;
-  ev(st, "ground", { s, uid: u.uid });
+  ev(st, "ground", { s, uid });
   if (isPoker(st)) startPoker(st);
   else if (isEA(st)) startEA(st);
   else if (is21(st)) deal21(st);
