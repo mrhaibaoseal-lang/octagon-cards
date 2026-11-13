@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>訓練方向草圖</title>
+<!-- 靜態草圖（2026-11-14）：Lv3 從「高一級商店三選一」改成「替這張牌選訓練方向」。#pick 二選一面板、#done 練完之後的牌面、#all 八個方向一覽。不接遊戲程式。 -->
+<style>
+:root{--bg:#0d0f14;--panel:#171b24;--line:#2c3342;--ink:#eef1f6;--dim:#8d97a8;--gold:#f0b52e;--gold2:#fff0bd;--red:#d8443a;--blue:#3b7be0;--p:#e0613a;--k:#d9a630;--d:#4a9be0;--g:#4fb36d}
+*{box-sizing:border-box;margin:0}
+body{background:#05060a;color:var(--ink);font:13px/1.4 "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 16px}
+nav{display:flex;gap:6px}nav a{color:var(--dim);text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:3px}nav a.on{color:#17130a;background:var(--gold);border-color:var(--gold)}
+.frame{position:relative;width:844px;max-width:100%;height:390px;overflow:hidden;background:radial-gradient(ellipse at 50% 120%,#2a2f3c 0,#11141b 55%,#07080c 100%);border:1px solid #222}
+.view{display:none;position:absolute;inset:0}.view.on{display:block}
+/* broadcast bar */
+.bar{position:absolute;top:0;left:0;right:0;height:30px;display:flex;justify-content:center;align-items:center;background:linear-gradient(180deg,#1b2030,#0e1119);border-bottom:2px solid var(--gold);font-weight:700;letter-spacing:.1em;font-size:12px}
+.bar i{font-style:normal;color:var(--gold);margin-right:10px}
+/* card */
+.sk{position:relative;width:150px;background:linear-gradient(180deg,#f3efe4,#d9d3c4);color:#1b1a17;border-radius:3px;padding:6px 8px 8px;box-shadow:0 2px 0 #000}
+.sk.l3{outline:3px solid var(--gold);box-shadow:0 0 14px rgba(240,181,46,.5),0 2px 0 #000}
+.sk .ltag{position:absolute;right:8px;top:-8px;font-size:10px;font-weight:700;font-style:italic;padding:0 5px;transform:skewX(-12deg);background:linear-gradient(180deg,#fff0bd,#f0b52e);color:#17130a}
+.sk .nm{font-weight:800;font-size:15px}
+.sk .ty{font-size:10px;color:#6b665a}
+.sk .st{display:flex;gap:6px;margin-top:4px}
+.sk .st b{min-width:26px;text-align:center;font-size:15px;padding:1px 4px;border-radius:3px;color:#fff}
+.sk .st .a{background:#2a2a2a}.sk .st .h{background:var(--red)}
+.sk .st b.up{box-shadow:0 0 0 2px #3bd16f}
+.sk .tg{font-size:11px;color:#4b473f;margin-top:4px;min-height:16px}
+.sk .tg em{font-style:normal;font-weight:700;color:#17130a}
+.sk .tg .new{background:#3bd16f;color:#06210f;padding:0 4px;border-radius:2px}
+.train{position:absolute;left:-4px;bottom:-9px;font-size:10px;font-weight:800;padding:1px 6px;transform:skewX(-12deg);color:#fff;box-shadow:0 1px 0 #000}
+.train.p{background:var(--p)}.train.k{background:var(--k);color:#1d1503}.train.d{background:var(--d)}.train.g{background:var(--g);color:#06210f}
+/* pick sheet */
+.dim{position:absolute;inset:30px 0 0;background:rgba(4,5,8,.72)}
+.sheet{position:absolute;left:50%;top:44px;transform:translateX(-50%);width:640px;background:linear-gradient(180deg,#1d2230,#121620);border:1px solid var(--line);border-top:3px solid var(--gold);padding:12px 16px 14px}
+.sheet h2{font-size:16px;letter-spacing:.06em}.sheet h2 span{color:var(--gold)}
+.sheet p.sub{color:var(--dim);font-size:12px;margin:2px 0 10px}
+.opts{display:flex;gap:14px}
+.opt{flex:1;border:1px solid var(--line);background:#0f131b;padding:10px 12px;display:flex;gap:12px;align-items:center;cursor:pointer;position:relative}
+.opt:hover,.opt.hot{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+.opt h3{font-size:18px;font-style:italic;letter-spacing:.04em}
+.opt .what{font-size:12px;color:var(--ink);margin-top:2px}
+.opt .why{font-size:11px;color:var(--dim);margin-top:4px}
+.opt .sk{width:120px;flex:none}
+.hint{margin-top:10px;font-size:11px;color:var(--dim);text-align:center}
+/* done view */
+.row{position:absolute;left:24px;top:52px;display:flex;flex-direction:column;gap:14px}
+.note{position:absolute;left:220px;top:52px;right:24px;display:flex;flex-direction:column;gap:10px}
+.note .box{background:var(--panel);border:1px solid var(--line);padding:8px 12px}
+.note .box b{color:var(--gold)}
+.tip{background:#10131a;border:1px solid var(--gold);padding:8px 10px;width:300px;font-size:12px}
+.tip b{font-size:14px}.tip span{display:block;color:var(--dim);font-size:11px}.tip p{margin-top:4px}.tip em{font-style:normal;font-weight:700;color:var(--gold)}
+/* all */
+table{position:absolute;left:24px;right:24px;top:44px;border-collapse:collapse;font-size:12px}
+th,td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:400}
+td.s{font-weight:800;width:40px}td.s.p{color:var(--p)}td.s.k{color:var(--k)}td.s.d{color:var(--d)}td.s.g{color:var(--g)}
+td b{font-style:italic}
+.foot{position:absolute;left:24px;right:24px;bottom:10px;font-size:11px;color:var(--dim)}
+@media (max-width:700px){.frame{height:auto;min-height:390px}}
+</style>
+</head>
+<body>
+<nav><a href="#pick">① Lv3 選方向</a><a href="#done">② 練完的牌</a><a href="#all">③ 八個方向</a></nav>
+<div class="frame">
+
+<!-- ① the pick: replaces the free 3-pick at Lv3 -->
+<section class="view" id="v-pick">
+  <div class="bar"><i>CORNER</i>角落時間・第 2 回合</div>
+  <div class="dim"></div>
+  <div class="sheet">
+    <h2>訓練營：<span>直拳升到 Lv3 金框</span>，要往哪個方向練？</h2>
+    <p class="sub">選一個，練完不能改。這張牌賣掉，練的東西也跟著沒了。</p>
+    <div class="opts">
+      <div class="opt hot">
+        <div class="sk l3"><i class="ltag">Lv3 4/6</i><div class="ty">拳・★</div><div class="nm">直拳</div><div class="st"><b class="a up">9</b><b class="h">4</b></div><div class="tg"><em>連段</em></div><i class="train p">重拳</i></div>
+        <div><h3>重拳</h3><div class="what">攻擊 +3</div><div class="why">一拳就能打掉對面的大牌</div></div>
+      </div>
+      <div class="opt">
+        <div class="sk l3"><i class="ltag">Lv3 4/6</i><div class="ty">拳・★</div><div class="nm">直拳</div><div class="st"><b class="a">6</b><b class="h">4</b></div><div class="tg"><em>連段</em> · <span class="new">閃躲</span></div><i class="train p">閃身拳</i></div>
+        <div><h3>閃身拳</h3><div class="what">得到「閃躲」</div><div class="why">躲掉打向它的第一下，活得比較久</div></div>
+      </div>
+    </div>
+    <div class="hint">點一下選擇，或把牌拖到上面</div>
+  </div>
+</section>
+
+<!-- ② after: the board card carries its direction -->
+<section class="view" id="v-done">
+  <div class="bar"><i>CORNER</i>角落時間・第 2 回合</div>
+  <div class="row">
+    <div class="sk l3"><i class="ltag">Lv3 4/6</i><div class="ty">拳・★</div><div class="nm">直拳</div><div class="st"><b class="a">9</b><b class="h">4</b></div><div class="tg"><em>連段</em></div><i class="train p">重拳</i></div>
+    <div class="sk l3"><i class="ltag">Lv3 4/6</i><div class="ty">摔・★★</div><div class="nm">抱摔</div><div class="st"><b class="a">4</b><b class="h">10</b></div><div class="tg"><em>抱摔</em> · <em>地面技</em></div><i class="train g">地面專家</i></div>
+  </div>
+  <div class="note">
+    <div class="box">牌的左下角掛一條<b>流派色的布條</b>寫練了什麼，一眼就知道這張是「重拳直拳」還是「閃身直拳」。</div>
+    <div class="tip"><b>直拳</b><span>拳・第 1 級商店・Lv3（金框）・練了「重拳」</span><p>9 攻擊 · 4 耐力</p><p><em>連段</em>前一張出手的也是連段牌：這一下 +1 攻擊</p><p><em>重拳</em>攻擊 +3（Lv3 訓練營）</p><p style="color:#8d97a8">已有 4 張，湊滿 6 張升 Lv4（再 2 張；3 倍，還能免費三選一）。</p></div>
+    <div class="box">升到 Lv4 時，練的方向會留著，數值照 Lv4 重新算，<b>Lv4 仍然送高一級商店三選一</b>。</div>
+  </div>
+</section>
+
+<!-- ③ the eight directions -->
+<section class="view" id="v-all">
+  <div class="bar"><i>CAMP</i>八個訓練方向（每個流派兩個）</div>
+  <table>
+    <tr><th>流派</th><th>方向一（數值）</th><th>方向二（多一招）</th><th>讓你多想什麼</th></tr>
+    <tr><td class="s p">拳</td><td><b>重拳</b>　攻擊 +3</td><td><b>閃身拳</b>　得到「閃躲」</td><td>要一拳打穿，還是撐久一點多出手幾次</td></tr>
+    <tr><td class="s k">踢</td><td><b>重腿</b>　攻擊 +3</td><td><b>掃踢</b>　得到「掃」</td><td>打單一張大牌，還是一次掃三張小牌</td></tr>
+    <tr><td class="s d">防</td><td><b>鐵骨</b>　耐力 +4</td><td><b>防摔底子</b>　得到「防摔」</td><td>對手是打擊型還是摔角型</td></tr>
+    <tr><td class="s g">摔</td><td><b>壓迫</b>　得到「抱摔」</td><td><b>地面專家</b>　得到「地面技」</td><td>多一張能把比賽帶到地面的牌，還是到地面更強</td></tr>
+  </table>
+  <div class="foot">牌本來就有那個關鍵字時（例如防摔牌選「防摔底子」），那個選項改成攻擊 +2、耐力 +2。加的數字是固定的，不跟著等級倍率；確切數字等 sim 再調。Lv3 原本的「高一級商店三選一」由這個取代，Lv4 的三選一不變。</div>
+</section>
+</div>
+<script>
+const go = () => { const h = (location.hash || "#pick").slice(1); document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === "v-" + h)); document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + h)); };
+addEventListener("hashchange", go); go();
+document.querySelectorAll(".opt").forEach((o) => o.addEventListener("click", () => { document.querySelectorAll(".opt").forEach((x) => x.classList.toggle("hot", x === o)); }));
+</script>
+</body>
+</html>
