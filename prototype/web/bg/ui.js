@@ -1,5 +1,6 @@
 // Octagon Cards — one-on-one board battler, browser front end. Rules live in engine.js / ai.js; this file draws and forwards clicks.
 import * as E from "./engine.js";
+import { paintArena } from "./arena.js";
 import { shop as aiShop, fight as aiFight, cornerPick, groundWeights, groundPick, groundRead, g21Threshold, g21Pick, g21Smart, pokerStyle, pokerPick, pokerRead, eaTable, eaPick, eaRead } from "./ai.js";
 
 const params = new URLSearchParams(location.search);
@@ -46,8 +47,17 @@ async function boot() {
   const ids = Object.keys(data.fighters);
   choice = { a: params.get("a") || ids[0], b: params.get("b") || ids[1] };
   fit();
+  paintArena().then((u) => { if (u) frame.style.backgroundImage = `url(${u})`; });
+  await loadManifest();
   if (params.has("jump")) return jumpToGround();
-  pickScreen();
+  menuScreen();
+}
+/** A new match between the two chosen fighters: the shop opens. */
+async function startGame() {
+  await loadArt([choice.a, choice.b]);
+  st = E.createGame(data, choice.a, choice.b, Number(params.get("seed")) || (Date.now() % 2147483647));
+  sel = null;
+  shopScreen();
 }
 /** ?jump=top / ?jump=bottom: skip the pick screen and the shop, give both sides the same three tier-1 cards and start the first clash on the mat (you on top or underneath). */
 let jumpSide = null;
@@ -62,12 +72,15 @@ async function jumpToGround() {
 
 // ---------- fighters on the stage ----------
 // Sprites come from assets/private (gitignored). Without them a plain coloured dummy stands in.
-const POSES = ["idle", "punch", "kick", "shoot", "hit", "down"], POSE_OF = { punch: "punch", kick: "kick", grap: "shoot", def: "punch" }, K = 0.62;
+const POSES = ["idle", "punch", "kick", "shoot", "hit", "down"], POSE_OF = { punch: "punch", kick: "kick", grap: "shoot", def: "punch" };
+const kk = () => (ground ? 0.62 : 1); // the ground games lay their panels out around small fighters
 const art = {}, poseT = {};
 let manifest = null;
 const loadImage = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+async function loadManifest() { if (!manifest) { try { const r = await fetch("assets/private/manifest.json"); manifest = r.ok ? await r.json() : {}; } catch { manifest = {}; } } }
+const hasArt = (id) => !!manifest?.fighters?.[id];
 async function loadArt(ids) {
-  if (!manifest) { try { const r = await fetch("assets/private/manifest.json"); manifest = r.ok ? await r.json() : {}; } catch { manifest = {}; } }
+  await loadManifest();
   await Promise.all(ids.map(async (id) => {
     if (art[id]) return;
     const meta = manifest.fighters?.[id], poses = {};
@@ -83,7 +96,7 @@ function pose(s, name, ms) {
   if (!n) return;
   if (name === "idle") name = basePose(s);
   clearTimeout(poseT[s]);
-  const set = art[st[s].id] || {}, p = set[name] || set.idle;
+  const set = art[st[s].id] || {}, p = set[name] || set.idle, K = kk();
   n.dataset.pose = name;
   n.firstChild.innerHTML = p ? `<img src="${p.src}" style="width:${p.w * K}px;height:${p.h * K}px;left:${-p.ax * K}px">` : `<div class="dummy"><i></i></div>`;
   if (ms) poseT[s] = setTimeout(() => pose(s, "idle"), ms / (speed || 1));
@@ -100,21 +113,45 @@ function act(s, kind, school) {
   else if (kind === "hit") { if (!under) pose(s, "hit", 320); move([{ transform: "none", filter: "brightness(2.2)" }, { transform: "translateX(-14px)", filter: "brightness(1)", offset: 0.35 }, { transform: "none" }], 320); }
   else if (kind === "slip") move([{ transform: "none" }, { transform: "translateX(-20px) rotate(-10deg)", offset: 0.4 }, { transform: "none" }], 340);
 }
-function fighterPos(s) { return { x: s === "a" ? 366 : 478, y: 116 + 70 }; }
+/** Where a floating number for side s appears: over the fighter's chest. */
+function fighterPos(s) {
+  const n = $("#f" + s);
+  if (!n) return { x: s === "a" ? 344 : 500, y: 230 };
+  const r = n.getBoundingClientRect(), f = frame.getBoundingClientRect(), k = scale();
+  return { x: (r.left - f.left) / k, y: (r.top - f.top) / k - (ground ? 45 : 100) };
+}
 
 // ---------- cards ----------
-/** One card. c = a board card / clash unit / { id } for a shop offer. o: small, cls, attr, note */
+// The four kinds of card, drawn as small icons on the dark side of the card.
+const KIND = { punch: "p", kick: "k", def: "d", grap: "g" };
+const ICON = {
+  p: '<svg viewBox="0 0 24 24"><path d="M4 10c0-2.4 1.6-4 4-4h8.5C19 6 20.5 7.6 20.5 10v3.5c0 3-2.2 5-5.2 5H9.5C6.3 18.5 4 16.3 4 13.5z" fill="#17120a"/><path d="M8.8 6.5v5M12.3 6.5v5M15.8 6.5v5" stroke="rgba(255,235,190,.75)" stroke-width="1.3" fill="none"/><path d="M4.5 12.5h7.5c1.8 0 1.8 3 0 3H8" stroke="rgba(255,235,190,.75)" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>',
+  k: '<svg viewBox="0 0 24 24"><path d="M5 4.5l8 5.5-3.5 7.5H19" fill="none" stroke="#0b1512" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 5.5h4.5M18.5 9.5h3" stroke="#0b1512" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  d: '<svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.8-3.2 7.8-7.5 9.5-4.3-1.7-7.5-4.7-7.5-9.5V6z" fill="#0d1420"/><path d="M12 6.5v10.5M8 9.5h8" stroke="rgba(215,230,255,.7)" stroke-width="1.4" fill="none"/></svg>',
+  g: '<svg viewBox="0 0 24 24"><path d="M5 17V9.5a4.5 4.5 0 0 1 9 0V12" fill="none" stroke="#1a0c22" stroke-width="3.6" stroke-linecap="round"/><path d="M19 7v7.5a4.5 4.5 0 0 1-9 0V12" fill="none" stroke="#1a0c22" stroke-width="3.6" stroke-linecap="round"/></svg>',
+};
+/** The one-line effect shown on a shop offer: the card's own text, or what its keyword does. */
+function effectLine(d) {
+  if (d.text && d.fx.some((f) => f.when !== "ground")) return d.text;
+  const k = d.kw[0];
+  if (k) { const t = data.config.ground.mode === "ea" && KW_EA[k] ? KW_EA[k] : KW_TEXT[k]; return `${KW[k]}：${t(data.config)}`; }
+  return "沒有特殊效果，就是數值高";
+}
+/** One card. c = a board card / clash unit / { id } for a shop offer. o: side ("b" mirrors it), offer (taller, with the effect line), flag, cls, attr, note */
 function card(c, o = {}) {
   const d = data.skills[c.id], m = c.gold ? data.config.golden : 1;
   const atk = c.pow ?? c.atk ?? d.atk, hp = c.hp ?? d.hp, kw = c.kw ? Object.keys(c.kw) : d.kw, off = c.pow === 0 && c.atk > 0;
   const up = (v, base) => (v > base * m ? "up" : v < base * m ? "down" : "");
-  const when = [...new Set(d.fx.map((f) => (f.when === "ground" ? (data.config.ground.mode === "poker" ? "地面" : null) : WHEN[f.when])).filter(Boolean))].map((w) => `<em class="fx">${w}</em>`).join("");
-  const stun = (c.stun ? "<em class='bad'>被壓制</em>" : "") + (off ? "<em class='bad'>地面出不了手</em>" : "") + (c.worn ? `<em class="bad">腿傷 −${c.worn}</em>` : "");
-  return `<div class="sk ${d.school} ${c.gold ? "gold" : ""} ${o.small ? "s" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
-    <i class="g">${SCHOOL[d.school]}</i><b class="nm">${esc(d.name)}</b><span class="tier">${"●".repeat(d.tier)}</span>
-    ${kw.length || when || stun ? `<div class="kws">${kw.map((k) => `<em>${KW[k]}</em>`).join("")}${when}${stun}</div>` : ""}
-    ${o.small || !o.note ? "" : `<small>${esc(o.note)}</small>`}
-    <span class="atk ${up(atk + (c.worn || 0), d.atk)} ${c.worn || (c.pow != null && c.pow < c.atk) ? "down" : ""}">${atk}</span><span class="hp ${up(hp, d.hp)}">${Math.max(0, hp)}</span></div>`;
+  const when = [...new Set(d.fx.map((f) => (f.when === "ground" ? (data.config.ground.mode === "poker" ? "地面" : null) : WHEN[f.when])).filter(Boolean))];
+  const bad = [c.stun ? "被壓制" : "", off ? "地面出不了手" : "", c.worn ? `腿傷 −${c.worn}` : ""].filter(Boolean);
+  const tags = [...bad.map((t) => `<i>${t}</i>`), ...kw.map((k) => KW[k]), ...when].join(" · ");
+  const aCls = [up(atk + (c.worn || 0), d.atk), c.worn || (c.pow != null && c.pow < c.atk) ? "down" : ""].join(" ");
+  const head = `<div class="ty k-${KIND[d.school]}"><b>${ICON[KIND[d.school]]}</b><i class="lv">${c.gold ? "<u>★★</u>" : "<u>★</u>☆"}</i></div>
+      <div class="tx"><div class="nm">${esc(d.name)}</div><div class="tg">${tags}</div></div>
+      <div class="st atk"><b class="lat ${aCls}">${atk}</b></div><div class="st dur"><b class="lat ${up(hp, d.hp)}">${Math.max(0, hp)}</b></div>`;
+  const body = o.offer ? `<div class="card"><div class="top">${head}</div><div class="fxt ${o.note ? "note" : ""}"><span>${esc(o.note || effectLine(d))}</span></div></div>` : `<div class="card">${head}</div>`;
+  return `<div class="sk ${c.gold ? "gold" : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
+    ${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${body}</div>`;
 }
 
 // ---------- card details: mouse over a card, or press and hold on touch ----------
@@ -242,46 +279,119 @@ addEventListener("pointerup", (e) => {
 });
 addEventListener("pointercancel", endDrag);
 
-const empty = (o = {}, text = "空位") => `<div class="sk empty ${o.small ? "s" : ""}" ${o.attr || ""}><span>${text}</span></div>`;
+const empty = (o = {}, text = "空位") => `<div class="sk empty ${o.cls || ""} ${o.side === "b" ? "r" : ""}" ${o.attr || ""}><div class="card">${text}</div></div>`;
+const backCard = () => `<div class="sk back r"><div class="card lat">?</div></div>`;
 
-// ---------- screens ----------
-function pickScreen() {
-  runId++; dnd = null;
-  const ids = Object.keys(data.fighters);
-  const btn = (s, id) => { const f = data.fighters[id]; return `<button data-s="${s}" data-id="${id}" class="${choice[s] === id ? "on" : ""}"><b>${esc(f.name)}</b><small>${esc(f.style)}｜${esc(f.power.text)}</small></button>`; };
-  frame.innerHTML = `<div class="bgart"></div><div class="over solid"><div class="box">
-    <h2>Octagon Cards</h2>
-    <p>每一段開打前逛<b>商店</b>買招式。開打後雙方<b>輪流出手</b>：輪到你時，把你的一張牌<b>拖到</b>要打的那張牌上（他有架擋就得先打架擋）；把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。<b>抱摔</b>打中會把這一段帶到地面，改成最多三拍的<b>猜拳</b>：每拍雙方暗選一招同時翻開，上位贏了壓進一層或打人，下位贏了脫出一層。耐久歸零＝KO，否則打完 ${data.config.rounds} 回合看計分。</p>
-    <h3>你的選手</h3><div class="pick you">${ids.map((id) => btn("a", id)).join("")}</div>
-    <h3>對手</h3><div class="pick foe">${ids.map((id) => btn("b", id)).join("")}</div>
-    <button class="go" id="go">進商店</button></div></div>`;
-  frame.querySelectorAll(".pick button").forEach((b) => (b.onclick = () => { choice[b.dataset.s] = b.dataset.id; pickScreen(); }));
-  $("#go").onclick = async () => { await loadArt([choice.a, choice.b]); st = E.createGame(data, choice.a, choice.b, Number(params.get("seed")) || (Date.now() % 2147483647)); sel = null; shopScreen(); };
-}
-
+// ---------- the broadcast frame shared by the screens ----------
+const nameParts = (f) => { const [first, ...rest] = f.name.split(" "); return [first, rest.join(" ") || first]; };
+const portrait = (id) => (hasArt(id) ? `<img src="assets/private/${id}/portrait.png" alt="" onerror="this.remove()">` : "");
 const pokerOn = () => st.cfg.ground.mode === "poker";
-/** Stamina is shown under each fighter in the poker and the EA grounds. */
+/** Stamina is shown under each fighter's durability in the poker and the EA grounds. */
 const staOn = () => st.cfg.ground.mode === "poker" || st.cfg.ground.mode === "ea";
 const staMax = () => (st.cfg.ground.mode === "ea" ? st.cfg.groundEA : st.cfg.groundPoker).stamina;
-function hud(hp = { a: st.a.hp, b: st.b.hp }) {
-  // in the poker ground the stamina (the chips) sits under the durability bar
-  const sta = (s) => (staOn() ? `<div class="bar sta" data-s="${s}"><b class="${st[s].stam <= 5 ? "low" : ""}" style="width:${(st[s].stam / staMax()) * 100}%"></b></div>` : "");
-  const side = (s) => `<div class="hud ${s}" id="hud${s}"><div class="hpn">${hp[s]}</div><div class="hb"><div class="who"><b>${s === "a" ? "你" : "對手"}</b><small>${esc(st[s].f.short)}・${esc(st[s].f.power.text)}</small>${staOn() ? `<small class="stn" data-s="${s}">體力 ${st[s].stam}</small>` : ""}</div>
-    <div class="bar"><b style="width:${(hp[s] / st.cfg.hp) * 100}%"></b></div>${sta(s)}</div></div>`;
-  const cards = st.rounds.map((r) => `${r.a}-${r.b}`).join(" ");
-  return `<div id="top">${side("a")}<div id="mid"><b>第 ${st.round} 回合・第 ${st.clash} 段</b><small>這回合 你 <i class="a">${st.wins.a}</i> : <i class="b">${st.wins.b}</i> 他${cards ? "　計分 " + cards : ""}</small></div>${side("b")}</div>`;
+/** A fighter's name plate: face, name, durability bar and number (stamina bar when the ground game uses it). */
+function plate(s, hp = st[s].hp) {
+  const F = st[s], f = F.f, pct = Math.max(0, Math.min(100, (hp / st.cfg.hp) * 100));
+  const sta = staOn() ? `<div class="stam" data-s="${s}" title="體力"><i><b class="${F.stam <= 5 ? "low" : ""}" style="width:${(F.stam / staMax()) * 100}%"></b></i><span>體力 ${F.stam}</span></div>` : "";
+  return `<div class="plate" id="hud${s}" title="${esc(f.name)}｜${esc(f.style)}｜${esc(f.power.text)}"><div class="face"><i>${portrait(F.id)}</i></div>
+    <div class="who"><div class="nm1 lat">${esc(f.short.toUpperCase())}</div><div class="bars"><div class="hpb"><b style="${s === "a" ? "right" : "left"}:${100 - pct}%"></b></div><div class="num lat">${hp}</div></div>${sta}</div></div>`;
 }
-/** Stamina under each fighter's durability (poker ground only). */
+/** The two corner columns: blue (you) on the left, red (him) on the right. slots = the cards' html for each side. */
+function cols(slots = { a: "", b: "" }, o = {}) {
+  return `<div class="col a" id="colA">${plate("a", o.hp?.a)}<div class="slots" id="rowA">${slots.a}</div></div>
+    <div class="col b" id="colB">${plate("b", o.hp?.b)}<div class="slots" id="rowB">${slots.b}</div>${o.note ? `<div class="cardnote"><span>${o.note}</span></div>` : ""}</div>`;
+}
+/** The round clock at the top centre: round and clash, the clash score (or a caption), and a pip per round (blue / red = who took it). */
+function clock(o = {}) {
+  const pips = Array.from({ length: st.cfg.rounds }, (_, i) => { const r = st.rounds[i]; return `<i class="${r ? (r.a > r.b ? "wa" : r.b > r.a ? "wb" : "wt") : i === st.round - 1 ? "on" : ""}"></i>`; }).join("");
+  const score = o.mid ?? `<div class="s lat"><i class="a"></i>${st.wins.a} — ${st.wins.b}<i class="b"></i></div>`;
+  const card = st.rounds.length ? "計分卡 " + st.rounds.map((r) => `${r.a}-${r.b}`).join("、") : "";
+  return `<div class="clock" title="${card}"><div class="r lat">${o.top ?? `ROUND <em>${st.round}</em> · 第 ${st.clash} 段`}</div>${score}<div class="pips">${pips}</div></div>`;
+}
+/** Stamina under each fighter's durability (poker and EA grounds). */
 function setSta(stam) {
   if (!stam || !staOn()) return;
   for (const s of ["a", "b"]) {
-    const t = document.querySelector(`.stn[data-s="${s}"]`), b = document.querySelector(`.bar.sta[data-s="${s}"] b`);
-    if (t) { t.textContent = `體力 ${stam[s]}`; t.classList.toggle("low", stam[s] <= 5); }
-    if (b) { b.style.width = (stam[s] / staMax()) * 100 + "%"; b.classList.toggle("low", stam[s] <= 5); }
+    const w = $(`.stam[data-s="${s}"]`), b = w && w.querySelector("b");
+    if (b) { b.style.width = (stam[s] / staMax()) * 100 + "%"; b.classList.toggle("low", stam[s] <= 5); w.querySelector("span").textContent = `體力 ${stam[s]}`; }
   }
 }
 function setHp(hp) {
-  for (const s of ["a", "b"]) { const h = $("#hud" + s); if (!h) continue; h.querySelector(".hpn").textContent = hp[s]; h.querySelector(".bar b").style.width = (hp[s] / st.cfg.hp) * 100 + "%"; }
+  for (const s of ["a", "b"]) {
+    const h = $("#hud" + s);
+    if (!h) continue;
+    h.querySelector(".num").textContent = hp[s];
+    h.querySelector(".hpb b").style[s === "a" ? "right" : "left"] = 100 - Math.max(0, Math.min(100, (hp[s] / st.cfg.hp) * 100)) + "%";
+  }
+}
+/** A modal sheet on top of the screen (rules, the free pick, the corner). */
+function sheet(inner, close) {
+  const d = document.createElement("div");
+  d.className = "over";
+  d.innerHTML = `<div class="sheet">${inner}</div>`;
+  if (close) d.addEventListener("click", (e) => { if (e.target === d) close(); });
+  frame.appendChild(d);
+  return d;
+}
+
+// ---------- screens: menu, how to play, pick ----------
+function menuScreen() {
+  runId++; dnd = null; sel = null;
+  const art = (id, left, flip) => (hasArt(id) ? `<img class="art in ${flip ? "flip" : ""}" style="left:${left}px;bottom:54px;height:200px" src="assets/private/${id}/idle.png" alt="" onerror="this.remove()">` : "");
+  frame.innerHTML = `<i class="sha" style="left:452px"></i><i class="sha" style="left:588px"></i>${art(choice.a, 462)}${art(choice.b, 598, true)}
+    <div class="haze"></div><div class="shade m-menu"></div>
+    <div class="strap"><span>FIGHT NIGHT</span></div>
+    <h1 class="lat">OCTAGON<br><span>CARDS</span></h1><div class="rule"></div>
+    <div class="menu">
+      <button class="mi on" id="m-exh"><b>對戰</b><small class="lat">EXHIBITION</small><em>選兩個人打一場 ▸</em></button>
+      <div class="mi"><b>衝冠短跑</b><small class="lat">TITLE RUN</small><em>之後開放</em></div>
+      <div class="mi"><b>生涯</b><small class="lat">CAREER</small><em>之後開放</em></div>
+      <div class="mi"><b>真實賽事</b><small class="lat">LIVE CARD</small><em>之後開放</em></div>
+    </div>
+    <div class="ticker"><b class="lat">MAIN EVENT</b><span>選兩位選手，打 <i>${data.config.rounds}</i> 回合：每段開打前先逛商店</span><button id="m-how">怎麼玩</button></div>`;
+  $("#m-exh").onclick = pickScreen;
+  $("#m-how").onclick = howSheet;
+}
+function howSheet() {
+  const d = sheet(`<h2>怎麼玩<small class="lat">HOW TO PLAY</small></h2><div class="body">
+    <p>每一段開打前逛<b>商店</b>：拿金幣買招式，擺在左邊你的六格裡，也能賣掉、換位置。</p>
+    <p>開打後雙方<b>輪流出手</b>：輪到你時，把你的一張牌<b>拖過八角籠</b>，放在要打的那張牌上（他有架擋就得先打架擋）。把對方的牌打光，剩下的牌就打在<b>他本人</b>身上。</p>
+    <p><b>抱摔</b>打中會把這一段帶到地面，改打地面小遊戲：上位贏了往深處壓或打人，下位贏了脫出。</p>
+    <p>耐久歸零＝KO；降伏成功＝比賽結束；否則打完 <b>${data.config.rounds}</b> 回合，看三位裁判的計分卡。</p>
+    <p>滑鼠指著牌（手機按住）可以看效果。</p></div>
+    <div class="foot"><button class="go" id="how-ok"><span>知道了</span></button></div>`, () => d.remove());
+  $("#how-ok").onclick = () => d.remove();
+}
+
+let pickSel = null; // a portrait picked by tapping, waiting for a corner
+function pickScreen() {
+  runId++; dnd = null; sel = null;
+  const ids = Object.keys(data.fighters), A = data.fighters[choice.a], B = data.fighters[choice.b];
+  const side = (s, f) => { const [first, last] = nameParts(f); return `<div class="pn ${s}"><small><span>${s === "a" ? "藍角 · 你" : "紅角 · 對手"}</span></small><p class="lat">${esc(first.toUpperCase())}</p><b class="lat">${esc(last.toUpperCase())}</b></div>`; };
+  const art = (id, s) => (hasArt(id) ? `<img class="art ${s === "b" ? "flip" : ""}" style="${s === "a" ? "left" : "right"}:52px;bottom:70px;height:236px" src="assets/private/${id}/idle.png" alt="" onerror="this.remove()">` : "");
+  frame.innerHTML = `<div class="shade m-pick"></div>${art(choice.a, "a")}${art(choice.b, "b")}
+    <div class="dz a ${pickSel ? "want" : ""}" data-corner="a"></div><div class="dz b ${pickSel ? "want" : ""}" data-corner="b"></div>
+    ${side("a", A)}${side("b", B)}
+    <div class="clock"><div class="r lat">MAIN EVENT</div><div class="s t lat">${data.config.rounds} 回合</div></div>
+    <div class="vs lat">VS</div>
+    <div class="tape">
+      <div class="tr"><span>${esc(A.style)}</span><i>風格</i><span>${esc(B.style)}</span></div>
+      <div class="tr"><span>${esc(A.power.text)}</span><i>專長</i><span>${esc(B.power.text)}</span></div>
+      <div class="tr"><span>${SCHOOL[A.ai.prefer] || "—"}</span><i>愛用</i><span>${SCHOOL[B.ai.prefer] || "—"}</span></div>
+    </div>
+    <button class="go" id="go" style="left:322px;width:200px;top:226px"><span>進場</span><small class="lat">WALKOUT</small></button>
+    <div class="roster">${ids.map((id) => `<div class="pw ${choice.a === id ? "a" : ""} ${choice.b === id ? "b" : ""} ${pickSel === id ? "sel" : ""}" data-id="${id}" data-drag="face" title="${esc(data.fighters[id].name)}"><div class="pf"><i>${portrait(id)}</i></div></div>`).join("")}</div>
+    <button class="btn l" id="back">‹ 選單</button>
+    <div class="cue ${pickSel ? "hot" : ""}"><span>${pickSel ? `點藍角或紅角，讓 ${esc(data.fighters[pickSel].short)} 站進去` : "把頭像拖到藍角或紅角換人（或點頭像再點角落）"}</span></div>`;
+  const assign = (corner, id) => { choice[corner] = id; pickSel = null; pickScreen(); };
+  frame.querySelectorAll(".pw").forEach((n) => (n.onclick = () => { pickSel = pickSel === n.dataset.id ? null : n.dataset.id; pickScreen(); }));
+  frame.querySelectorAll(".dz").forEach((z) => (z.onclick = () => { if (pickSel) assign(z.dataset.corner, pickSel); }));
+  dnd = {
+    hot: (from, u) => u.closest(".dz"),
+    drop: (from, u) => { const z = u.closest(".dz"); if (z) assign(z.dataset.corner, from.dataset.id); },
+  };
+  $("#back").onclick = () => { pickSel = null; menuScreen(); };
+  $("#go").onclick = () => { pickSel = null; dnd = null; startGame(); };
 }
 
 // ---------- shop ----------
@@ -289,71 +399,84 @@ function shopScreen(msg = "") {
   if (st.over) return finish();
   if (st.phase === "corner") return cornerScreen();
   const F = st.a, sh = F.shop, cfg = st.cfg.shop;
+  const trip = new Set();
   const offers = sh.offers.map((id, i) => {
     if (!id) return empty({}, "已買");
     const p = E.place(st, "a", id), can = sh.gold >= cfg.cost && p;
-    return card({ id }, { cls: (can ? "buy" : "no") + (p && p.triple ? " triple" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, note: p && p.triple ? "第三張：合成金卡！" : !p ? "技能列滿了，先賣一張" : null });
+    if (p && p.triple) trip.add(id);
+    return card({ id }, { offer: true, cls: (can ? "buy" : "no") + (p && p.triple ? " triple" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, flag: p && p.triple ? "第三張 → 合成金卡 ★★" : null, note: !p ? "技能列滿了，先賣一張" : null });
   }).join("");
-  frame.innerHTML = `<div class="bgart shopbg"></div>${hud()}
-    <div id="store" data-sell="放這裡賣掉　+${cfg.sell} 金"><h4>商店<small>第 ${sh.tier} 級・牌 ${cfg.cost} 金，拖到下面你的牌那一排就買</small><span class="coins"><i></i>${sh.gold}</span></h4>
-      <div class="row">${offers}</div>
-      <div class="acts"><button id="reroll" class="${sh.gold >= cfg.reroll ? "" : "no"}">重抽<small>${cfg.reroll} 金</small></button>
-      <button id="freeze" class="${sh.frozen ? "on" : ""}">${sh.frozen ? "已凍結" : "凍結"}<small>留到下一段</small></button>
-      <button id="tier" class="${E.canTier(st, "a") && sh.gold >= sh.upCost ? "" : "no"}">${E.canTier(st, "a") ? `升級商店<small>${sh.upCost} 金</small>` : "商店已最高級"}</button></div></div>
-    <div id="mine"><h4>你的牌<small>${sel == null ? "拖到別格換位置，拖回商店賣掉" : "再點一格換位置，或賣掉"}</small>${sel != null ? `<button id="sell">賣掉 +${cfg.sell} 金</button>` : ""}</h4>
-      <div class="row">${F.board.map((c, i) => (c ? card(c, { cls: sel === i ? "sel" : "", attr: `data-slot="${i}" data-drag="slot"` }) : empty({ attr: `data-slot="${i}"` }))).join("")}</div></div>
-    <div id="foot"><span class="msg">${esc(msg) || "對手的牌要開打才看得到，自己記住。左下攻擊、右下耐力；滑鼠指著牌（手機按住）看效果。"}</span><button id="fight">開打</button></div>`;
+  const mine = F.board.map((c, i) => (c ? card(c, { cls: (sel === i ? "sel" : "") + (trip.has(c.id) && !c.gold ? " pair" : ""), attr: `data-slot="${i}" data-drag="slot"` }) : empty({ attr: `data-slot="${i}"` }))).join("");
+  const bad = /不夠|至少|滿了/.test(msg);
+  const hint = msg || (sel == null ? "把招式拖到左邊空位就買 · 把自己的牌拖回中間賣掉 +" + cfg.sell + " 金" : "再點一格換位置，或按「賣掉」");
+  frame.innerHTML = `<div class="shade m-shop"></div>
+    ${cols({ a: mine, b: Array.from({ length: st.cfg.slots }, backCard).join("") }, { note: "他的牌開打才看得到" })}
+    ${clock({ top: `ROUND <em>${st.round}</em> · 第 ${st.clash} 段前`, mid: `<div class="s t lat">角落時間</div>` })}
+    <div id="store" data-sell="放這裡賣掉　+${cfg.sell} 金">
+      <div class="sh"><b>教練的招式單</b><small>第 ${sh.tier} 級 · 每張 ${cfg.cost} 金</small><div class="coin"><i></i><span class="lat">${sh.gold}</span><small>金</small></div></div>
+      <div class="offers">${offers}</div>
+      <div class="alts">
+        <button class="alt ${sh.gold >= cfg.reroll ? "" : "no"}" id="reroll"><span>重抽<small>${cfg.reroll} 金</small></span></button>
+        <button class="alt ${sh.frozen ? "on" : ""}" id="freeze"><span>${sh.frozen ? "已留到下一段" : "留到下一段"}</span></button>
+        <button class="alt ${E.canTier(st, "a") && sh.gold >= sh.upCost ? "" : "no"}" id="tier"><span>${E.canTier(st, "a") ? `升級招式單<small>${sh.upCost} 金</small>` : "招式單已最高級"}</span></button>
+        ${sel != null ? `<button class="alt" id="sell"><span>賣掉<small>+${cfg.sell} 金</small></span></button>` : ""}
+      </div>
+      <button class="go" id="fight"><span>開打</span><small class="lat">FIGHT</small></button>
+    </div>
+    <div id="say"><b class="${bad ? "bad" : "good"}"><span>${esc(hint)}</span></b></div>`;
   const buyAt = (i, slot = null) => {
     const id = sh.offers[i], p = id && E.place(st, "a", id);
     if (!E.buy(st, "a", i)) return shopScreen(sh.gold < cfg.cost ? "金幣不夠" : "技能列滿了，先賣掉一張");
     if (p.slot != null && slot != null && slot !== p.slot && !F.board[slot]) E.swap(st, "a", p.slot, slot);
     sel = null; shopScreen(`買了${data.skills[id].name}`);
   };
-  const slotOf = (n) => { const x = n.closest("#mine [data-slot]"); return x ? Number(x.dataset.slot) : null; };
+  const slotOf = (n) => { const x = n.closest("#colA [data-slot]"); return x ? Number(x.dataset.slot) : null; };
   dnd = {
-    hot: (from, u) => (from.dataset.drag === "offer" ? (u.closest("#mine") ? u.closest("#mine .sk.empty") || $("#mine .row") : null) : u.closest("#store") || (u.closest("#mine [data-slot]") !== from ? u.closest("#mine [data-slot]") : null)),
+    hot: (from, u) => (from.dataset.drag === "offer" ? (u.closest("#colA") ? u.closest("#colA .sk.empty") || $("#colA") : null) : u.closest("#store") || (u.closest("#colA [data-slot]") !== from ? u.closest("#colA [data-slot]") : null)),
     drop: (from, u) => {
-      if (from.dataset.drag === "offer") { if (u.closest("#mine")) buyAt(Number(from.dataset.offer), slotOf(u)); return; }
+      if (from.dataset.drag === "offer") { if (u.closest("#colA")) buyAt(Number(from.dataset.offer), slotOf(u)); return; }
       const i = Number(from.dataset.slot), j = slotOf(u);
       if (u.closest("#store")) { const nm = data.skills[F.board[i].id].name; E.sell(st, "a", i); sel = null; shopScreen(`賣掉${nm}`); }
       else if (j != null && j !== i) { E.swap(st, "a", i, j); sel = null; shopScreen(); }
     },
   };
   frame.querySelectorAll("[data-offer]").forEach((el) => (el.onclick = () => buyAt(Number(el.dataset.offer))));
-  frame.querySelectorAll("#mine .sk").forEach((el) => (el.onclick = () => {
+  frame.querySelectorAll("#colA .sk").forEach((el) => (el.onclick = () => {
     const i = Number(el.dataset.slot);
     if (sel == null) { if (F.board[i]) sel = i; } else { if (i !== sel) E.swap(st, "a", sel, i); sel = null; }
     shopScreen();
   }));
   if ($("#sell")) $("#sell").onclick = () => { E.sell(st, "a", sel); sel = null; shopScreen(); };
   $("#reroll").onclick = () => shopScreen(E.reroll(st, "a") ? "" : "金幣不夠");
-  $("#freeze").onclick = () => { E.freeze(st, "a"); shopScreen(st.a.shop.frozen ? "商店會留到下一段" : ""); };
-  $("#tier").onclick = () => shopScreen(E.tierUp(st, "a") ? "商店升級了：之後會出現更強的牌" : E.canTier(st, "a") ? "金幣不夠" : "");
+  $("#freeze").onclick = () => { E.freeze(st, "a"); shopScreen(st.a.shop.frozen ? "招式單會留到下一段" : ""); };
+  $("#tier").onclick = () => shopScreen(E.tierUp(st, "a") ? "招式單升級了：之後會出現更強的牌" : E.canTier(st, "a") ? "金幣不夠" : "");
   $("#fight").onclick = () => { if (!F.board.some(Boolean)) return shopScreen("至少要有一張牌"); sel = null; dnd = null; clash(++runId); };
   if (F.discover) discoverScreen();
 }
 
 function discoverScreen() {
-  const F = st.a, d = document.createElement("div");
-  d.className = "over";
-  d.innerHTML = `<div class="box"><h2>選一張，免費</h2><div class="row big">${F.discover.map((id, i) => card({ id }, { cls: "buy", attr: `data-pick="${i}"`, note: E.place(st, "a", id) ? null : "技能列滿了：選了也放不下" })).join("")}</div></div>`;
-  frame.appendChild(d);
+  const F = st.a;
+  const d = sheet(`<h2 class="gold">選一張，免費<small class="lat">FREE PICK</small></h2>
+    <div class="offers">${F.discover.map((id, i) => card({ id }, { offer: true, cls: "buy of-big", attr: `data-pick="${i}"`, note: E.place(st, "a", id) ? null : "技能列滿了：選了也放不下" })).join("")}</div>`);
   d.querySelectorAll("[data-pick]").forEach((el) => (el.onclick = () => { const id = F.discover[el.dataset.pick]; E.pick(st, "a", Number(el.dataset.pick)); shopScreen(`拿到${data.skills[id].name}`); }));
 }
 
 function cornerScreen() {
-  const last = st.rounds[st.rounds.length - 1];
-  frame.innerHTML = `<div class="bgart shopbg"></div>${hud()}<div class="over solid"><div class="box">
-    <h2>第 ${st.round} 回合結束：${last.a > last.b ? "你拿下" : last.b > last.a ? "他拿下" : "平手"}（${last.a}-${last.b}）</h2>
-    <p>這回合三段你贏 <b>${last.wins.a}</b> 段、他贏 <b>${last.wins.b}</b> 段。計分卡 ${st.rounds.map((r) => `${r.a}-${r.b}`).join("、")}。</p>
-    <h3>角落時間，選一項</h3>
-    <div class="pick">${Object.entries(st.cfg.corner).map(([k, o]) => `<button data-k="${k}"><b>${esc(o.name)}</b><small>${esc(o.text)}</small></button>`).join("")}</div></div></div>`;
-  frame.querySelectorAll("[data-k]").forEach((b) => (b.onclick = () => { E.corner(st, "b", cornerPick(st, "b")); E.corner(st, "a", b.dataset.k); shopScreen(); }));
+  const last = st.rounds[st.rounds.length - 1], won = last.a > last.b ? "a" : last.b > last.a ? "b" : null;
+  const mine = st.a.board.map((c) => (c ? card(c) : empty())).join("");
+  frame.innerHTML = `<div class="shade m-shop"></div>
+    ${cols({ a: mine, b: Array.from({ length: st.cfg.slots }, backCard).join("") }, { note: "他的牌開打才看得到" })}
+    ${clock({ top: `ROUND <em>${st.round}</em> 結束`, mid: `<div class="s t lat">角落時間</div>` })}`;
+  const d = sheet(`<h2 class="${won === "b" ? "red" : won === "a" ? "" : "gold"}">第 ${st.round} 回合結束：${won === "a" ? "你拿下" : won === "b" ? "他拿下" : "平手"}（${last.a}-${last.b}）<small class="lat">BETWEEN ROUNDS</small></h2>
+    <div class="body"><p>這回合三段你贏 <b>${last.wins.a}</b> 段、他贏 <b>${last.wins.b}</b> 段。選一項，進下一回合。</p></div>
+    <div class="sc">${st.rounds.map((r, i) => `<div class="${r.b > r.a ? "b" : r.a > r.b ? "" : "t"}"><small class="lat">R${i + 1}</small><b class="lat">${r.a}–${r.b}</b></div>`).join("")}</div>
+    <div class="opts">${Object.entries(st.cfg.corner).map(([k, o]) => `<button class="opt" data-k="${k}"><b>${esc(o.name)}</b><small>${esc(o.text)}</small></button>`).join("")}</div>`);
+  d.querySelectorAll("[data-k]").forEach((b) => (b.onclick = () => { E.corner(st, "b", cornerPick(st, "b")); E.corner(st, "a", b.dataset.k); shopScreen(); }));
 }
 
 // ---------- clash ----------
 function rows(v) {
-  const row = (s) => v[s].map((u) => (u && !u.dead ? card(u, { attr: `data-uid="${u.uid}"` }) : empty({}, u ? "被破解" : ""))).join("");
+  const row = (s) => v[s].map((u) => (u && !u.dead ? card(u, { side: s, attr: `data-uid="${u.uid}"` }) : empty({ side: s }, u ? "被破解" : ""))).join("");
   $("#rowB").innerHTML = row("b");
   $("#rowA").innerHTML = row("a");
   setGround(v.ground);
@@ -386,7 +509,8 @@ function float(at, text, cls) {
   frame.appendChild(f);
   setTimeout(() => f.remove(), ms);
 }
-function say(text, cls = "", small = "") { const b = $("#say"), c = $("#cap"); if (b) b.innerHTML = `<b class="${cls}">${esc(text)}</b>`; if (c) c.textContent = small; }
+/** The strip at the bottom: gold when it is your move, red when it is his, dark for plain narration; small = the line above it. */
+function say(text, cls = "", small = "") { const b = $("#say"), c = $("#cap"); if (b) b.innerHTML = text ? `<b class="${cls}"><span>${esc(text)}</span></b>` : ""; if (c) c.textContent = small; }
 const unitOf = (v, uid) => { for (const s of ["a", "b"]) for (const u of v[s]) if (u && u.uid === uid) return u; return null; };
 const nameOf = (v, uid) => { for (const s of ["a", "b"]) for (const u of v[s]) if (u && u.uid === uid) return data.skills[u.id].name; return ""; };
 const sideOf = (v, uid) => (v.a.some((u) => u && u.uid === uid) ? "a" : "b");
@@ -996,12 +1120,13 @@ function eaBar(o) {
 
 async function clash(id) {
   aiShop(st, "b");
-  frame.innerHTML = `<div class="bgart"></div>${hud()}
-    <div class="row" id="rowB"></div><div id="stage"><div id="say"></div><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div><div class="row" id="rowA"></div>
-    <div id="foot"><button id="speed"></button><div id="cue"><small id="cap"></small><div id="qte"></div></div><button id="quit">重來</button></div>`;
+  frame.innerHTML = `${cols()}${clock()}
+    <div id="stage"><div id="gnd"></div><div class="fz" id="fa"><div class="in"></div></div><div class="fz" id="fb"><div class="in"></div></div></div>
+    <div id="say"></div><div id="cue"><small id="cap"></small><div id="qte"></div></div>
+    <button class="btn" id="speed"></button><button class="btn" id="quit">重來</button>`;
   ground = null; frame.classList.remove("gmode", "g21mode", "pkmode", "eamode", "eabar");
   pose("a", "idle"); pose("b", "idle");
-  $("#quit").onclick = pickScreen;
+  $("#quit").onclick = () => { pickSel = null; pickScreen(); };
   const sp = $("#speed"), label = () => (sp.textContent = speed === 0 ? "速度：跳過" : `速度：${SPEED_NAME[speedIx]}`);
   sp.onclick = () => { speedIx = speed === 0 ? 0 : (speedIx + 1) % SPEEDS.length; speed = SPEEDS[speedIx]; try { localStorage.setItem("bg.speed", speedIx); } catch {} label(); };
   label();
@@ -1081,19 +1206,28 @@ async function clash(id) {
 }
 
 function finish() {
-  const o = st.over, d = document.createElement("div");
-  d.className = "over";
-  const title = o.winner === "a" ? "你贏了" : o.winner === "b" ? "你輸了" : "平手";
-  const how = o.how === "DEC" ? `判定 ${o.total.a}-${o.total.b}` : o.how === "SUB" ? `降伏 SUB・第 ${o.round} 回合` : `KO・第 ${o.round} 回合`;
-  frame.innerHTML = `<div class="bgart"></div>${hud()}`;
-  d.innerHTML = `<div class="box wide"><h2 class="${o.winner === "a" ? "win" : "lose"}">${title}｜${how}</h2>
-    ${st.rounds.length ? `<div class="cardrow">${st.rounds.map((r, i) => `<span>第 ${i + 1} 回合 <b>${r.a}-${r.b}</b></span>`).join("")}</div>` : ""}
-    <p>你贏了 <b>${st.a.stats.won}</b> 段、打掉他 <b>${st.a.stats.dmg}</b> 耐久；他贏了 <b>${st.b.stats.won}</b> 段、打掉你 <b>${st.b.stats.dmg}</b>。</p>
-    <h3>你最後的牌</h3><div class="row s">${st.a.board.map((c) => (c ? card(c, { small: true }) : "")).join("")}</div>
-    <h3>他最後的牌</h3><div class="row s">${st.b.board.map((c) => (c ? card(c, { small: true }) : "")).join("")}</div>
-    <button class="go" id="again">再來一場</button></div>`;
-  frame.appendChild(d);
-  $("#again").onclick = pickScreen;
+  const o = st.over, w = o.winner, tag = (s) => st[s].f.short.toUpperCase();
+  const how = o.how === "DEC" ? ["判定 DECISION", `${o.total.a} – ${o.total.b}`] : o.how === "SUB" ? [`第 ${o.round} 回合 · 降伏`, "SUB"] : [`第 ${o.round} 回合 · 擊倒`, "KO"];
+  const flag = w === "a" ? "勝者 · 藍角（你）" : w === "b" ? "勝者 · 紅角" : "判決";
+  const hero = (id, left, h, top = 48) => (hasArt(id) ? `<img class="art" style="left:${left}px;top:${top}px;height:${h}px" src="assets/private/${id}/idle.png" alt="" onerror="this.remove()">` : "");
+  const cards = (s) => st[s].board.map((c) => (c ? card(c, { side: s }) : empty({ side: s }))).join("");
+  const rounds = st.rounds.map((r, i) => `<div class="${r.b > r.a ? "b" : r.a > r.b ? "" : "t"}"><small class="lat">R${i + 1}</small><b class="lat">${r.a}–${r.b}</b></div>`).join("");
+  const total = o.how === "DEC" ? `<div class="tot"><small class="lat">TOTAL</small><b class="lat">${o.total.a}–${o.total.b}</b></div>` : "";
+  frame.innerHTML = `<div class="shade m-result"></div><div class="spot"></div>
+    ${w ? hero(st[w].id, 382, 160) : hero(st.a.id, 330, 140, 60) + hero(st.b.id, 424, 140, 60)}
+    ${cols({ a: cards("a"), b: cards("b") })}
+    <div class="clock"><div class="r lat">${o.how === "DEC" ? "OFFICIAL DECISION" : o.how === "SUB" ? "SUBMISSION" : "KNOCKOUT"}</div><div class="s t lat">${o.how === "DEC" ? "宣讀判決" : "比賽結束"}</div></div>
+    <div class="stat a"><div><b class="lat">${st.a.stats.won}</b><small>贏的段數</small></div><div><b class="lat">${st.a.stats.dmg}</b><small>打掉他的耐久</small></div></div>
+    <div class="stat b"><div><b class="lat">${st.b.stats.won}</b><small>贏的段數</small></div><div><b class="lat">${st.b.stats.dmg}</b><small>打掉你的耐久</small></div></div>
+    <div class="verdict ${w === "b" ? "red" : w ? "" : "draw"}"><div><small>${flag}</small><b class="lat">${w ? esc(st[w].f.name.toUpperCase()) : "平手 DRAW"}</b></div><div class="how"><small>${how[0]}</small><b class="lat">${how[1]}</b></div></div>
+    ${st.rounds.length ? `<div class="sc">${rounds}${total}</div>` : ""}
+    <button class="go" id="again" style="left:214px;width:190px;top:322px;height:34px;font-size:17px"><span>再來一場</span><small class="lat">REMATCH</small></button>
+    <button class="alt" id="swap" style="position:absolute;left:426px;width:98px;top:324px"><span>換選手</span></button>
+    <button class="alt" id="home" style="position:absolute;left:536px;width:98px;top:324px"><span>主選單</span></button>
+    <div id="say"><b><span>兩邊是這場最後的牌</span></b></div>`;
+  $("#again").onclick = () => { choice.a = st.a.id; choice.b = st.b.id; startGame(); };
+  $("#swap").onclick = () => { choice.a = st.a.id; choice.b = st.b.id; pickSel = null; pickScreen(); };
+  $("#home").onclick = () => { choice.a = st.a.id; choice.b = st.b.id; menuScreen(); };
 }
 
 if (params.has("debug")) window.__bg = { E, get st() { return st; } }; // ?debug: poke the game from the console (set boards, jump ahead)
