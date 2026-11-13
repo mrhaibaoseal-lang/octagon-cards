@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>草圖 — 牌的等級與備選</title>
+<!-- Static look sketch only: no game logic. Copy of sketch-ui.html; only the shop (#shop, the default here) is new:
+     stars on a card = the shop tier it comes from (1-4), the frame = how many times it was levelled
+     (Lv2 silver, Lv3 gold, Lv4 title belt; each extra copy bought levels it once), three bench slots under the shop,
+     and the shop rerolled for free right after a tier-up.
+     Fighter art comes from assets/private (gitignored); without it the art is simply missing. -->
+<style>
+:root{
+  --blue:#2f86e0; --blue-d:#0b3a70; --red:#e0453f; --red-d:#6d1614; --gold:#ffcf6b; --ink:#15171c; --paper:#efeadc;
+  --noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center;font-family:"Bahnschrift","Microsoft JhengHei","PingFang TC",sans-serif;color:#fff;-webkit-user-select:none;user-select:none}
+#stage{position:relative;width:844px;height:390px;flex:none;overflow:hidden;background:#05060a;transform-origin:center}
+#bg{position:absolute;inset:0;width:844px;height:390px}
+.lat{font-stretch:75%;letter-spacing:.02em}
+.scr{position:absolute;inset:0;display:none}
+#stage[data-s=menu] #s-menu,#stage[data-s=pick] #s-pick,#stage[data-s=shop] #s-shop,#stage[data-s=result] #s-result{display:block}
+.dim{position:absolute;inset:0}
+[data-go]{cursor:pointer}
+.art{position:absolute;filter:drop-shadow(0 6px 5px rgba(0,0,0,.55))}
+.art.flip{transform:scaleX(-1)}
+
+/* ---- shared with the fight screen: corner columns, name plates, cards, clock, cue ---- */
+.col{position:absolute;top:0;bottom:0;width:172px}
+.col.a{left:0}.col.b{right:0}
+.col::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(6,8,12,.94),rgba(6,8,12,.80) 78%,rgba(6,8,12,0))}
+.col.b::before{transform:scaleX(-1)}
+.col::after{content:"";position:absolute;top:0;bottom:0;width:3px;left:0;background:linear-gradient(180deg,var(--blue),#0d4d95 50%,var(--blue));box-shadow:0 0 14px 2px rgba(47,134,224,.55)}
+.col.b::after{left:auto;right:0;background:linear-gradient(180deg,var(--red),#8e1f1b 50%,var(--red));box-shadow:0 0 14px 2px rgba(224,69,63,.55)}
+.plate{position:absolute;top:0;left:0;width:172px;height:52px;display:flex;gap:6px;align-items:center;padding:4px 14px 4px 8px;
+  background:linear-gradient(180deg,#3d97ee 0,#1c6cc4 38%,#0d4488 100%);clip-path:polygon(0 0,100% 0,100% 62%,calc(100% - 16px) 100%,0 100%)}
+.col.b .plate{flex-direction:row-reverse;padding:4px 8px 4px 14px;background:linear-gradient(180deg,#f0625a 0,#c62f2a 38%,#7d1815 100%);clip-path:polygon(0 0,100% 0,100% 100%,16px 100%,0 62%)}
+.plate::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,rgba(255,255,255,.07) 0 2px,transparent 2px 7px),linear-gradient(180deg,rgba(255,255,255,.35),transparent 3px);pointer-events:none}
+.plate::after{content:"";position:absolute;inset:0;background:var(--noise);opacity:.35;mix-blend-mode:overlay}
+.face{position:relative;z-index:1;width:40px;height:40px;flex:none;background:linear-gradient(180deg,var(--gold),#a8791f);padding:1.5px;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+.face i{display:block;width:100%;height:100%;background:#0c1118 center 15%/cover;clip-path:inherit}
+.who{position:relative;z-index:1;flex:1;min-width:0}
+.col.b .who{text-align:right}
+.nm1{font-size:19px;font-weight:700;font-style:italic;line-height:1;text-shadow:0 1px 0 rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.35)}
+.bars{display:flex;align-items:center;gap:4px;margin-top:3px}
+.col.b .bars{flex-direction:row-reverse}
+.hp{position:relative;flex:1;height:8px;background:#0a0d12;box-shadow:inset 0 1px 2px #000,0 0 0 1px rgba(0,0,0,.5);transform:skewX(-18deg);overflow:hidden}
+.hp b{position:absolute;inset:0;background:linear-gradient(180deg,#fff,#dfe9f5 55%,#a9bbd0)}
+.hp::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 9px,rgba(0,0,0,.6) 9px 10px)}
+.num{font-size:17px;font-weight:700;font-style:italic;line-height:.8;text-shadow:0 1px 0 #000}
+.stam{height:3px;margin-top:2px;background:#0a0d12;transform:skewX(-18deg)}
+.stam b{display:block;height:100%;background:linear-gradient(90deg,#ffe29a,#ffb22e);box-shadow:0 0 5px rgba(255,190,60,.8)}
+.col.b .stam b{margin-left:auto}
+
+.slots{position:absolute;top:58px;left:9px;right:11px;display:flex;flex-direction:column;gap:5px}
+.col.b .slots{left:11px;right:9px}
+.cw{position:relative;height:50px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.card{position:absolute;inset:0;display:flex;align-items:stretch;background:linear-gradient(180deg,#f7f3e7,#e3dccb 70%,#cfc7b3);color:var(--ink);
+  clip-path:polygon(0 0,calc(100% - 11px) 0,100% 11px,100% 100%,0 100%)}
+.col.b .card{flex-direction:row-reverse;clip-path:polygon(11px 0,100% 0,100% 100%,0 100%,0 11px)}
+.card::before{content:"";position:absolute;inset:0;background:var(--noise);opacity:.5;mix-blend-mode:multiply;pointer-events:none}
+.card::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;background:repeating-linear-gradient(90deg,var(--blue) 0 7px,#1a5fae 7px 8px);box-shadow:0 -1px 0 rgba(0,0,0,.35)}
+.col.b .card::after{background:repeating-linear-gradient(90deg,var(--red) 0 7px,#9c2420 7px 8px)}
+.ty{position:relative;width:30px;flex:none;background:linear-gradient(180deg,#252830,#101216);display:flex;align-items:center;justify-content:center;padding-bottom:4px}
+.ty b{width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  clip-path:polygon(29% 0,71% 0,100% 29%,100% 71%,71% 100%,29% 100%,0 71%,0 29%)}
+.ty svg{width:16px;height:16px;display:block}
+.ty{flex-direction:column;gap:2px}
+.lv{font-style:normal;font-size:9.5px;line-height:1;letter-spacing:1px;color:#6c7180}
+.lv u{text-decoration:none;color:var(--gold);text-shadow:0 0 4px rgba(255,190,60,.9)}
+/* stars = shop tier (lit ones), up to four, small enough for the 30px type column */
+.lv{font-size:7.5px;letter-spacing:0;white-space:nowrap}
+/* frames = card level. Lv2 silver, Lv3 gold, Lv4 the title belt; the tag in the corner says it once more */
+.cw.l2::before,.of.l2::before,.cw.l3::before,.of.l3::before,.cw.l4::before,.of.l4::before{content:"";position:absolute;inset:-3px;clip-path:polygon(0 0,calc(100% - 13px) 0,100% 13px,100% 100%,0 100%)}
+.cw.l2::before,.of.l2::before{inset:-4px;background:linear-gradient(180deg,#ffffff,#b9c6dc 30%,#58657c 55%,#e9eef7)}
+.cw.l3::before,.of.l3::before{background:linear-gradient(180deg,#fff3c2,#f0b52e 45%,#a86a06)}
+.cw.l4::before,.of.l4::before{inset:-5px;clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,0 100%);
+  background:radial-gradient(circle,#fff6d0 0 1.4px,transparent 1.8px) 0 0/8px 8px,linear-gradient(180deg,#ffe7a0,#d4950f 40%,#7a2b12 41%,#5a1a0c 59%,#d4950f 60%,#ffe7a0)}
+.cw.l2{filter:drop-shadow(0 0 6px rgba(190,215,255,.75)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.cw.l3{filter:drop-shadow(0 0 6px rgba(255,190,60,.6)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.cw.l4{filter:drop-shadow(0 0 4px rgba(255,90,60,.9)) drop-shadow(0 0 10px rgba(255,200,80,.85)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.l3 .card{background:linear-gradient(180deg,#fff8e0,#f1dfa8 70%,#ddc077)}
+.l4 .card{background:linear-gradient(180deg,#fff6d6,#f3d586 62%,#dcae45)}
+.l4 .ty{background:linear-gradient(180deg,#4a3608,#1d1503)}
+.ltag{position:absolute;z-index:3;right:30px;top:-6px;font-size:9px;font-weight:700;font-style:italic;padding:0 4px;line-height:13px;color:#17130a;transform:skewX(-12deg);box-shadow:0 1px 0 #000}
+.l2 .ltag{background:linear-gradient(180deg,#fff,#aeb6c4)}.l3 .ltag{background:linear-gradient(180deg,#fff0bd,#f0b52e)}.l4 .ltag{background:linear-gradient(180deg,#ffe7a0,#d4950f);color:#5a1a0c}
+/* bench: three slots under the shop, not in the fight */
+.bench{position:absolute;left:196px;width:452px;top:268px;display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.bench .cw{height:46px}.bench .nm{font-size:14px}
+.blab{position:absolute;left:196px;width:452px;top:254px;display:flex;justify-content:space-between;font-size:10px;color:#aab0bd;letter-spacing:.08em}
+.blab b{color:#d7dae2;font-weight:700;letter-spacing:.2em}
+.fresh{position:absolute;left:400px;top:49px;font-size:10px;font-weight:700;color:#17130a;padding:2px 9px;background:linear-gradient(180deg,#fff0bd,#f6b93a);transform:skewX(-12deg);box-shadow:0 0 10px rgba(255,190,60,.7)}
+/* a gold card (three of a kind merged): gold stock, gold frame, two lit stars */
+.gold .card{background:linear-gradient(180deg,#fff6d6,#f3d586 62%,#dcae45)}
+.gold .ty{background:linear-gradient(180deg,#4a3608,#1d1503)}
+.cw.gold::before,.of.gold::before{content:"";position:absolute;inset:-2px;background:linear-gradient(180deg,#fff0b8,#e79c14);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%)}
+.col.b .cw.gold::before{clip-path:polygon(12px 0,100% 0,100% 100%,0 100%,0 12px)}
+.cw.gold{filter:drop-shadow(0 0 5px rgba(255,190,60,.55)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.cw.pair::after{content:"";position:absolute;inset:-3px;border:1.5px dashed var(--gold);opacity:.9}
+.flag{position:absolute;right:14px;top:-3px;z-index:3;font-size:10px;font-weight:700;color:#17130a;padding:2px 8px;background:linear-gradient(180deg,#fff0bd,#f6b93a);box-shadow:0 2px 0 #7a4d04,0 0 10px rgba(255,190,60,.7);transform:skewX(-12deg)}
+.k-p b{background:linear-gradient(160deg,#ffd98a,#e08a1c)}
+.k-k b{background:linear-gradient(160deg,#9ff0dc,#1f9f88)}
+.k-d b{background:linear-gradient(160deg,#cfe0ff,#5f86cc)}
+.k-g b{background:linear-gradient(160deg,#ecc4fb,#9a4fc4)}
+.tx{flex:1;min-width:0;padding:6px 0 0 7px}
+.col.b .tx{padding:6px 7px 0 0;text-align:right}
+.nm{font-size:16px;font-weight:700;line-height:1.05;white-space:nowrap}
+.nm s{text-decoration:none;font-size:9px;font-weight:700;color:#7a4b00;background:linear-gradient(180deg,#ffe7a6,#f1b63c);padding:1px 3px;margin-left:4px;vertical-align:3px}
+.tg{font-size:10px;color:#6a6557;margin-top:3px;white-space:nowrap}
+.st{width:25px;flex:none;display:flex;align-items:center;justify-content:center;padding-bottom:4px}
+.st b{width:23px;height:25px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;font-style:italic}
+.atk b{background:linear-gradient(180deg,#30333c,#0e1014);color:var(--gold);clip-path:polygon(29% 0,71% 0,100% 29%,100% 71%,71% 100%,29% 100%,0 71%,0 29%)}
+.dur b{background:linear-gradient(180deg,#f0544d,#8f1c18);color:#fff;clip-path:polygon(0 0,100% 0,100% 62%,50% 100%,0 62%);padding-bottom:3px}
+.st+.st{margin:0 4px 0 1px}.col.b .st+.st{margin:0 1px 0 4px}
+.cw.empty{filter:none}
+.cw.empty .card{background:rgba(255,255,255,.035);color:rgba(255,255,255,.22);align-items:center;justify-content:center;font-size:10px;letter-spacing:.3em}
+.cw.empty .card::before{display:none}.cw.empty .card::after{background:rgba(255,255,255,.08);height:2px}
+.cw.empty::before{content:"";position:absolute;inset:0;border:1px dashed rgba(255,255,255,.16)}
+.cw.hot::after{content:"";position:absolute;inset:-3px;border:2px solid var(--gold);filter:drop-shadow(0 0 5px rgba(255,200,90,.9))}
+.cw.back .card{background:repeating-linear-gradient(135deg,#20232c 0 6px,#171a21 6px 12px);color:rgba(255,255,255,.28);align-items:center;justify-content:center;font-size:18px;font-weight:700;font-style:italic}
+.cw.back .card::before{mix-blend-mode:overlay;opacity:.4}
+
+.clock{position:absolute;left:50%;top:0;width:196px;height:40px;margin-left:-98px;text-align:center;
+  background:linear-gradient(180deg,#2a2d35,#0c0d11);clip-path:polygon(0 0,100% 0,calc(100% - 16px) 100%,16px 100%)}
+.clock::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.28),transparent 2px),var(--noise);opacity:.6}
+.clock::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.clock .r{position:relative;font-size:10px;letter-spacing:.28em;color:#c9ccd6;padding-top:5px}
+.clock .r em{font-style:normal;color:var(--gold);font-weight:700}
+.clock .s{position:relative;font-size:17px;font-weight:700;font-style:italic;line-height:1.15}
+
+.cue{position:absolute;left:50%;bottom:8px;transform:translateX(-50%) skewX(-12deg);padding:5px 18px;font-size:13px;font-weight:700;color:#17130a;white-space:nowrap;
+  background:linear-gradient(180deg,#ffe9a8,#f3b230);box-shadow:0 2px 0 #8a5a06,0 0 18px rgba(255,190,60,.45)}
+.cue span{display:inline-block;transform:skewX(12deg)}
+.cue::before,.cue::after{content:"";position:absolute;top:0;bottom:0;width:4px;background:#17130a}
+.cue::before{left:-9px}.cue::after{right:-9px}
+.cue.quiet{background:rgba(10,12,16,.75);color:#c9ccd6;box-shadow:none;font-weight:400;font-size:11.5px}
+.cue.quiet::before,.cue.quiet::after{background:var(--gold)}
+.btn{position:absolute;bottom:9px;font-size:10px;color:#aab0bd;padding:4px 9px;border:1px solid rgba(255,255,255,.18);background:rgba(10,12,16,.6);clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)}
+/* the one big button of a screen: a skewed gold slab, the same family as the cue */
+.go{position:absolute;display:flex;align-items:center;justify-content:center;gap:10px;height:40px;font-size:20px;font-weight:700;font-style:italic;color:#17130a;transform:skewX(-12deg);
+  background:linear-gradient(180deg,#fff0bd,#f6b93a 55%,#d98d12);box-shadow:0 3px 0 #7a4d04,0 0 22px rgba(255,190,60,.55),inset 0 1px 0 rgba(255,255,255,.7)}
+.go>*{transform:skewX(12deg)}
+.go small{font-size:10px;font-style:normal;font-weight:700;letter-spacing:.22em;opacity:.7}
+.go::before{content:"";position:absolute;left:-10px;top:0;bottom:0;width:5px;background:var(--red)}
+.go::after{content:"";position:absolute;right:-10px;top:0;bottom:0;width:5px;background:var(--blue)}
+.alt{position:absolute;display:flex;align-items:center;justify-content:center;height:30px;font-size:12px;color:#d7dae2;transform:skewX(-12deg);background:linear-gradient(180deg,#2a2d35,#111318);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 2px 0 #000}
+.alt>*{transform:skewX(12deg)}
+.alt small{font-size:9.5px;color:var(--gold);margin-left:6px}
+#grain{position:absolute;inset:0;background:var(--noise);opacity:.22;mix-blend-mode:overlay;pointer-events:none}
+
+/* ---- menu ---- */
+.art.in{filter:brightness(.74) contrast(1.12) saturate(.72) drop-shadow(0 -1.5px 0 rgba(255,236,200,.55)) drop-shadow(0 5px 4px rgba(0,0,0,.6))}
+.sha{position:absolute;bottom:42px;width:122px;height:26px;background:radial-gradient(ellipse at center,rgba(0,0,0,.72) 0,rgba(0,0,0,.38) 42%,rgba(0,0,0,0) 70%)}
+.haze{position:absolute;inset:0;background:radial-gradient(ellipse 300px 150px at 590px 120px,rgba(255,238,205,.16),rgba(255,238,205,0) 70%),linear-gradient(180deg,rgba(40,60,110,.10) 0,rgba(5,6,10,0) 55%,rgba(5,6,10,.45) 100%)}
+#s-menu .dim{background:linear-gradient(90deg,rgba(5,6,10,.96) 0,rgba(5,6,10,.86) 34%,rgba(5,6,10,.25) 62%,rgba(5,6,10,.05) 100%)}
+.strap{position:absolute;left:44px;top:30px;font-size:10px;letter-spacing:.3em;color:#17130a;font-weight:700;padding:3px 12px;background:linear-gradient(180deg,#ffe9a8,#f3b230);transform:skewX(-12deg)}
+.strap span{display:inline-block;transform:skewX(12deg)}
+h1{position:absolute;left:40px;top:52px;font-size:64px;line-height:.84;font-style:italic;font-weight:700;text-shadow:0 3px 0 rgba(0,0,0,.6)}
+h1 span{color:transparent;-webkit-text-stroke:1.5px var(--gold);text-shadow:none}
+.rule{position:absolute;left:44px;top:164px;width:250px;height:4px;background:linear-gradient(90deg,var(--blue) 0 50%,var(--red) 50% 100%);transform:skewX(-30deg)}
+.menu{position:absolute;left:44px;top:182px}
+.mi{position:relative;width:262px;height:34px;margin-bottom:6px;display:flex;align-items:center;gap:9px;padding:0 22px 0 14px;color:#8d93a1;
+  background:linear-gradient(90deg,rgba(26,29,37,.95),rgba(26,29,37,.5));clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%)}
+.mi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#3a3d46}
+.mi b{font-size:16px;font-weight:700;font-style:italic}
+.mi small{font-size:9px;letter-spacing:.2em}
+.mi em{margin-left:auto;font-style:normal;font-size:9.5px;opacity:.75}
+.mi.on{width:300px;height:42px;color:#17130a;background:linear-gradient(180deg,#fff0bd,#f6b93a 55%,#d98d12)}
+.mi.on::before{width:6px;background:var(--red)}
+.mi.on b{font-size:22px}.mi.on em{opacity:1;font-size:11px;font-weight:700}
+.ticker{position:absolute;left:0;right:0;bottom:0;height:24px;display:flex;align-items:center;gap:12px;font-size:11px;color:#c9ccd6;background:linear-gradient(180deg,#1b1d24,#08090c);border-top:1px solid rgba(255,207,107,.6)}
+.ticker b{align-self:stretch;display:flex;align-items:center;padding:0 16px 0 44px;font-size:10px;letter-spacing:.24em;color:#fff;background:linear-gradient(180deg,#f0625a,#9c2420);clip-path:polygon(0 0,100% 0,calc(100% - 10px) 100%,0 100%)}
+.ticker i{font-style:normal;color:var(--gold)}
+.ticker u{margin-left:auto;margin-right:16px;text-decoration:none;font-size:10px;color:#8d93a1}
+
+/* ---- pick: the bout poster ---- */
+#s-pick .dim{background:linear-gradient(100deg,rgba(11,58,112,.82) 0,rgba(6,10,18,.9) 38%,rgba(6,10,18,.9) 62%,rgba(109,22,20,.82) 100%)}
+.pn{position:absolute;top:14px;width:240px}
+.pn.a{left:22px}.pn.b{right:22px;text-align:right}
+.pn small{display:inline-block;font-size:9.5px;letter-spacing:.24em;padding:2px 9px;font-weight:700;background:var(--blue);transform:skewX(-12deg)}
+.pn.b small{background:var(--red)}
+.pn p{font-size:13px;letter-spacing:.14em;margin-top:5px;opacity:.85}
+.pn b{display:block;font-size:38px;font-style:italic;line-height:.9;text-shadow:0 2px 0 rgba(0,0,0,.6)}
+.vs{position:absolute;left:50%;top:50px;transform:translateX(-50%);font-size:46px;font-weight:700;font-style:italic;color:var(--gold);text-shadow:0 0 22px rgba(255,190,60,.6),0 2px 0 #7a4d04}
+.tape{position:absolute;left:222px;width:400px;top:112px}
+.tr{display:flex;align-items:center;min-height:32px;border-top:1px solid rgba(255,255,255,.14)}
+.tr:last-child{border-bottom:1px solid rgba(255,255,255,.14)}
+.tr span{flex:1;font-size:12px;line-height:1.25}.tr span:first-child{text-align:right}
+.tr i{width:70px;flex:none;text-align:center;font-style:normal;font-size:9.5px;letter-spacing:.2em;color:var(--gold)}
+.roster{position:absolute;left:0;right:0;bottom:44px;display:flex;justify-content:center;gap:6px}
+.pf{position:relative;width:38px;height:38px;background:#3a3d46;padding:1.5px;clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px))}
+.pf i{display:block;width:100%;height:100%;background:#0c1118 center 15%/cover;clip-path:inherit;filter:saturate(.5) brightness(.75)}
+.pw{position:relative}
+.pw.a .pf{background:var(--blue)}.pw.b .pf{background:var(--red)}
+.pw.a,.pw.b{transform:translateY(-7px)}
+.pw.a .pf i,.pw.b .pf i{filter:none}
+.pw.a::after,.pw.b::after{position:absolute;left:0;right:0;bottom:-13px;text-align:center;font-size:9px;font-weight:700;letter-spacing:.1em}
+.pw.a::after{content:"藍角";color:#7db9f5}.pw.b::after{content:"紅角";color:#f58a84}
+
+/* ---- shop: the corner between clashes ---- */
+#s-shop .dim{background:radial-gradient(ellipse at 50% 40%,rgba(6,8,12,.78),rgba(6,8,12,.9))}
+.sh{position:absolute;left:190px;width:464px;top:47px;display:flex;align-items:baseline;gap:8px}
+.sh b{font-size:15px;font-style:italic}
+.sh small{font-size:10px;color:#aab0bd}
+.coin{margin-left:auto;align-self:center;display:flex;align-items:center;gap:6px;font-size:20px;font-weight:700;font-style:italic;color:var(--gold);padding:0 12px 0 8px;height:22px;background:linear-gradient(180deg,#2a2d35,#0c0d11);transform:skewX(-12deg);box-shadow:inset 0 0 0 1px rgba(255,207,107,.4)}
+.coin i{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff3c4,#f1b63c 55%,#9a6a10);box-shadow:0 0 6px rgba(255,190,60,.7)}
+.coin small{font-size:9px;font-style:normal;color:#c9ccd6}
+.offers{position:absolute;left:190px;width:464px;top:74px;display:grid;grid-template-columns:1fr 1fr;gap:7px 8px}
+.of{position:relative;height:68px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.of .card{flex-direction:column}
+.of .top{display:flex;height:40px;flex:none}
+.of .ty{padding-bottom:0;gap:1px}.of .st{padding-bottom:0}
+.of .tx{padding-top:5px}
+.fxt{flex:1;display:flex;align-items:center;padding:0 8px 5px;font-size:10.5px;color:#3b382f;background:rgba(0,0,0,.07);border-top:1px solid rgba(0,0,0,.14);white-space:nowrap}
+.of.pickup{transform:translate(-5px,3px) rotate(-2deg);filter:drop-shadow(0 0 8px rgba(255,200,90,.9)) drop-shadow(0 4px 4px rgba(0,0,0,.8));z-index:2}
+.of.sold .card{background:rgba(255,255,255,.035);color:rgba(255,255,255,.22);align-items:center;justify-content:center;font-size:10px;letter-spacing:.3em}
+.of.sold .card::before{display:none}.of.sold .card::after{background:rgba(255,255,255,.08);height:2px}
+.of.sold{filter:none}
+.hidden{position:absolute;left:20px;right:20px;top:196px;text-align:center;font-size:10.5px;padding:5px 0;color:#f3c9c6;background:rgba(10,12,16,.85);border:1px solid rgba(224,69,63,.5);transform:skewX(-12deg)}
+.hidden span{display:inline-block;transform:skewX(12deg)}
+.ov{position:absolute;inset:0;pointer-events:none}
+
+/* ---- result: the official decision ---- */
+#s-result .dim{background:radial-gradient(ellipse at 50% 34%,rgba(6,8,12,.25) 0,rgba(6,8,12,.82) 46%,rgba(6,8,12,.94) 100%)}
+.spot{position:absolute;left:322px;top:0;width:200px;height:215px;background:linear-gradient(180deg,rgba(255,240,205,.34),rgba(255,240,205,.03));clip-path:polygon(44% 0,56% 0,100% 100%,0 100%);mix-blend-mode:screen}
+.stat{position:absolute;top:66px;width:120px}
+.stat.a{left:204px;text-align:right}.stat.b{right:204px}
+.stat div{margin-bottom:12px}
+.stat b{display:block;font-size:34px;font-style:italic;line-height:.9}
+.stat.a b{color:#7db9f5}.stat.b b{color:#f58a84}
+.stat small{font-size:10px;color:#c9ccd6;letter-spacing:.14em}
+.verdict{position:absolute;left:204px;width:436px;top:208px;height:52px;display:flex;align-items:center;padding:0 22px 0 16px;
+  background:linear-gradient(180deg,#3d97ee 0,#1c6cc4 38%,#0d4488 100%);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px))}
+.verdict::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,rgba(255,255,255,.07) 0 2px,transparent 2px 7px),linear-gradient(180deg,rgba(255,255,255,.35),transparent 3px)}
+.verdict>*{position:relative}
+.verdict small{display:block;font-size:9.5px;letter-spacing:.26em;color:var(--gold);font-weight:700}
+.verdict b{display:block;font-size:29px;font-style:italic;line-height:.95;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+.verdict .how{margin-left:auto;text-align:right}
+.sc{position:absolute;left:204px;width:436px;top:268px;display:flex;gap:5px}
+.sc div{flex:1;height:38px;text-align:center;background:linear-gradient(180deg,#22252d,#0c0d11);border-bottom:3px solid var(--blue)}
+.sc div.b{border-color:var(--red)}
+.sc small{display:block;font-size:8.5px;letter-spacing:.2em;color:#8d93a1;padding-top:4px}
+.sc b{font-size:15px;font-style:italic}
+.sc div.tot{flex:1.25;background:linear-gradient(180deg,#fff0bd,#f6b93a 55%,#d98d12);color:#17130a;border-color:#7a4d04}
+.sc div.tot small{color:#5a3c06}
+</style>
+</head>
+<body>
+<div id="stage" data-s="menu">
+  <canvas id="bg" width="1688" height="780"></canvas>
+
+  <!-- ============ 1. menu ============ -->
+  <section class="scr" id="s-menu">
+    <i class="sha" style="left:452px"></i><i class="sha" style="left:588px"></i>
+    <img class="art in" style="left:462px;bottom:54px;height:200px" src="assets/private/poirier/idle.png" alt="" onerror="this.remove()">
+    <img class="art in flip" style="left:598px;bottom:54px;height:200px" src="assets/private/holloway/idle.png" alt="" onerror="this.remove()">
+    <div class="haze"></div>
+    <div class="dim"></div>
+    <div class="strap"><span>FIGHT NIGHT</span></div>
+    <h1 class="lat">OCTAGON<br><span>CARDS</span></h1>
+    <div class="rule"></div>
+    <div class="menu">
+      <div class="mi on" data-go="pick"><b>對戰</b><small class="lat">EXHIBITION</small><em>選兩個人打一場 ▸</em></div>
+      <div class="mi"><b>衝冠短跑</b><small class="lat">TITLE RUN</small><em>之後開放</em></div>
+      <div class="mi"><b>生涯</b><small class="lat">CAREER</small><em>之後開放</em></div>
+      <div class="mi"><b>真實賽事</b><small class="lat">LIVE CARD</small><em>之後開放</em></div>
+    </div>
+    <div class="ticker"><b class="lat">MAIN EVENT</b><span>上一場：<i>POIRIER</i> 判定勝 HOLLOWAY　48–47</span><u>怎麼玩　·　設定</u></div>
+  </section>
+
+  <!-- ============ 2. pick ============ -->
+  <section class="scr" id="s-pick">
+    <div class="dim"></div>
+    <img class="art" style="left:52px;bottom:70px;height:236px" src="assets/private/poirier/idle.png" alt="" onerror="this.remove()">
+    <img class="art flip" style="right:52px;bottom:70px;height:236px" src="assets/private/holloway/idle.png" alt="" onerror="this.remove()">
+    <div class="pn a"><small><span>藍角 · 你</span></small><p class="lat">DUSTIN</p><b class="lat">POIRIER</b></div>
+    <div class="pn b"><small><span>紅角 · 對手</span></small><p class="lat">MAX</p><b class="lat">HOLLOWAY</b></div>
+    <div class="clock"><div class="r lat">MAIN EVENT</div><div class="s">5 回合</div></div>
+    <div class="vs lat">VS</div>
+    <div class="tape">
+      <div class="tr"><span>拳擊壓迫</span><i>風格</i><span>高頻打擊</span></div>
+      <div class="tr"><span>買進的拳 +1 攻擊</span><i>專長</i><span>每段開始：最左邊的牌 +3 攻擊</span></div>
+      <div class="tr"><span>拳</span><i>愛用</i><span>踢</span></div>
+    </div>
+    <div class="go" style="left:322px;width:200px;top:226px" data-go="shop"><span>進場</span><small class="lat">WALKOUT</small></div>
+    <div class="roster" id="roster"></div>
+    <div class="btn" style="left:14px" data-go="menu">‹ 選單</div>
+    <div class="cue quiet"><span>把頭像拖到藍角或紅角換人</span></div>
+  </section>
+
+  <!-- ============ 3. shop ============ -->
+  <section class="scr" id="s-shop">
+    <div class="dim"></div>
+    <div class="col a">
+      <div class="plate"><div class="face"><i style="background-image:url(assets/private/poirier/portrait.png)"></i></div>
+        <div class="who"><div class="nm1 lat">POIRIER</div><div class="bars"><div class="hp"><b></b></div><div class="num lat">45</div></div><div class="stam"><b style="width:100%"></b></div></div></div>
+      <div class="slots" id="shopA"></div>
+    </div>
+    <div class="col b">
+      <div class="plate"><div class="face"><i style="background-image:url(assets/private/holloway/portrait.png)"></i></div>
+        <div class="who"><div class="nm1 lat">HOLLOWAY</div><div class="bars"><div class="hp"><b style="left:16%"></b></div><div class="num lat">38</div></div><div class="stam"><b style="width:85%"></b></div></div></div>
+      <div class="slots" id="shopB"></div>
+      <div class="hidden"><span>他的牌開打才看得到</span></div>
+    </div>
+    <div class="clock"><div class="r lat">ROUND <em>1</em> · 第 2 段前</div><div class="s">角落時間</div></div>
+    <div class="sh"><b>教練的招式單</b><small><span style="color:var(--gold)">★★★</span> 第 3 級 · 每張 3 金</small><div class="coin"><i></i><span class="lat">2</span><small>金</small></div></div>
+    <div class="fresh">剛升級 · 免費換成新的一批</div>
+    <div class="offers" id="offers"></div>
+    <div class="alt" style="left:196px;width:140px;top:218px"><span>重抽<small>1 金</small></span></div>
+    <div class="alt" style="left:352px;width:140px;top:218px"><span>留到下一段</span></div>
+    <div class="alt" style="left:508px;width:140px;top:218px"><span>升級招式單<small>7 金</small></span></div>
+    <div class="blab"><b>備選</b><span>不上場 · 買到一樣的牌照樣升級 · 拖上去換人</span></div>
+    <div class="bench" id="bench"></div>
+    <div class="go" style="left:332px;width:180px;top:326px;height:34px;font-size:17px" data-go="result"><span>開打</span><small class="lat">FIGHT</small></div>
+    </section>
+
+  <!-- ============ 4. result ============ -->
+  <section class="scr" id="s-result">
+    <div class="dim"></div>
+    <div class="spot"></div>
+    <img class="art" style="left:382px;top:48px;height:160px" src="assets/private/poirier/idle.png" alt="" onerror="this.remove()">
+    <div class="col a">
+      <div class="plate"><div class="face"><i style="background-image:url(assets/private/poirier/portrait.png)"></i></div>
+        <div class="who"><div class="nm1 lat">POIRIER</div><div class="bars"><div class="hp"><b style="right:47%"></b></div><div class="num lat">24</div></div><div class="stam"><b style="width:60%"></b></div></div></div>
+      <div class="slots" id="endA"></div>
+    </div>
+    <div class="col b">
+      <div class="plate"><div class="face"><i style="background-image:url(assets/private/holloway/portrait.png)"></i></div>
+        <div class="who"><div class="nm1 lat">HOLLOWAY</div><div class="bars"><div class="hp"><b style="left:69%"></b></div><div class="num lat">14</div></div><div class="stam"><b style="width:35%"></b></div></div></div>
+      <div class="slots" id="endB"></div>
+    </div>
+    <div class="clock"><div class="r lat">OFFICIAL DECISION</div><div class="s">宣讀判決</div></div>
+    <div class="stat a"><div><b class="lat">9</b><small>贏的段數</small></div><div><b class="lat">31</b><small>打掉他的耐久</small></div></div>
+    <div class="stat b"><div><b class="lat">6</b><small>贏的段數</small></div><div><b class="lat">21</b><small>打掉你的耐久</small></div></div>
+    <div class="verdict"><div><small>勝者 · 藍角</small><b class="lat">DUSTIN POIRIER</b></div><div class="how"><small>判定 DECISION</small><b class="lat">48 – 47</b></div></div>
+    <div class="sc">
+      <div><small class="lat">R1</small><b class="lat">10–9</b></div>
+      <div class="b"><small class="lat">R2</small><b class="lat">9–10</b></div>
+      <div><small class="lat">R3</small><b class="lat">10–9</b></div>
+      <div class="b"><small class="lat">R4</small><b class="lat">9–10</b></div>
+      <div><small class="lat">R5</small><b class="lat">10–9</b></div>
+      <div class="tot"><small class="lat">TOTAL</small><b class="lat">48–47</b></div>
+    </div>
+    <div class="go" style="left:214px;width:190px;top:322px;height:34px;font-size:17px" data-go="shop"><span>再來一場</span><small class="lat">REMATCH</small></div>
+    <div class="alt" style="left:426px;width:98px;top:324px" data-go="pick"><span>換選手</span></div>
+    <div class="alt" style="left:536px;width:98px;top:324px" data-go="menu"><span>主選單</span></div>
+    <div class="cue quiet" style="bottom:6px"><span>兩邊是這場最後的牌</span></div>
+  </section>
+
+  <div id="grain"></div>
+</div>
+
+<script>
+// ---- cards (same fields the game shows today: type, name, tags, attack, durability, effect text) ----
+const ICON = {
+  p: '<svg viewBox="0 0 24 24"><path d="M4 10c0-2.4 1.6-4 4-4h8.5C19 6 20.5 7.6 20.5 10v3.5c0 3-2.2 5-5.2 5H9.5C6.3 18.5 4 16.3 4 13.5z" fill="#17120a"/><path d="M8.8 6.5v5M12.3 6.5v5M15.8 6.5v5" stroke="rgba(255,235,190,.75)" stroke-width="1.3" fill="none"/><path d="M4.5 12.5h7.5c1.8 0 1.8 3 0 3H8" stroke="rgba(255,235,190,.75)" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>',
+  k: '<svg viewBox="0 0 24 24"><path d="M5 4.5l8 5.5-3.5 7.5H19" fill="none" stroke="#0b1512" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 5.5h4.5M18.5 9.5h3" stroke="#0b1512" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  d: '<svg viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.8-3.2 7.8-7.5 9.5-4.3-1.700-7.500-4.700-7.500-9.500V6z" fill="#0d1420"/><path d="M12 6.500v10.500M8 9.500h8" stroke="rgba(215,230,255,.7)" stroke-width="1.4" fill="none"/></svg>',
+  g: '<svg viewBox="0 0 24 24"><path d="M5 17V9.500a4.500 4.500 0 0 1 9 0V12" fill="none" stroke="#1a0c22" stroke-width="3.600" stroke-linecap="round"/><path d="M19 7v7.500a4.500 4.500 0 0 1-9 0V12" fill="none" stroke="#1a0c22" stroke-width="3.600" stroke-linecap="round"/></svg>',
+};
+const stats = (c) => `<div class="st atk"><b class="lat">${c.a}</b></div><div class="st dur"><b class="lat">${c.d}</b></div>`;
+const TAG = { 2: "Lv2", 3: "Lv3", 4: "Lv4 腰帶" };
+const lvCls = (c) => (c.l > 1 ? ` l${c.l}` : "");
+const head = (c) => `<div class="ty k-${c.k}"><b>${ICON[c.k]}</b><i class="lv">${c.tier ? `<u>${"★".repeat(c.tier)}</u>` : c.g ? "<u>★★</u>" : "<u>★</u>☆"}</i></div><div class="tx"><div class="nm">${c.n}${c.up ? "<s>強化</s>" : ""}</div><div class="tg">${c.t}</div></div>${stats(c)}`;
+const cardHtml = (c) => !c ? `<div class="cw empty"><div class="card">空位</div></div>`
+  : c === "?" ? `<div class="cw back"><div class="card lat">?</div></div>`
+  : c === "hot" ? `<div class="cw empty hot"><div class="card">空位</div></div>`
+  : `<div class="cw${c.g ? " gold" : ""}${c.pair ? " pair" : ""}${lvCls(c)}"><div class="card">${head(c)}</div>${c.l > 1 ? `<i class="ltag lat">${TAG[c.l]}</i>` : ""}</div>`;
+const offerHtml = (c) => !c ? `<div class="of sold"><div class="card">已買</div></div>`
+  : `<div class="of${c.pick ? " pickup" : ""}${lvCls(c)}">${c.flag ? `<div class="flag">${c.flag}</div>` : ""}<div class="card"><div class="top">${head(c)}</div><div class="fxt">${c.x}</div></div></div>`;
+const put = (id, list, f = cardHtml) => (document.getElementById(id).innerHTML = list.map(f).join(""));
+
+const jab = { k: "p", n: "刺拳", t: "連段 · 開場", a: 2, d: 1 }, cross = { k: "p", n: "直拳", t: "連段", a: 5, d: 2, up: 1 }, low = { k: "k", n: "低踢", t: "長距離 · 命中", a: 2, d: 2 };
+// stars = the shop tier the card comes from; l = its level (1 plain, 2 silver, 3 gold, 4 title belt)
+put("shopA", [
+  { ...jab, tier: 1, l: 1 },
+  { ...cross, up: 0, tier: 1, l: 2, a: 8, d: 3 },
+  { ...low, tier: 1, l: 3, a: 4, d: 4 },
+  { k: "p", n: "勾拳", t: "連段 · 上場", a: 12, d: 9, tier: 2, l: 4 },
+  { k: "k", n: "中段踢", t: "長距離 · 掃", a: 6, d: 4, tier: 3, l: 1 },
+  null,
+]);
+put("shopB", ["?", "?", "?", "?", "?", "?"]);
+put("bench", [{ k: "g", n: "單腿抱", t: "抱摔", a: 2, d: 4, tier: 2, l: 1 }, { k: "d", n: "高位架擋", t: "架擋", a: 2, d: 6, tier: 1, l: 2 }, null]);
+put("offers", [
+  { ...cross, up: 0, tier: 1, x: "連段：接連段牌 +1 攻擊", flag: "買下 → 直拳升 Lv3 金框" },
+  { k: "p", n: "上勾拳", t: "連段 · 打到時", a: 6, d: 4, tier: 3, x: "打到時：他這張攻擊 −2" },
+  { k: "g", n: "裸絞", t: "降伏 · 地面技", a: 3, d: 5, tier: 3, x: "降伏：地面上打到就破解" },
+  { k: "d", n: "側閃", t: "閃躲", a: 2, d: 2, tier: 2, x: "閃躲：躲掉第一下" },
+], offerHtml);
+put("endA", [{ ...jab, a: 3 }, { k: "p", n: "勾拳", t: "連段 · 上場", a: 5, d: 3 }, { ...cross, a: 10, d: 4, g: 1 }, { k: "p", n: "連打", t: "連打 · 連段", a: 3, d: 3 }, { k: "d", n: "高位架擋", t: "架擋", a: 1, d: 4 }, null]);
+put("endB", [{ ...jab, up: 0 }, { k: "k", n: "前踢", t: "長距離 · 開場", a: 1, d: 3 }, low, { k: "k", n: "中段踢", t: "長距離 · 掃", a: 6, d: 4, g: 1 }, { k: "d", n: "側閃", t: "閃躲", a: 2, d: 1 }, { k: "g", n: "纏抱", t: "破解時", a: 1, d: 3 }]);
+
+// roster strip: whoever has a portrait in the private art; the two picked ones are lifted
+const who = ["adesanya", "chimaev", "gaethje", "poirier", "jones", "khabib", "makhachev", "holloway", "oliveira", "omalley", "pereira", "topuria"];
+put("roster", who, (id) => `<div class="pw${id === "poirier" ? " a" : id === "holloway" ? " b" : ""}"><div class="pf"><i style="background-image:url(assets/private/${id}/portrait.png)"></i></div></div>`);
+
+// ---- arena backdrop (same drawing as sketch-fight-b.html) ----
+const cv = document.getElementById("bg"), g = cv.getContext("2d");
+g.scale(2, 2);
+let seed = 7;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const P = [[250, 226], [594, 226], [714, 262], [784, 330], [644, 420], [200, 420], [60, 330], [130, 262]];
+const path = (pts) => { g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.closePath(); };
+let gr = g.createLinearGradient(0, 0, 0, 390);
+gr.addColorStop(0, "#04050a"); gr.addColorStop(.5, "#0d111c"); gr.addColorStop(1, "#06070a");
+g.fillStyle = gr; g.fillRect(0, 0, 844, 390);
+const tints = ["#ffd9a0", "#9ec5ff", "#ffffff", "#ff9d8a"];
+for (let i = 0; i < 520; i++) {
+  const y = 26 + rnd() * 200;
+  g.globalAlpha = .12 + rnd() * .55;
+  g.fillStyle = tints[(rnd() * 4) | 0];
+  g.beginPath(); g.arc(rnd() * 844, y, .5 + rnd() * 1.5, 0, 7); g.fill();
+}
+g.shadowColor = "#ffcf6b"; g.shadowBlur = 6;
+for (let x = 176; x < 668; x += 9) { g.globalAlpha = .35 + rnd() * .5; g.fillStyle = rnd() > .3 ? "#ffd98a" : "#ffffff"; g.fillRect(x, 70, 6, 1.6); }
+g.shadowBlur = 0;
+const shirts = ["#c9d3e6", "#7d2a2a", "#274b85", "#c9a24a", "#3a3f4d", "#e8e2d2"];
+for (let row = 0; row < 10; row++) {
+  const k = row / 9, r = 3.2 + k * 3, step = 8 + k * 5, base = 80 + row * 15.5;
+  for (let x = -6 + (row % 2) * step / 2; x < 850; x += step) {
+    const y = base + rnd() * 3, xx = x + rnd() * 3, v = 18 + k * 26 + rnd() * 10;
+    g.globalAlpha = 1; g.fillStyle = rnd() < .28 ? shirts[(rnd() * 6) | 0] : `rgb(${v},${v + 5},${v + 16})`;
+    g.globalAlpha = .35 + k * .4; g.fillRect(xx - r * 1.25, y + r * .7, r * 2.5, r * 2.6);
+    g.globalAlpha = 1; g.fillStyle = `rgb(${v + 26},${v + 22},${v + 22})`; g.beginPath(); g.arc(xx, y, r, 0, 7); g.fill();
+    g.fillStyle = "rgba(0,0,0,.35)"; g.beginPath(); g.arc(xx, y - r * .25, r, Math.PI, 0); g.fill();
+  }
+}
+gr = g.createLinearGradient(0, 60, 0, 230); gr.addColorStop(0, "rgba(90,125,200,.16)"); gr.addColorStop(1, "rgba(90,125,200,0)");
+g.fillStyle = gr; g.fillRect(0, 60, 844, 170);
+g.shadowColor = "#fff"; g.shadowBlur = 8;
+for (let i = 0; i < 14; i++) { g.globalAlpha = .35 + rnd() * .5; g.fillStyle = "#fff"; g.beginPath(); g.arc(180 + rnd() * 484, 84 + rnd() * 130, 1.2, 0, 7); g.fill(); }
+g.shadowBlur = 0; g.globalAlpha = 1;
+g.fillStyle = "#151821"; g.fillRect(190, 46, 464, 5);
+for (let x = 196; x < 654; x += 14) { g.strokeStyle = "#232734"; g.lineWidth = 1; g.beginPath(); g.moveTo(x, 46); g.lineTo(x + 7, 51); g.lineTo(x + 14, 46); g.stroke(); }
+g.globalCompositeOperation = "lighter";
+for (let i = 0; i < 7; i++) {
+  const x = 222 + i * 66.6, tx = 422 + (x - 422) * .55;
+  gr = g.createLinearGradient(x, 50, tx, 330);
+  gr.addColorStop(0, "rgba(255,240,205,.20)"); gr.addColorStop(1, "rgba(255,240,205,0)");
+  g.fillStyle = gr; g.beginPath(); g.moveTo(x - 3, 50); g.lineTo(x + 3, 50); g.lineTo(tx + 62, 340); g.lineTo(tx - 62, 340); g.fill();
+  g.shadowColor = "#fff2cc"; g.shadowBlur = 12; g.fillStyle = "#fffbe8"; g.beginPath(); g.arc(x, 52, 2.6, 0, 7); g.fill(); g.shadowBlur = 0;
+}
+g.globalCompositeOperation = "source-over";
+path([[P[3][0], P[3][1]], P[4], P[5], [P[6][0], P[6][1]], [P[6][0], P[6][1] + 14], [P[5][0], P[5][1] + 16], [P[4][0], P[4][1] + 16], [P[3][0], P[3][1] + 14]]);
+g.fillStyle = "#0c0d11"; g.fill();
+path(P);
+gr = g.createRadialGradient(422, 320, 20, 422, 320, 380);
+gr.addColorStop(0, "#d9d5c9"); gr.addColorStop(.55, "#a9a69c"); gr.addColorStop(1, "#5d5b56");
+g.fillStyle = gr; g.fill();
+g.save(); path(P); g.clip();
+for (let i = 0; i < 70; i++) {
+  g.globalAlpha = .05 + rnd() * .07; g.strokeStyle = rnd() > .5 ? "#3a332a" : "#ffffff"; g.lineWidth = .6 + rnd();
+  const x = 150 + rnd() * 540, y = 230 + rnd() * 160, a = rnd() * 3; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 26, y + Math.sin(a) * 7); g.stroke();
+}
+g.globalAlpha = 1;
+g.save(); g.translate(422, 318); g.scale(1, .34);
+const oct = (r) => { g.beginPath(); for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4; g[i ? "lineTo" : "moveTo"](Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); };
+oct(172); g.strokeStyle = "rgba(20,20,24,.34)"; g.lineWidth = 9; g.stroke();
+oct(146); g.strokeStyle = "rgba(20,20,24,.18)"; g.lineWidth = 2; g.stroke();
+g.fillStyle = "rgba(20,20,24,.30)"; g.font = "italic 700 92px Bahnschrift, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("OCTAGON", 0, 4);
+g.restore();
+path(P); g.strokeStyle = "rgba(12,12,14,.85)"; g.lineWidth = 9; g.stroke();
+g.lineWidth = 7; g.strokeStyle = "rgba(47,134,224,.75)"; g.beginPath(); g.moveTo(...P[5]); g.lineTo(...P[6]); g.lineTo(...P[7]); g.stroke();
+g.strokeStyle = "rgba(224,69,63,.75)"; g.beginPath(); g.moveTo(...P[4]); g.lineTo(...P[3]); g.lineTo(...P[2]); g.stroke();
+g.restore();
+path(P); g.strokeStyle = "rgba(255,255,255,.22)"; g.lineWidth = 1; g.stroke();
+const H = [150, 150, 165, 190, 0, 0, 190, 165];
+const up = (i) => [P[i][0], P[i][1] - H[i]];
+for (const [a, b] of [[6, 7], [7, 0], [0, 1], [1, 2], [2, 3]]) {
+  g.save(); path([P[a], P[b], up(b), up(a)]); g.fillStyle = "rgba(8,10,14,.14)"; g.fill(); g.clip();
+  g.strokeStyle = "rgba(205,212,225,.20)"; g.lineWidth = .7;
+  for (let x = -200; x < 1050; x += 7) { g.beginPath(); g.moveTo(x, 40); g.lineTo(x + 190, 340); g.moveTo(x, 40); g.lineTo(x - 190, 340); g.stroke(); }
+  g.restore();
+  g.lineCap = "round";
+  g.strokeStyle = "#07080b"; g.lineWidth = 7; g.beginPath(); g.moveTo(...up(a)); g.lineTo(...up(b)); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,.22)"; g.lineWidth = 1; g.beginPath(); g.moveTo(up(a)[0], up(a)[1] - 3); g.lineTo(up(b)[0], up(b)[1] - 3); g.stroke();
+  g.strokeStyle = "#07080b"; g.lineWidth = 5; g.beginPath(); g.moveTo(...P[a]); g.lineTo(...P[b]); g.stroke();
+}
+[6, 7, 0, 1, 2, 3].forEach((i) => {
+  const [x, y] = P[i], h = H[i], c = i === 0 ? ["#1a5fae", "#58a6f2"] : i === 1 ? ["#9c2420", "#f2706a"] : ["#0a0b0f", "#3a3e49"];
+  gr = g.createLinearGradient(x - 5, 0, x + 5, 0); gr.addColorStop(0, c[0]); gr.addColorStop(.45, c[1]); gr.addColorStop(1, c[0]);
+  g.fillStyle = gr; g.fillRect(x - 5, y - h - 5, 10, h + 5);
+  g.fillStyle = "rgba(0,0,0,.35)"; for (let yy = y - h + 18; yy < y; yy += 26) g.fillRect(x - 5, yy, 10, 1.5);
+});
+g.globalCompositeOperation = "lighter";
+gr = g.createRadialGradient(422, 250, 10, 422, 250, 260); gr.addColorStop(0, "rgba(255,238,205,.16)"); gr.addColorStop(1, "rgba(255,238,205,0)");
+g.fillStyle = gr; g.fillRect(0, 0, 844, 390);
+g.globalCompositeOperation = "source-over";
+gr = g.createRadialGradient(422, 215, 190, 422, 215, 520); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.85)");
+g.fillStyle = gr; g.fillRect(0, 0, 844, 390);
+
+// ---- which screen: #menu / #pick / #shop / #result; the main buttons walk through them ----
+const stage = document.getElementById("stage"), NAMES = ["menu", "pick", "shop", "result"];
+const show = () => { const s = location.hash.slice(1); stage.dataset.s = NAMES.includes(s) ? s : "shop"; };
+addEventListener("hashchange", show); show();
+document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => (location.hash = b.dataset.go)));
+const fit = () => { stage.style.transform = `scale(${Math.min(innerWidth / 844, innerHeight / 390)})`; };
+addEventListener("resize", fit); fit();
+</script>
+</body>
+</html>
