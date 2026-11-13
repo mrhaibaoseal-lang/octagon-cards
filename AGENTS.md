@@ -16,7 +16,7 @@
 - **開工**：只跑 `node docs/brief.js`（印出 `docs/TASKS.md` 的「目前」和 `docs/HANDOFF.md` 最新一筆，約 2KB）。若 session 開頭已經自動顯示過開工摘要，就不用再跑。
 - **其他文件按需讀**：
   - `docs/GAME_DESIGN.md` 很長，只讀相關章節：先 `grep -n "^##" docs/GAME_DESIGN.md` 看目錄，再讀那一段。
-  - `docs/TASKS.md` 的其他節（進度、M1.4 規格、之後再說）做到相關工作才讀。
+  - `docs/TASKS.md` 的其他節（進度、美術待辦、接下來、之後再說）做到相關工作才讀。
   - `RULES.md` 只有在重點不夠判斷時才讀。`docs/archive/` 是舊紀錄，需要查才讀，內容不再有效。
 - **收工**：
   - 更新 `docs/TASKS.md`：「目前」一節保持 3～5 行，寫現況和等使用者什麼；勾選「進度」；做完的細項移到 `docs/archive/TASKS_ARCHIVE.md`。
@@ -27,8 +27,9 @@
 ## 2. 目前的工作方式
 - 現階段在 `prototype/web/` 驗證玩法（見 `prototype/web/README.md`）。除非 `docs/TASKS.md` 排到移植，否則**不要改 `App/` 和 `Packages/`**。
 - 改規則或數值：改 `prototype/web/rules/*.json`，然後跑：
-  - `node prototype/web/test/engine.test.js`（引擎不變量）
-  - `node prototype/web/sim.js`（各種打法的勝率，對照 `docs/GAME_DESIGN.md` 的「模擬的通過條件」）
+  - 目前在驗證的是戰場式玩法（`prototype/web/bg/`，數值在 `rules/bg/*.json`）：`node --test prototype/web/bg/test.js`（引擎不變量）、`node prototype/web/bg/sim.js`（各種打法的勝率，約 4 分鐘）。
+  - 其他原型（`index`／`deck`／`bout`／`rt`／`v2`）已停止更新，有動到才跑它自己的測試（指令見 `prototype/web/package.json`）。
+- 大檔（`bg/engine.js`、`bg/ui.js`、`bg/test.js`）先搜尋再讀指定行數，不整份讀；驗畫面先讀頁面文字與主控台，最後只截一張圖。
 - 改畫面：用 `.claude/launch.json` 的 `prototype` 開起來，在瀏覽器看過 844×390 橫向才算完成。
 - 不要加沒有被要求的系統。新想法寫進 `docs/TASKS.md` 的「之後再說」。
 
