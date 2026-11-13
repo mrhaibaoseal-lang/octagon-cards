@@ -151,8 +151,8 @@ function card(c, o = {}) {
       <div class="tx"><div class="nm">${esc(d.name)}</div><div class="tg">${tags}</div></div>
       <div class="st atk"><b class="lat ${aCls}">${atk}</b></div><div class="st dur"><b class="lat ${up(hp, d.hp)}">${Math.max(0, hp)}</b></div>`;
   const body = o.offer ? `<div class="card"><div class="top">${head}</div><div class="fxt ${o.note ? "note" : ""}"><span>${esc(o.note || effectLine(d))}</span></div></div>` : `<div class="card">${head}</div>`;
-  return `<div class="sk ${lv > 1 ? "l" + lv : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.lv ? `data-lv="${lv}"` : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
-    ${lv > 1 ? `<i class="ltag lat">${LV_TAG[lv]}</i>` : ""}${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${body}</div>`;
+  return `<div class="sk ${lv > 1 ? "l" + lv : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.lv ? `data-lv="${lv}" data-n="${c.n || data.config.copies[lv - 1]}"` : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
+    ${lv > 1 ? `<i class="ltag lat">${LV_TAG[lv]}${lv < data.config.maxLevel && c.n ? ` <small>${c.n}/${data.config.copies[lv]}</small>` : ""}</i>` : ""}${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${body}</div>`;
 }
 
 // ---------- card details: mouse over a card, or press and hold on touch ----------
@@ -167,7 +167,7 @@ function showTip(node) {
     ${d.fx.some((f) => f.when !== "ground") ? `<p>${esc(d.text)}</p>` : ""}${data.config.ground.mode === "poker" ? d.fx.filter((f) => f.when === "ground").map((f) => `<p><em>地面</em>${esc(f.text)}</p>`).join("") : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${data.config.ground.mode === "ea" && KW_EA[k] ? KW_EA[k](data.config) : KW_TEXT[k](data.config)}</p>`).join("")}
     ${node.dataset.worn ? `<p class="dim">腿傷：攻擊 −${node.dataset.worn}，這回合結束才恢復。</p>` : ""}
     ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
-    ${node.dataset.lv ? `<p class="dim">${lv > 1 ? `Lv${lv}：數值與效果的數字 ×${M[lv - 1]}。` : ""}${lv < maxLv ? `再買 1 張一樣的，升 Lv${lv + 1}（${M[lv]} 倍${data.config.rewardAt.includes(lv + 1) ? "，還能免費三選一" : ""}）。` : "已是最高級，再買一樣的就是一張新牌。"}</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
+    ${node.dataset.lv ? `<p class="dim">${lv > 1 ? `Lv${lv}：數值與效果的數字 ×${M[lv - 1]}。` : ""}${lv < maxLv ? `已有 ${node.dataset.n} 張，湊滿 ${data.config.copies[lv]} 張升 Lv${lv + 1}（再 ${data.config.copies[lv] - Number(node.dataset.n)} 張；${M[lv]} 倍${data.config.rewardAt.includes(lv + 1) ? "，還能免費三選一" : ""}）。` : "已是最高級，再買一樣的就是一張新牌。"}</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
   if (tipEl.parentNode !== frame) frame.appendChild(tipEl);
   const p = pos(node), h = node.offsetHeight / 2, w = tipEl.offsetWidth, th = tipEl.offsetHeight;
   let y = p.y - h - th - 6;
@@ -405,7 +405,7 @@ function shopScreen(msg = "") {
     if (!id) return empty({}, "已買");
     const p = E.place(st, "a", id), can = sh.gold >= cfg.cost && p, target = p && p.merge != null ? E.cellAt(st, "a", p.merge) : null;
     if (target) merging.add(p.merge);
-    return card({ id }, { offer: true, cls: (can ? "buy" : "no") + (target ? " levels" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, flag: target ? `買下 → ${data.skills[id].name}升 Lv${target.lv + 1} ${LV_FRAME[target.lv + 1]}` : null, note: !p ? "技能列和備選都滿了，先賣一張" : null });
+    return card({ id }, { offer: true, cls: (can ? "buy" : "no") + (target ? " levels" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, flag: target ? (E.copiesToNext(st, target) === 1 ? `買下 → ${data.skills[id].name}升 Lv${target.lv + 1} ${LV_FRAME[target.lv + 1]}` : `買下 → ${data.skills[id].name} ${(target.n || 1) + 1}/${data.config.copies[target.lv]} 張（Lv${target.lv + 1}）`) : null, note: !p ? "技能列和備選都滿了，先賣一張" : null });
   }).join("");
   const cell = (i) => { const c = E.cellAt(st, "a", i); return c ? card(c, { cls: (sel === i ? "sel" : "") + (merging.has(i) ? " pair" : ""), attr: `data-slot="${i}" data-drag="slot"` }) : empty({ attr: `data-slot="${i}"` }, i < N ? "空位" : "備選"); };
   const mine = Array.from({ length: N }, (_, i) => cell(i)).join(""), bench = Array.from({ length: cells - N }, (_, i) => cell(N + i)).join("");
@@ -435,7 +435,8 @@ function shopScreen(msg = "") {
     const id = sh.offers[i], p = id && E.place(st, "a", id);
     if (!E.buy(st, "a", i)) return shopScreen(sh.gold < cfg.cost ? "金幣不夠" : "技能列和備選都滿了，先賣掉一張");
     if (p.slot != null && slot != null && slot !== p.slot && !E.cellAt(st, "a", slot)) E.swap(st, "a", p.slot, slot);
-    sel = null; shopScreen(p.merge != null ? `${data.skills[id].name}升到 Lv${E.cellAt(st, "a", p.merge).lv}` : `買了${data.skills[id].name}`);
+    sel = null; const h = p.merge != null && E.cellAt(st, "a", p.merge);
+    shopScreen(h ? (h.lv < data.config.maxLevel && h.n > data.config.copies[h.lv - 1] ? `${data.skills[id].name}累積 ${h.n}/${data.config.copies[h.lv]} 張` : `${data.skills[id].name}升到 Lv${h.lv}`) : `買了${data.skills[id].name}`);
   };
   const slotOf = (n) => { const x = n.closest("#colA [data-slot], #bench [data-slot]"); return x ? Number(x.dataset.slot) : null; };
   dnd = {

@@ -28,7 +28,7 @@ export const defOf = (st, c) => (c ? st.data.skills[c.id] : null);
 /** A fresh copy of a card as it sits on a board. */
 export function make(st, id, lv = 1) {
   const d = st.data.skills[id], m = st.cfg.levelMul[lv - 1];
-  return { id, lv, atk: Math.round(d.atk * m), hp: Math.round(d.hp * m), kw: Object.fromEntries(d.kw.map((k) => [k, true])) };
+  return { id, lv, n: st.cfg.copies[lv - 1], atk: Math.round(d.atk * m), hp: Math.round(d.hp * m), kw: Object.fromEntries(d.kw.map((k) => [k, true])) };
 }
 /** The number multiplier of a card's level (config levelMul): its fx numbers and its ground contribution scale with it. Fx amounts are rounded where they land. */
 const mulOf = (st, c) => st.cfg.levelMul[(c.lv || 1) - 1];
@@ -120,28 +120,32 @@ export function place(st, s, id) {
   for (let i = 0; i < cellCount(st); i++) if (!cellAt(st, s, i)) return { slot: i };
   return null;
 }
-/** Fold a freshly bought copy into card c: one level up. The buffs, worn-down points and keywords both carry stay; the base numbers follow levelMul. */
+/** Fold a freshly bought copy into card c: its copy count grows, and the level follows config copies (total copies per level).
+ * The buffs, worn-down points and keywords both carry stay; the base numbers follow levelMul. */
 function levelUp(st, c, copy) {
   const d = defOf(st, c), M = st.cfg.levelMul, was = c.lv;
   const bonusA = c.atk - Math.round(d.atk * M[was - 1]) + copy.atk - d.atk, bonusH = c.hp - Math.round(d.hp * M[was - 1]) + copy.hp - d.hp;
-  c.lv = was + 1;
+  c.n = (c.n || st.cfg.copies[was - 1]) + (copy.n || 1);
+  while (c.lv < st.cfg.maxLevel && c.n >= st.cfg.copies[c.lv]) c.lv++;
   c.atk = Math.round(d.atk * M[c.lv - 1]) + bonusA;
   c.hp = Math.round(d.hp * M[c.lv - 1]) + bonusH;
   Object.assign(c.kw, copy.kw);
   if (copy.worn) c.worn = (c.worn || 0) + copy.worn;
 }
+/** How many more copies card c needs for its next level (0 at the top level). */
+export const copiesToNext = (st, c) => (c.lv >= st.cfg.maxLevel ? 0 : st.cfg.copies[c.lv] - (c.n || st.cfg.copies[c.lv - 1]));
 /** Put a bought card where place() says (levelling up a copy you already hold, or into a free cell). Returns the card that now holds it. */
 function enter(st, s, id) {
   const F = st[s], B = F.board, p = place(st, s, id), card = make(st, id), school = defOf(st, card).school;
   for (const fx of powerFx(st, s, "buy")) if (!fx.school || fx.school === school) applyFx(st, B, null, fx, 1, card);
-  const merged = p.merge != null, cell = merged ? p.merge : p.slot, home = merged ? cellAt(st, s, cell) : card;
+  const merged = p.merge != null, cell = merged ? p.merge : p.slot, home = merged ? cellAt(st, s, cell) : card, before = home.lv;
   if (merged) levelUp(st, home, card); else setCell(st, s, cell, card);
   // the purchase counts for the cards on the board (a benched buy too); the new card's own "play" fires only when it is on the board
   for (const c of B) if (c && c !== home) for (const fx of defOf(st, c).fx) if (fx.when === "buy" && fx.school === school) applyFx(st, B, c, fx, mulOf(st, c));
   if (cell < st.cfg.slots) for (const fx of defOf(st, home).fx) if (fx.when === "play") applyFx(st, B, home, fx, mulOf(st, home));
-  ev(st, "buy", { s, id, cell, lv: home.lv, merged });
+  ev(st, "buy", { s, id, cell, lv: home.lv, n: home.n, merged, levelled: home.lv > before });
   // reaching a reward level earns a pick from the next shop tier
-  if (merged && st.cfg.rewardAt.includes(home.lv)) { reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1)); ev(st, "levelup", { s, id, lv: home.lv }); }
+  if (home.lv > before && st.cfg.rewardAt.includes(home.lv)) { reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1)); ev(st, "levelup", { s, id, lv: home.lv }); }
   return home;
 }
 export function buy(st, s, i) {

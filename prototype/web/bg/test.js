@@ -66,35 +66,32 @@ test("shop: each side has its own offers and only draws cards of its tier or low
 
 const benchPut = (st, s, ids) => { st[s].bench = Array(st.cfg.bench).fill(null); ids.forEach((id, i) => { if (id) st[s].bench[i] = E.make(st, id); }); };
 
-test("levels: buying a copy you hold levels it up (Lv2 / Lv3 / Lv4 = 2 / 3 / 4 copies), keeps the buffs, and Lv3 / Lv4 earn a pick from the next tier", () => {
-  const st = fresh("poirier");
-  offer(st, "a", ["cross", "cross", "cross", "cross"]);
+test("levels: copies add up (Lv2 / Lv3 / Lv4 = config copies in total), keep the buffs, and Lv3 / Lv4 earn a pick from the next tier", () => {
+  const st = fresh("poirier"), K = data.config.copies, total = K[K.length - 1];
   const d = data.skills.cross, M = data.config.levelMul, plus = st.a.f.power.fx[0].atk, base = (lv) => Math.round(d.atk * M[lv - 1]);
-  E.buy(st, "a", 0);
+  st.a.shop.gold = 999;
+  const buyOne = () => { offer(st, "a", ["cross"]); assert.ok(E.buy(st, "a", 0)); };
+  buyOne();
   assert.equal(E.mergeTarget(st, "a", "cross"), 0);
   assert.deepEqual(E.place(st, "a", "cross"), { merge: 0 });
-  E.buy(st, "a", 1);
-  let cards = st.a.board.filter(Boolean);
-  assert.equal(cards.length, 1, "no new cell used");
-  assert.equal(cards[0].lv, 2);
-  assert.equal(cards[0].atk, base(2) + plus * 2, "Poirier's +1 on each of the two copies is kept on top of the level's numbers");
-  assert.equal(cards[0].hp, Math.round(d.hp * M[1]));
-  assert.equal(st.a.discover, null, "Lv2 earns no pick");
-  E.buy(st, "a", 2);
-  assert.equal(st.a.board.filter(Boolean)[0].lv, 3);
-  assert.equal(st.a.board.filter(Boolean)[0].atk, base(3) + plus * 3);
-  assert.equal(st.a.discover.length, data.config.shop.discover);
-  for (const id of st.a.discover) assert.equal(data.skills[id].tier, 2);
-  assert.equal(E.buy(st, "a", 3), false, "must take the reward first");
-  assert.ok(E.pick(st, "a", 0));
-  assert.equal(st.a.discover, null);
-  assert.equal(st.a.board.filter(Boolean).length, 2);
-  st.a.shop.gold = 99;
-  E.buy(st, "a", 3);
-  const top = st.a.board.find((c) => c && c.id === "cross");
-  assert.equal(top.lv, 4);
-  assert.equal(top.atk, base(4) + plus * 4);
-  assert.ok(st.a.discover, "Lv4 earns a pick too");
+  for (let n = 2; n <= total; n++) {
+    buyOne();
+    const cards = st.a.board.filter(Boolean), c = cards.find((x) => x.id === "cross"), lv = K.filter((k) => k <= n).length;
+    assert.equal(cards.filter((x) => x.id === "cross").length, 1, "no new cell used");
+    assert.equal(c.n, n);
+    assert.equal(c.lv, lv, n + " copies");
+    assert.equal(c.atk, base(lv) + plus * n, "Poirier's +1 on every copy is kept on top of the level's numbers");
+    assert.equal(c.hp, Math.round(d.hp * M[lv - 1]));
+    const justUp = K.includes(n) && data.config.rewardAt.includes(lv);
+    assert.equal(!!st.a.discover, justUp, n + " copies: a pick only on reaching a reward level");
+    if (justUp) {
+      for (const id of st.a.discover) assert.ok(data.skills[id].tier >= 2);
+      offer(st, "a", ["cross"]);
+      assert.equal(E.buy(st, "a", 0), false, "must take the reward first");
+      assert.ok(E.pick(st, "a", 0));
+    }
+  }
+  assert.equal(st.a.board.find((c) => c && c.id === "cross").lv, data.config.maxLevel);
 });
 
 test("levels: at the top level another copy is a new card that needs a cell; a full board and bench refuse it", () => {

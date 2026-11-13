@@ -135,7 +135,7 @@ console.log(`抱摔值多少（同樣的流派對打，把所有牌的抱摔拿�
 const byPairEA = pairs.map(([a, b]) => ({ a, b, w: cell(a, b, shoppers.smart, undefined, undefined, groundersEA.reader, dea).w }));
 console.log(`六組選手對打（會讀）　${byPairEA.map((x) => `${x.a.slice(0, 3)}>${x.b.slice(0, 3)} ${pc(x.w).trim()}`).join("　")}`);
 // Card levels (2026-11-13): the levelling plan against the shop-climbing plan, and how often a card reaches Lv3 / Lv4 in a bout.
-console.log("\n七、牌的等級（Lv2／3／4＝同一張牌 2／3／4 張）");
+console.log(`\n七、牌的等級（Lv2／3／4＝同一張牌累計 ${data.config.copies.slice(1).join("／")} 張）`);
 const reach = { a: { 2: 0, 3: 0, 4: 0 }, b: { 2: 0, 3: 0, 4: 0 }, merges: 0 };
 let bouts = 0;
 for (const [a, b] of pairs) for (let i = 0; i < N; i++) {

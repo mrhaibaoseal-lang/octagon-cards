@@ -28,9 +28,9 @@ function offerWorth(st, s, id, o = {}) {
   for (const x of d.fx) if (x.when === "play") v += B.filter((c) => x.to !== "school" || E.defOf(st, c).school === x.school).length * ((x.atk || 0) + (x.hp || 0) + (x.kw ? 2 : 0));
   if (d.school === f.ai?.prefer) v += f.ai.bias ?? 2;
   if (f.power?.fx.some((x) => x.school === d.school)) v += 1;
-  // a copy you already hold levels it up: worth more the higher the level it reaches (and Lv3 / Lv4 pay a free pick)
+  // a copy you already hold counts toward its next level: worth more the higher that level (Lv3 / Lv4 pay a free pick), shared over the copies still missing
   const m = E.mergeTarget(st, s, id);
-  if (m >= 0) v += LEVEL_BONUS[E.cellAt(st, s, m).lv] + (o.merge || 0);
+  if (m >= 0) v += LEVEL_BONUS[E.cellAt(st, s, m).lv] / E.copiesToNext(st, E.cellAt(st, s, m)) + (o.merge || 0);
   return v;
 }
 /** What reaching level 2 / 3 / 4 by a merge is worth to the shopping AI (index = the level the card has now). */
