@@ -6,7 +6,7 @@ const data = loadData(), N = Number(process.argv[2]) || 200, ids = Object.keys(d
 const pc = (x) => `${Math.round(x * 100)}%`.padStart(5);
 const pairs = ids.flatMap((a) => ids.filter((b) => b !== a).map((b) => [a, b]));
 function cell(a, b, shop, timing, pick, gpick, d = data) {
-  const r = { w: 0, ko: 0, koBy: 0, turns: 0, early: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0, sub: 0, dec: 0, subBy: 0 };
+  const r = { w: 0, ko: 0, koBy: 0, turns: 0, early: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0, sub: 0, dec: 0, subBy: 0, gnet: 0 };
   for (let i = 0; i < N; i++) {
     const st = runGame(d, a, b, 300 + i * 7919, shop, timing, pick, gpick), o = st.over;
     if (!o) continue;
@@ -21,7 +21,7 @@ function cell(a, b, shop, timing, pick, gpick, d = data) {
       if (e.t === "pcash") r.gdmg += e.dmg / N;
       if (e.t === "pact" && e.s === "a") r.dec += 1 / N;
       // the EA ground: every beat is one direction picked by each side; the damage is whatever pounds landed
-      if (e.t === "eabeat") { r.gdmg += e.dmg / N; r.hands++; if (e.layer >= d.config.ground.layers) r.mount++; }
+      if (e.t === "eabeat") { r.gdmg += e.dmg / N; r.gnet += (e.top === "a" ? e.dmg : -e.dmg) / N; r.hands++; if (e.layer >= d.config.ground.layers) r.mount++; }
       if (e.t === "g21deal") { r.hands++; if (e.layer >= d.config.ground.layers) r.mount++; }
     }
     if (o.how === "SUB") { r.sub += 1 / N; if (o.winner === "b") r.subBy += 1 / N; }
@@ -101,13 +101,17 @@ console.log(`六組選手對打（會讀）　${byPair.map((x) => `${x.a.slice(0
 // The EA ground (ground.mode "ea"): both pick a direction at the same moment; stamina, the opponent's remembered last move and staged submissions.
 // Side a reads the shown table, plays one of three memorised mixes, or picks at random; side b always plays its own table.
 const dea = loadData(); dea.config.ground.mode = "ea";
-const rowEA = (gpick, d = dea) => { const s = { w: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0, sub: 0, subBy: 0 }; for (const [a, b] of pairs) { const r = cell(a, b, shoppers.smart, undefined, undefined, gpick, d); for (const k in s) s[k] += r[k] / (k === "hands" || k === "mount" ? 1 : pairs.length); } return s; };
+const rowEA = (gpick, d = dea) => { const s = { w: 0, grounds: 0, gdmg: 0, hands: 0, mount: 0, sub: 0, subBy: 0, gnet: 0 }; for (const [a, b] of pairs) { const r = cell(a, b, shoppers.smart, undefined, undefined, gpick, d); for (const k in s) s[k] += r[k] / (k === "hands" || k === "mount" ? 1 : pairs.length); } return s; };
 const ea = Object.fromEntries(Object.entries(groundersEA).map(([k, g]) => [k, rowEA(g)]));
 const bestFixed = Math.max(ea.mixBal.w, ea.mixPound.w, ea.mixSub.w);
 console.log("\n六、地面 EA 式（ground.mode＝ea，猜方向＋體力；你這邊都是認真逛）");
 console.log(`會讀（看他的表，往前看兩拍）　${pc(ea.reader.w)}`);
 console.log(`固定打法（背一套出招比例，不看他的表）　均衡 ${pc(ea.mixBal.w)}　重砸擊 ${pc(ea.mixPound.w)}　重降伏 ${pc(ea.mixSub.w)}`);
 console.log(`亂猜　${pc(ea.random.w)}`);
+// Measurements only (no pass mark set): a rule anyone can memorise from the shown table, and the ground's own score with the shopping taken out.
+console.log(`背得起來的規則「上位挑他最少擋的、下位擋他最常出的」　${pc(ea.lowest.w)}　同一條但上位不碰降伏　${pc(ea.lowestNoSub.w)}`);
+const net = (r) => `${r.gnet >= 0 ? "+" : ""}${r.gnet.toFixed(1)}／鎖死他 ${pc(r.sub - r.subBy).trim()}／被鎖 ${pc(r.subBy).trim()}`;
+console.log(`地面本身的帳（每場：你砸出的傷害−你挨的／降伏）　會讀 ${net(ea.reader)}　挑最少擋 ${net(ea.lowest)}　不碰降伏 ${net(ea.lowestNoSub)}　均衡 ${net(ea.mixBal)}　重砸擊 ${net(ea.mixPound)}　亂猜 ${net(ea.random)}`);
 console.log(`每場進地面 ${ea.reader.grounds.toFixed(1)} 次，每次 ${(ea.reader.hands / Math.max(1, ea.reader.grounds * pairs.length * N)).toFixed(1)} 拍；地面傷害每場 ${ea.reader.gdmg.toFixed(1)}；降伏結束 ${pc(ea.reader.sub)} 的比賽（你鎖死他 ${pc(ea.reader.sub - ea.reader.subBy)}、被鎖 ${pc(ea.reader.subBy)}）；在騎乘層打的拍 ${(share(ea.reader) * 100).toFixed(1)}%`);
 const styleEA = {}, sea = loadData();
 sea.config.ground.mode = "ea"; sea.fighters = sdata.fighters;
@@ -117,6 +121,16 @@ for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
   styleEA[x + y] = w;
 }
 console.log(`流派對打（EA 式）　${[["kick", "punch"], ["grap", "punch"], ["grap", "kick"]].map(([x, y]) => `${NAME[x]}對${NAME[y]} ${pc(styleEA[x + y]).trim()}`).join("　")}`);
+// What the takedown is worth: the same style bouts with the takedown keyword taken off every card (the cards still fight, nobody goes to the ground).
+const styleNoTd = {}, snt = loadData();
+snt.config.ground.mode = "ea"; snt.fighters = sdata.fighters;
+for (const d of Object.values(snt.skills)) d.kw = (d.kw || []).filter((k) => k !== "takedown");
+for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
+  let w = 0;
+  for (let i = 0; i < N * 2; i++) { const st = runGame(snt, i % 2 ? x : y, i % 2 ? y : x, 300 + i * 7919, shoppers.smart), o = st.over; if (o && o.winner && st[o.winner].id === x) w += 1 / (N * 2); }
+  styleNoTd[x + y] = w;
+}
+console.log(`抱摔值多少（同樣的流派對打，把所有牌的抱摔拿掉、沒有人進地面）　${[["kick", "punch"], ["grap", "punch"], ["grap", "kick"]].map(([x, y]) => `${NAME[x]}對${NAME[y]} ${pc(styleNoTd[x + y]).trim()}（有抱摔 ${pc(styleEA[x + y]).trim()}）`).join("　")}`);
 const byPairEA = pairs.map(([a, b]) => ({ a, b, w: cell(a, b, shoppers.smart, undefined, undefined, groundersEA.reader, dea).w }));
 console.log(`六組選手對打（會讀）　${byPairEA.map((x) => `${x.a.slice(0, 3)}>${x.b.slice(0, 3)} ${pc(x.w).trim()}`).join("　")}`);
 console.log("\n七、檢查");

@@ -415,6 +415,17 @@ const eaMix = (wt, wb) => (st, s) => {
   const w = Object.fromEntries(mine.map((m) => [m, (st.c.ground.top === s ? wt : wb)[m]]));
   return eaDraw(st, w);
 };
+/** The rule anyone can memorise from the shown table, with no looking ahead: on top go where his guard is thinnest, underneath guard what he shows most.
+ *  `skip` leaves a direction out on top (the submission costs the most and rarely finishes a fresh man). */
+const eaLowest = (skip) => (st, s) => {
+  const o = E.eaOptions(st);
+  if (!o || o.phase !== "pick") return null;
+  const all = o.moves[s];
+  if (all[0] === "rest") return "rest";
+  const top = st.c.ground.top === s, foe = eaTable(st, E.other(s)).w, p = (m) => foe[m] ?? 0;
+  const mine = top && all.some((m) => m !== skip) ? all.filter((m) => m !== skip) : all;
+  return mine.reduce((b, m) => ((top ? p(m) < p(b) : p(m) > p(b)) ? m : b));
+};
 const eaRandom = (st, s) => { const o = E.eaOptions(st); return o && o.phase === "pick" ? o.moves[s][Math.floor(E.rand(st) * o.moves[s].length)] : null; };
 const vsEA = (mine) => (st, s) => (s === "a" ? mine(st, s) : eaPick(st, s));
 /** Side a: reads the table, plays one of three memorised mixes, or picks at random; side b always plays its own table. */
@@ -423,6 +434,8 @@ export const groundersEA = {
   mixBal: vsEA(eaMix({ pass: 0.35, pound: 0.4, sub: 0.25 }, { pass: 0.35, pound: 0.4, sub: 0.25 })),
   mixPound: vsEA(eaMix({ pass: 0.2, pound: 0.6, sub: 0.2 }, { pass: 0.2, pound: 0.6, sub: 0.2 })),
   mixSub: vsEA(eaMix({ pass: 0.25, pound: 0.25, sub: 0.5 }, { pass: 0.25, pound: 0.25, sub: 0.5 })),
+  lowest: vsEA(eaLowest()),
+  lowestNoSub: vsEA(eaLowest("sub")),
   random: vsEA(eaRandom),
 };
 
