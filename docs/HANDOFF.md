@@ -7,7 +7,8 @@
 - **驗證**：沒改程式碼與規則；清理前六套原型測試全過（bg 58 項）；`node docs/brief.js` 重跑確認摘要變短。
 - **用量盤點結論**：約八成 Token 花在對話過長（每次呼叫中位數 221k）、整份讀大檔、截圖 829 張；一件事一個 session 最省。
 - **同日追加（使用者同意）**：`deck`／`bout`／`rt`／`v2` 與舊草圖搬到 `prototype/web/_old/`（測試照過；`index` 留原地因為 `stage.js` 掛在上面）；舊 Swift、舊原型、`docs/archive/`（`TASKS_ARCHIVE.md` 除外）在 `.claude/settings.json` 禁讀；文件的約 300 人改成 1.0 先做 40～50 人。
-- **要使用者確認**：連接器（pixellab、Wispr、Docs）還沒關，見當次對話的說明。
+- **Session 提醒**：`docs/session-check.js` 掛在 UserPromptSubmit，每次印出對話大小（150k 提醒、250k 強烈建議）；`AGENTS.md` §1 規定每次回覆最後一行寫「📌 Session：…」。腳本單獨測過，hook 在桌面版是否真的觸發要下一則訊息才看得到。
+- **使用者決定**：連接器（Wispr、Docs）不關；pixellab 要不要移除他還沒說。
 - **下一步**：等使用者玩 `?ground=ea` 決定預設地面（見 `TASKS.md`「目前」）。
 
 ## 2026-11-13 · Claude Fable 5.2（EA 式地面：量測 → v2 草圖 → v2 實作）
