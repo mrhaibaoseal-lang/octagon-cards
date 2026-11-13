@@ -3,7 +3,31 @@
     "deny": [
       "Read(./data/fighters.json)",
       "Read(./data/raw_ufcstats.json)",
-      "Read(./dist/**)"
+      "Read(./dist/**)",
+      "Read(./App/**)",
+      "Read(./Packages/**)",
+      "Read(./prototype/web/engine.js)",
+      "Read(./prototype/web/game.js)",
+      "Read(./prototype/web/sim.js)",
+      "Read(./prototype/web/style.css)",
+      "Read(./prototype/web/test/**)",
+      "Read(./prototype/web/deck/**)",
+      "Read(./prototype/web/bout/**)",
+      "Read(./prototype/web/rt/**)",
+      "Read(./prototype/web/v2/**)",
+      "Read(./docs/archive/ANIMATION_ART.md)",
+      "Read(./docs/archive/CAREER_AND_GYM.md)",
+      "Read(./docs/archive/GAME_DESIGN_CARDS.md)",
+      "Read(./docs/archive/GAME_DESIGN_M14.md)",
+      "Read(./docs/archive/GAME_DESIGN_RT.md)",
+      "Read(./docs/archive/GROUND_GAME_DESIGN.md)",
+      "Read(./docs/archive/HANDOFF_ARCHIVE.md)",
+      "Read(./docs/archive/HANDOFF_LEGACY.md)",
+      "Read(./docs/archive/MASTER_PLAN.md)",
+      "Read(./docs/archive/POWER_SYSTEM.md)",
+      "Read(./docs/archive/STRIKING_AND_DECK.md)",
+      "Read(./docs/archive/TASKS_LEGACY.md)",
+      "Read(./docs/archive/VISUAL_DIRECTION.md)"
     ]
   },
   "hooks": {

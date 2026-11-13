@@ -28,7 +28,7 @@
 - 現階段在 `prototype/web/` 驗證玩法（見 `prototype/web/README.md`）。除非 `docs/TASKS.md` 排到移植，否則**不要改 `App/` 和 `Packages/`**。
 - 改規則或數值：改 `prototype/web/rules/*.json`，然後跑：
   - 目前在驗證的是戰場式玩法（`prototype/web/bg/`，數值在 `rules/bg/*.json`）：`node --test prototype/web/bg/test.js`（引擎不變量）、`node prototype/web/bg/sim.js`（各種打法的勝率，約 4 分鐘）。
-  - 其他原型（`index`／`deck`／`bout`／`rt`／`v2`）已停止更新，有動到才跑它自己的測試（指令見 `prototype/web/package.json`）。
+  - 其他原型（`index`／`deck`／`bout`／`rt`／`v2`）已停止更新。它們和 `App/`、`Packages/`、`docs/archive/`（`TASKS_ARCHIVE.md` 除外）在 `.claude/settings.json` 設了禁讀（2026-11-13 使用者同意，為了省用量）；真的要回頭看或改，先問使用者、把那條規則拿掉。
 - 大檔（`bg/engine.js`、`bg/ui.js`、`bg/test.js`）先搜尋再讀指定行數，不整份讀；驗畫面先讀頁面文字與主控台，最後只截一張圖。
 - 改畫面：用 `.claude/launch.json` 的 `prototype` 開起來，在瀏覽器看過 844×390 橫向才算完成。
 - 不要加沒有被要求的系統。新想法寫進 `docs/TASKS.md` 的「之後再說」。
