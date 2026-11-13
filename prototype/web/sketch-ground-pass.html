@@ -31,6 +31,7 @@ body{background:#05060a;color:var(--ink);font:13px/1.4 "Noto Sans TC","PingFang 
 .row .sum.lead{background:#2a2210;border-color:var(--gold)}
 .row .played{display:flex;gap:4px;flex:1}
 .pc{width:30px;height:42px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;background:linear-gradient(180deg,#f3efe4,#d9d3c4);color:#1b1a17;border-radius:3px}
+.pc.bk{background:repeating-linear-gradient(45deg,#5a2020,#5a2020 4px,#3a1414 4px,#3a1414 8px);border:1px solid #844}
 .pc.new{animation:pop .25s}
 @keyframes pop{from{transform:translateY(-10px);opacity:0}}
 .row .pass{font-size:12px;font-weight:800;color:var(--gold);letter-spacing:.1em;min-width:60px}
@@ -85,7 +86,7 @@ body{background:#05060a;color:var(--ink);font:13px/1.4 "Noto Sans TC","PingFang 
 
   <div class="ov on" id="start">
     <h2>地面交手</h2>
-    <p>輪流把發力牌拖上去，點數加總，高的那邊這輪贏、在梯子上走一格。<br>任何時候都可以按「不打了」：這輪就不能再出，但手上的牌留到下一輪。牌不會補，打三輪。</p>
+    <p>輪流把發力牌<b>蓋著</b>拖上去——對手只看得到你出了幾張，看不到點數。兩邊都停手才翻開，點數高的這輪贏、在梯子上走一格。<br>任何時候都可以按「不打了」：這輪就不能再出，但手上的牌留到下一輪。牌不會補，打三輪。</p>
     <div class="opts" id="optSide"><button data-v="bottom" class="sel">我在下位</button><button data-v="top">我在上位</button></div>
     <div class="opts" id="optSta"><button data-v="7" class="sel">體力充足（7 張）</button><button data-v="5">有點喘（5 張）</button><button data-v="3">快沒力（3 張）</button></div>
     <div class="opts" id="optAi"><button data-v="greedy" class="sel">對手：硬壓型</button><button data-v="sly">對手：會讓型</button><button data-v="mix">對手：隨機</button></div>
@@ -100,17 +101,18 @@ body{background:#05060a;color:var(--ink);font:13px/1.4 "Noto Sans TC","PingFang 
   </div>
 </div>
 <div class="rules">
-<b>規則（草圖）</b>：梯子 起身 ← 全防守 ← 半防守 → 側壓 → 騎乘 → 背後，從半防守開始。每輪由上位先出（第 2 輪換下位先出，第 3 輪上位）。
-平手不動。上位每輪結束停在側壓／騎乘／背後，就砸拳 2／4／6 傷害；壓到背後直接裸絞降伏。下位退到起身就脫離地面。
-地面結束時，<b>沒用掉的牌每張換 1 點站立體力</b>。對手手上的牌是蓋著的，只看得到張數。牌值 1～4。可以拖牌，也可以點牌。
+<b>規則（草圖）</b>：梯子 起身 ← 全防守 ← <b>半防守</b> → 騎乘 → 降伏，從中間開始，<b>淨贏兩輪就結束</b>（輸一輪就站在懸崖邊）。每輪由上位先出（第 2 輪換下位先出，第 3 輪上位）。
+<b>平手算上位贏</b>（下位一定要發力才逃得掉）。上位每輪結束停在騎乘就砸拳 6；再壓一格直接裸絞降伏。下位退到起身就脫離地面。
+地面結束時，<b>沒用掉的牌每張換 1 點站立體力</b>。對手固定 7 張、蓋著，只看得到張數。牌值 1～4。可以拖牌，也可以點牌。
 </div>
 
 <script>
 const CFG={
-  ladder:[['起身','脫離'],['全防守',''],['半防守',''],['側壓','砸拳 2'],['騎乘','砸拳 4'],['背後','裸絞']],
-  start:2, rounds:3, gnp:{3:2,4:4,5:6},
+  ladder:[['起身','脫離'],['全防守','再輸就被逃掉'],['半防守','起點'],['騎乘','砸拳 6・再輸就被絞'],['降伏','裸絞']],
+  start:2, rounds:3, gnp:{3:6}, tieTop:true,
   deck:[1,1,2,2,2,3,3,4,4], // 抽牌比例
 };
+const END=CFG.ladder.length-1;
 const $=id=>document.getElementById(id);
 const S={side:'bottom',sta:7,ai:'greedy'};
 let G;
@@ -118,7 +120,8 @@ let G;
 function draw(n){const h=[];for(let i=0;i<n;i++)h.push(CFG.deck[Math.random()*CFG.deck.length|0]);return h.sort((a,b)=>a-b)}
 function newGame(){
   const aiStyle=S.ai==='mix'?(Math.random()<.5?'greedy':'sly'):S.ai;
-  G={pos:CFG.start,round:1,me:{hand:draw(S.sta),played:[],pass:false,hp:30},op:{hand:draw(6+(Math.random()*2|0)),played:[],pass:false,hp:30},
+
+  G={pos:CFG.start,round:1,me:{hand:draw(S.sta),played:[],pass:false,hp:30},op:{hand:draw(7),played:[],pass:false,hp:30},
      meTop:S.side==='top',aiStyle,results:[],turn:null,over:false,log:''};
   G.op.start=G.op.hand.length;
   startRound();
@@ -126,8 +129,10 @@ function newGame(){
 function leaderIsMe(){const topLeads=G.round%2===1;return topLeads===G.meTop}
 function startRound(){
   for(const p of [G.me,G.op]){p.played=[];p.pass=false}
+  G.reveal=false;
   G.op.roundStart=G.op.hand.length;
   G.turn=leaderIsMe()?'me':'op';
+  if(!G[G.turn].hand.length){render();return pass(G.turn)} // 沒牌了就自動讓
   say(`第 ${G.round} 輪 · ${G.turn==='me'?'你先出':'對手先出'}`);
   render();
   if(G.turn==='op')setTimeout(aiAct,700);
@@ -137,12 +142,12 @@ function say(t){G.log=t;$('call').textContent=t}
 
 function play(who,idx){
   const p=G[who];const v=p.hand.splice(idx,1)[0];p.played.push(v);p.lastNew=true;
-  say(who==='me'?`你發力 +${v}`:`對手發力 +${v}`+(v>=4?'，他把力氣砸下去了':''));
+  say(who==='me'?`你蓋了一張 ${v}`:`對手蓋了一張（他這輪第 ${p.played.length} 張）`);
   next(who);
 }
 function pass(who){
   G[who].pass=true;
-  say(who==='me'?'你不打了，這輪讓出':'對手不打了'+(sum(G.op)<sum(G.me)?'，他在留力氣':''));
+  say(who==='me'?'你不打了，這輪讓出':'對手不打了');
   next(who);
 }
 function next(who){
@@ -156,13 +161,16 @@ function next(who){
 }
 function endRound(){
   const m=sum(G.me),o=sum(G.op);let r='t';
+  G.reveal=true;
   if(m>o)r='w';else if(o>m)r='l';
+  else if(CFG.tieTop)r=G.meTop?'w':'l'; // 平手算上位壓住
   G.results.push(r);
   const topWon=(r==='w'&&G.meTop)||(r==='l'&&!G.meTop);
   if(r!=='t')G.pos+=topWon?1:-1;
-  let msg=r==='t'?`${m} 比 ${o}，僵住了，沒動`:`${Math.max(m,o)} 比 ${Math.min(m,o)}，${topWon?'上位壓進一格':'下位退出一格'} → ${CFG.ladder[G.pos][0]}`;
+  const tie=m===o;
+  let msg=r==='t'?`${m} 比 ${o}，僵住了，沒動`:`${Math.max(m,o)} 比 ${Math.min(m,o)}，${tie?'平手算上位，壓進一格':topWon?'上位壓進一格':'下位退出一格'} → ${CFG.ladder[G.pos][0]}`;
   const bottom=G.meTop?G.op:G.me;
-  if(G.pos>=5){render();return finish('sub',msg)}
+  if(G.pos>=END){render();return finish('sub',msg)}
   if(G.pos<=0){render();return finish('up',msg)}
   const dmg=CFG.gnp[G.pos]||0;
   if(dmg){bottom.hp-=dmg;msg+=`，砸拳 ${dmg}`}
@@ -181,47 +189,47 @@ function finish(kind,msg){
   $('end').classList.add('on');
 }
 
-/* ---- 對手 AI：看得到自己的牌和你出過的牌，看不到你手上的 ---- */
+/* ---- 對手 AI：看得到自己的牌、你出過的牌和你剩幾張，看不到你手上的點數 ---- */
 function aiAct(){
   if(G.over||G.turn!=='op')return;
   const me=G.me,op=G.op,h=op.hand;
   if(!h.length)return pass('op');
-  const diff=sum(op)-sum(me);
-  const roundsLeft=CFG.rounds-G.round+1;
+  const AVG=CFG.deck.reduce((x,y)=>x+y,0)/CFG.deck.length;
+  const aiTop=!G.meTop, guess=me.played.length*(me.played.length<=1?3.2:AVG+.3), diff=Math.floor(sum(op)-guess); // 看不到你的點數，只能用張數估；只蓋一張多半是大牌
+  const ahead=diff>0||(diff===0&&aiTop);
+  const gap=-diff+(aiTop?0:1);                       // 還差幾點才領先
+  const R=CFG.rounds-G.round+1, n=me.hand.length, adv=h.length-n;
+  const danger=(aiTop&&G.pos===1)||(!aiTop&&G.pos===END-1); // 這輪輸了就脫離／被絞
+  const chance=(aiTop&&G.pos===END-1)||(!aiTop&&G.pos===1); // 這輪贏了就絞到／逃掉
   const usedThis=op.played.length;
-  const budget=Math.ceil(op.roundStart/roundsLeft)+(G.aiStyle==='greedy'?1:-1);
-  const cardsAdv=h.length-me.hand.length;
-  const smallestWin=need=>{const i=h.findIndex(v=>v>need);return i};
-  // 你已經不打了：只要用一張就贏，而且划得來，就補一張
-  if(me.pass||!me.hand.length){
-    if(diff>0)return pass('op');
-    const i=smallestWin(-diff);
-    if(i>=0&&(usedThis<budget+1||roundsLeft===1))return play('op',i);
-    if(roundsLeft===1&&h.length)return play('op',h.length-1);
+  const cheapest=()=>{const k=h.findIndex(v=>v>=gap);return k>=0?k:h.length-1};
+  const out=me.pass||!n;
+  if(ahead&&(out||diff>=3))return pass('op');           // 領先而且他停了，或領先夠多
+  if(R===1||danger)return play('op',ahead?0:cheapest());
+  // 一般輪：看牌數優勢決定這輪肯花幾張
+  let allow=adv+(G.aiStyle==='greedy'?2:0)+(chance?2:0);
+  if(Math.random()<.25)allow+=Math.random()<.5?-1:1;   // 不要太好讀
+  if(out){                                              // 你讓了：便宜就撿，貴就不追
+    const k=h.findIndex(v=>v>=gap);
+    if(k>=0&&usedThis<Math.max(1,allow+1))return play('op',k);
     return pass('op');
   }
-  // 會讓型：開局手牌不比你多時，第一輪早早讓
-  if(G.aiStyle==='sly'&&roundsLeft>1&&usedThis===0&&cardsAdv<=0&&Math.random()<.6&&diff<=0)return pass('op');
-  if(G.aiStyle==='sly'&&roundsLeft>1&&usedThis>=1&&diff<0&&-diff>=3&&Math.random()<.7)return pass('op');
-  if(usedThis>=budget&&roundsLeft>1)return pass('op');
-  if(diff>=2&&Math.random()<.5)return pass('op');
-  if(diff>0)return play('op',0);
-  const i=smallestWin(-diff);
-  return play('op',i>=0?i:h.length-1);
+  if(usedThis>=Math.max(0,allow))return pass('op');
+  return play('op',ahead?0:cheapest());
 }
 
 /* ---- 畫面 ---- */
 function render(){
-  $('lad').innerHTML=CFG.ladder.map((l,i)=>`<div class="${i===G.pos?'on':''} ${i===0?'end':''} ${i===5?'end2':''}">${l[0]}<small>${l[1]||'&nbsp;'}</small></div>`).join('');
+  $('lad').innerHTML=CFG.ladder.map((l,i)=>`<div class="${i===G.pos?'on':''} ${i===0?'end':''} ${i===END?'end2':''}">${l[0]}<small>${l[1]||'&nbsp;'}</small></div>`).join('');
   $('title').textContent=`地面 · 第 ${G.round} / ${CFG.rounds} 輪`;
   $('hpOp').innerHTML=`對手 <b><i style="width:${Math.max(0,G.op.hp)/30*100}%"></i></b>`;
   $('hpMe').innerHTML=`<b><i style="width:${Math.max(0,G.me.hp)/30*100}%"></i></b> 你`;
   $('opWho').innerHTML=`對手<br>${G.meTop?'下位':'上位'}`;$('meWho').innerHTML=`你<br>${G.meTop?'上位':'下位'}`;
   const m=sum(G.me),o=sum(G.op);
-  $('opSum').textContent=o;$('meSum').textContent=m;
-  $('opSum').classList.toggle('lead',o>m);$('meSum').classList.toggle('lead',m>o);
+  $('opSum').textContent=G.reveal?o:'?';$('meSum').textContent=m;
+  $('opSum').classList.toggle('lead',G.reveal&&o>m);$('meSum').classList.toggle('lead',G.reveal&&m>o);
   for(const [k,el] of [['op','opPlayed'],['me','mePlayed']]){
-    const p=G[k];$(el).innerHTML=p.played.map((v,i)=>`<span class="pc ${p.lastNew&&i===p.played.length-1?'new':''}">${v}</span>`).join('');p.lastNew=false;
+    const p=G[k],hide=k==='op'&&!G.reveal;$(el).innerHTML=p.played.map((v,i)=>`<span class="pc ${hide?'bk':''} ${p.lastNew&&i===p.played.length-1?'new':''}">${hide?'':v}</span>`).join('');p.lastNew=false;
   }
   $('opPass').textContent=G.op.pass?'不打了':(!G.op.hand.length?'沒牌了':(G.turn==='op'?'…':''));
   $('mePass').textContent=G.me.pass?'不打了':(!G.me.hand.length?'沒牌了':'');
