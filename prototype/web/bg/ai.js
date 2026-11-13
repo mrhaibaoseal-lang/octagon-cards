@@ -17,19 +17,36 @@ function kwWorth(st, s, c, k) {
   return KW[k] || 0;
 }
 function cardWorth(st, c, d, s) {
-  let v = c.atk + c.hp + (c.gold ? 2 : 0);
+  let v = c.atk + c.hp;
   for (const k of Object.keys(c.kw)) v += kwWorth(st, s, c, k);
   return v + d.fx.filter((x) => x.when !== "play" && x.when !== "ground" && x.when !== "groundEA").length * 2;
 }
 /** What an offered card is worth to side s right now. */
-function offerWorth(st, s, id) {
+function offerWorth(st, s, id, o = {}) {
   const d = st.data.skills[id], B = st[s].board.filter(Boolean), f = st[s].f;
   let v = cardWorth(st, E.make(st, id), d, s) + d.tier;
   for (const x of d.fx) if (x.when === "play") v += B.filter((c) => x.to !== "school" || E.defOf(st, c).school === x.school).length * ((x.atk || 0) + (x.hp || 0) + (x.kw ? 2 : 0));
   if (d.school === f.ai?.prefer) v += f.ai.bias ?? 2;
   if (f.power?.fx.some((x) => x.school === d.school)) v += 1;
-  const copies = B.filter((c) => c.id === id && !c.gold).length;
-  return v + (copies === 1 ? 2 : copies >= 2 ? 9 : 0);
+  // a copy you already hold levels it up: worth more the higher the level it reaches (and Lv3 / Lv4 pay a free pick)
+  const m = E.mergeTarget(st, s, id);
+  if (m >= 0) v += LEVEL_BONUS[E.cellAt(st, s, m).lv] + (o.merge || 0);
+  return v;
+}
+/** What reaching level 2 / 3 / 4 by a merge is worth to the shopping AI (index = the level the card has now). */
+export const LEVEL_BONUS = [0, 4, 7, 10];
+/** Move benched cards onto the board: into a free cell, or in place of a weaker card on it. */
+function fill(st, s) {
+  const F = st[s], n = st.cfg.slots;
+  for (let b = n; b < E.cellCount(st); b++) {
+    const c = E.cellAt(st, s, b);
+    if (!c) continue;
+    const free = F.board.findIndex((x) => !x);
+    if (free >= 0) { E.swap(st, s, b, free); continue; }
+    let low = 0;
+    for (let i = 1; i < n; i++) if (cardWorth(st, F.board[i], E.defOf(st, F.board[i]), s) < cardWorth(st, F.board[low], E.defOf(st, F.board[low]), s)) low = i;
+    if (cardWorth(st, c, E.defOf(st, c), s) > cardWorth(st, F.board[low], E.defOf(st, F.board[low]), s)) E.swap(st, s, b, low);
+  }
 }
 
 /** Takedowns go first with the ground cards right behind them; then a card that buffs "the card to its right"; then strongest attackers first, combo cards kept together. */
@@ -41,8 +58,8 @@ export function arrange(st, s) {
 }
 
 /** One whole shop visit for side s. skill = chance each choice is the best one rather than a random one. */
-export function shop(st, s, skill = st[s].f.ai?.skill ?? 1) {
-  const F = st[s], sh = F.shop, cfg = st.cfg.shop, sharp = () => E.rand(st) < skill;
+export function shop(st, s, skill = st[s].f.ai?.skill ?? 1, o = {}) {
+  const F = st[s], sh = F.shop, cfg = st.cfg.shop, sharp = () => E.rand(st) < skill, cells = E.cellCount(st);
   let rerolls = 0;
   for (let guard = 0; guard < 30; guard++) {
     if (F.discover) {
@@ -50,24 +67,26 @@ export function shop(st, s, skill = st[s].f.ai?.skill ?? 1) {
       E.pick(st, s, sharp() ? opts[0][0] : Math.floor(E.rand(st) * opts.length));
       continue;
     }
-    if (E.canTier(st, s) && sh.gold >= sh.upCost && st.turn >= sh.tier * 3 && sharp()) { E.tierUp(st, s); continue; }
+    if (E.canTier(st, s) && sh.gold >= sh.upCost && (o.climb || st.turn >= sh.tier * 3) && sharp()) { E.tierUp(st, s); continue; }
     if (sh.gold < cfg.cost) break;
-    const full = F.board.every(Boolean);
-    const low = full ? F.board.reduce((m, c, i) => (m == null || cardWorth(st, c, E.defOf(st, c), s) < cardWorth(st, F.board[m], E.defOf(st, F.board[m]), s) ? i : m), null) : null;
+    const full = Array.from({ length: cells }, (_, i) => i).every((i) => E.cellAt(st, s, i)), worthAt = (i) => cardWorth(st, E.cellAt(st, s, i), E.defOf(st, E.cellAt(st, s, i)), s);
+    let low = null;
+    if (full) for (let i = 0; i < cells; i++) if (low == null || worthAt(i) < worthAt(low)) low = i;
     const opts = sh.offers.map((id, i) => {
       if (!id) return null;
-      const p = E.place(st, s, id), v = offerWorth(st, s, id);
+      const p = E.place(st, s, id), v = offerWorth(st, s, id, o);
       if (p) return { i, v, sell: null };
-      const lv = cardWorth(st, F.board[low], E.defOf(st, F.board[low]), s);
+      const lv = worthAt(low);
       return v > lv + 3 ? { i, v: v - lv, sell: low } : null;
     }).filter(Boolean).sort((x, y) => y.v - x.v);
-    if (!opts.length) { if (sh.gold > cfg.cost && rerolls++ < 3) { E.reroll(st, s); continue; } break; }
-    const o = sharp() ? opts[0] : opts[Math.floor(E.rand(st) * opts.length)];
-    if (o.sell != null) E.sell(st, s, o.sell);
-    if (!E.buy(st, s, o.i)) break;
+    if (!opts.length) { if (!o.climb && sh.gold > cfg.cost && rerolls++ < 3) { E.reroll(st, s); continue; } break; }
+    const pk = sharp() ? opts[0] : opts[Math.floor(E.rand(st) * opts.length)];
+    if (pk.sell != null) E.sell(st, s, pk.sell);
+    if (!E.buy(st, s, pk.i)) break;
+    fill(st, s);
   }
   if (sh.gold >= cfg.reroll && sharp() && sh.offers.filter(Boolean).some((id) => offerWorth(st, s, id) >= 12)) { if (!sh.frozen) E.freeze(st, s); }
-  if (sharp()) arrange(st, s);
+  if (sharp()) { fill(st, s); arrange(st, s); }
 }
 /** Which card attacks which: the best trade it can see. Returns [attacker uid, target uid]. skill = chance it looks at all. */
 export function fight(st, o, skill = st[o.s].f.ai?.skill ?? 1) {
@@ -482,7 +501,11 @@ export const groundersEA = {
 
 export function cornerPick(st, s) { return st[s].hp <= st.cfg.hp - st.cfg.corner.heal - 3 ? "heal" : "discover"; }
 
-export const shoppers = { smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {} };
+export const shoppers = {
+  smart: (st) => shop(st, "a", 1), random: (st) => shop(st, "a", 0), none: () => {},
+  /** Always buys a copy it already holds first (the levelling plan) / climbs the shop as soon as it can afford it (the tier plan). */
+  leveler: (st) => shop(st, "a", 1, { merge: 40 }), climber: (st) => shop(st, "a", 1, { climb: true }),
+};
 /** How side a fights in the simulation: sharp picks its trades like the AI at full skill; blind takes the leftmost card and a random target. */
 export const fighters = { sharp: (st, o) => fight(st, o, o.s === "a" ? 1 : undefined), blind: (st, o) => (o.s === "a" ? null : fight(st, o)) };
 

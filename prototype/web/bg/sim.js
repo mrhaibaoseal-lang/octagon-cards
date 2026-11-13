@@ -134,7 +134,19 @@ for (const [x, y] of [["kick", "punch"], ["grap", "punch"], ["grap", "kick"]]) {
 console.log(`抱摔值多少（同樣的流派對打，把所有牌的抱摔拿掉、沒有人進地面）　${[["kick", "punch"], ["grap", "punch"], ["grap", "kick"]].map(([x, y]) => `${NAME[x]}對${NAME[y]} ${pc(styleNoTd[x + y]).trim()}（有抱摔 ${pc(styleEA[x + y]).trim()}）`).join("　")}`);
 const byPairEA = pairs.map(([a, b]) => ({ a, b, w: cell(a, b, shoppers.smart, undefined, undefined, groundersEA.reader, dea).w }));
 console.log(`六組選手對打（會讀）　${byPairEA.map((x) => `${x.a.slice(0, 3)}>${x.b.slice(0, 3)} ${pc(x.w).trim()}`).join("　")}`);
-console.log("\n七、檢查");
+// Card levels (2026-11-13): the levelling plan against the shop-climbing plan, and how often a card reaches Lv3 / Lv4 in a bout.
+console.log("\n七、牌的等級（Lv2／3／4＝同一張牌 2／3／4 張）");
+const reach = { a: { 2: 0, 3: 0, 4: 0 }, b: { 2: 0, 3: 0, 4: 0 }, merges: 0 };
+let bouts = 0;
+for (const [a, b] of pairs) for (let i = 0; i < N; i++) {
+  const st = runGame(data, a, b, 300 + i * 7919, shoppers.smart); bouts++;
+  for (const s of ["a", "b"]) for (const lv of [2, 3, 4]) if (st.log.some((e) => e.t === "buy" && e.s === s && e.merged && e.lv >= lv)) reach[s][lv]++;
+  reach.merges += st.log.filter((e) => e.t === "buy" && e.s === "a" && e.merged).length;
+}
+const lv4 = reach.a[4] / bouts, lv3 = reach.a[3] / bouts;
+console.log(`專門升級（先買已有的牌）${pc(avg.leveler)}　專門升商店（有錢就升）${pc(avg.climber)}　認真逛 ${pc(avg.smart)}　差距 ${(Math.abs(avg.leveler - avg.climber) * 100).toFixed(1)} 個百分點`);
+console.log(`每場出現的比例（認真逛，你這邊）：Lv2 ${pc(reach.a[2] / bouts)}　Lv3 ${pc(lv3)}　Lv4 ${pc(lv4)}；（對手 AI）Lv3 ${pc(reach.b[3] / bouts)}　Lv4 ${pc(reach.b[4] / bouts)}；每場併牌 ${(reach.merges / bouts).toFixed(1)} 次`);
+console.log("\n八、檢查");
 const checks = [
   ["認真逛（smart）對上對手 AI 的勝率在 50%～75%", avg.smart >= 0.5 && avg.smart <= 0.75],
   ["亂買（random）比 smart 低至少 15 個百分點：買什麼有差", avg.smart - avg.random >= 0.15],
@@ -163,6 +175,8 @@ const checks = [
   ["EA 式：每場地面傷害約 10 點（7～13）", ea.reader.gdmg >= 7 && ea.reader.gdmg <= 13],
   ["EA 式：認真逛仍在 50%～75%，流派對打在 35%～65%，六組選手對打在 25%～85%", ea.reader.w >= 0.5 && ea.reader.w <= 0.75 && Object.values(styleEA).every((w) => w >= 0.35 && w <= 0.65) && byPairEA.every((x) => x.w >= 0.25 && x.w <= 0.85)],
 ];
+checks.push(["等級：專門升級與專門升商店的勝率差在 5 個百分點內：兩條路都走得通", Math.abs(avg.leveler - avg.climber) <= 0.05]);
+checks.push(["等級：每場出現 Lv4 牌的比例約 1 成（5%～15%）", lv4 >= 0.05 && lv4 <= 0.15]);
 let bad = 0;
 for (const [t, ok] of checks) { console.log(`${ok ? "✓" : "✗"} ${t}`); if (!ok) bad++; }
 process.exitCode = bad ? 1 : 0;

@@ -138,35 +138,36 @@ function effectLine(d) {
   return "沒有特殊效果，就是數值高";
 }
 /** One card. c = a board card / clash unit / { id } for a shop offer. o: side ("b" mirrors it), offer (taller, with the effect line), flag, cls, attr, note */
+const LV_TAG = { 2: "Lv2", 3: "Lv3", 4: "Lv4 腰帶" }, LV_FRAME = { 2: "銀框", 3: "金框", 4: "冠軍腰帶" };
 function card(c, o = {}) {
-  const d = data.skills[c.id], m = c.gold ? data.config.golden : 1;
+  const d = data.skills[c.id], lv = c.lv || 1, m = data.config.levelMul[lv - 1];
   const atk = c.pow ?? c.atk ?? d.atk, hp = c.hp ?? d.hp, kw = c.kw ? Object.keys(c.kw) : d.kw, off = c.pow === 0 && c.atk > 0;
-  const up = (v, base) => (v > base * m ? "up" : v < base * m ? "down" : "");
+  const up = (v, base) => (v > Math.round(base * m) ? "up" : v < Math.round(base * m) ? "down" : "");
   const when = [...new Set(d.fx.map((f) => (f.when === "ground" ? (data.config.ground.mode === "poker" ? "地面" : null) : WHEN[f.when])).filter(Boolean))];
   const bad = [c.stun ? "被壓制" : "", off ? "地面出不了手" : "", c.worn ? `腿傷 −${c.worn}` : ""].filter(Boolean);
   const tags = [...bad.map((t) => `<i>${t}</i>`), ...kw.map((k) => KW[k]), ...when].join(" · ");
   const aCls = [up(atk + (c.worn || 0), d.atk), c.worn || (c.pow != null && c.pow < c.atk) ? "down" : ""].join(" ");
-  const head = `<div class="ty k-${KIND[d.school]}"><b>${ICON[KIND[d.school]]}</b><i class="lv">${c.gold ? "<u>★★</u>" : "<u>★</u>☆"}</i></div>
+  const head = `<div class="ty k-${KIND[d.school]}"><b>${ICON[KIND[d.school]]}</b><i class="lv"><u>${"★".repeat(d.tier)}</u></i></div>
       <div class="tx"><div class="nm">${esc(d.name)}</div><div class="tg">${tags}</div></div>
       <div class="st atk"><b class="lat ${aCls}">${atk}</b></div><div class="st dur"><b class="lat ${up(hp, d.hp)}">${Math.max(0, hp)}</b></div>`;
   const body = o.offer ? `<div class="card"><div class="top">${head}</div><div class="fxt ${o.note ? "note" : ""}"><span>${esc(o.note || effectLine(d))}</span></div></div>` : `<div class="card">${head}</div>`;
-  return `<div class="sk ${c.gold ? "gold" : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.gold ? "data-gold" : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
-    ${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${body}</div>`;
+  return `<div class="sk ${lv > 1 ? "l" + lv : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.lv ? `data-lv="${lv}"` : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
+    ${lv > 1 ? `<i class="ltag lat">${LV_TAG[lv]}</i>` : ""}${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${body}</div>`;
 }
 
 // ---------- card details: mouse over a card, or press and hold on touch ----------
 let tipEl = null, tipAt = null, mouse = null, holdT = 0, held = false, downAt = null;
 const cardAt = (t) => (t instanceof Element ? t.closest(".sk[data-id]") : null);
 function showTip(node) {
-  const d = data.skills[node.dataset.id], kws = node.dataset.kw ? node.dataset.kw.split(",") : [], gold = "gold" in node.dataset;
+  const d = data.skills[node.dataset.id], kws = node.dataset.kw ? node.dataset.kw.split(",") : [], lv = Number(node.dataset.lv || 1), M = data.config.levelMul, maxLv = data.config.maxLevel;
   if (!tipEl) { tipEl = document.createElement("div"); tipEl.id = "tip"; }
   tipEl.className = d.school;
-  tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級${gold ? "・金卡" : ""}</span>
+  tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級商店${node.dataset.lv ? `・Lv${lv}${lv > 1 ? "（" + LV_FRAME[lv] + "）" : ""}` : ""}</span>
     <div class="st"><i class="atk">${node.dataset.atk}</i>攻擊<i class="hp">${node.dataset.hp}</i>耐力</div>
     ${d.fx.some((f) => f.when !== "ground") ? `<p>${esc(d.text)}</p>` : ""}${data.config.ground.mode === "poker" ? d.fx.filter((f) => f.when === "ground").map((f) => `<p><em>地面</em>${esc(f.text)}</p>`).join("") : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${data.config.ground.mode === "ea" && KW_EA[k] ? KW_EA[k](data.config) : KW_TEXT[k](data.config)}</p>`).join("")}
     ${node.dataset.worn ? `<p class="dim">腿傷：攻擊 −${node.dataset.worn}，這回合結束才恢復。</p>` : ""}
     ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
-    ${gold ? `<p class="dim">金卡：數值與效果的數字都加倍。</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
+    ${node.dataset.lv ? `<p class="dim">${lv > 1 ? `Lv${lv}：數值與效果的數字 ×${M[lv - 1]}。` : ""}${lv < maxLv ? `再買 1 張一樣的，升 Lv${lv + 1}（${M[lv]} 倍${data.config.rewardAt.includes(lv + 1) ? "，還能免費三選一" : ""}）。` : "已是最高級，再買一樣的就是一張新牌。"}</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
   if (tipEl.parentNode !== frame) frame.appendChild(tipEl);
   const p = pos(node), h = node.offsetHeight / 2, w = tipEl.offsetWidth, th = tipEl.offsetHeight;
   let y = p.y - h - th - 6;
@@ -398,22 +399,25 @@ function pickScreen() {
 function shopScreen(msg = "") {
   if (st.over) return finish();
   if (st.phase === "corner") return cornerScreen();
-  const F = st.a, sh = F.shop, cfg = st.cfg.shop;
-  const trip = new Set();
+  const F = st.a, sh = F.shop, cfg = st.cfg.shop, N = st.cfg.slots, cells = E.cellCount(st);
+  const merging = new Set(); // cells whose card one of the offers would level up
   const offers = sh.offers.map((id, i) => {
     if (!id) return empty({}, "已買");
-    const p = E.place(st, "a", id), can = sh.gold >= cfg.cost && p;
-    if (p && p.triple) trip.add(id);
-    return card({ id }, { offer: true, cls: (can ? "buy" : "no") + (p && p.triple ? " triple" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, flag: p && p.triple ? "第三張 → 合成金卡 ★★" : null, note: !p ? "技能列滿了，先賣一張" : null });
+    const p = E.place(st, "a", id), can = sh.gold >= cfg.cost && p, target = p && p.merge != null ? E.cellAt(st, "a", p.merge) : null;
+    if (target) merging.add(p.merge);
+    return card({ id }, { offer: true, cls: (can ? "buy" : "no") + (target ? " levels" : ""), attr: `data-offer="${i}"${can ? ' data-drag="offer"' : ""}`, flag: target ? `買下 → ${data.skills[id].name}升 Lv${target.lv + 1} ${LV_FRAME[target.lv + 1]}` : null, note: !p ? "技能列和備選都滿了，先賣一張" : null });
   }).join("");
-  const mine = F.board.map((c, i) => (c ? card(c, { cls: (sel === i ? "sel" : "") + (trip.has(c.id) && !c.gold ? " pair" : ""), attr: `data-slot="${i}" data-drag="slot"` }) : empty({ attr: `data-slot="${i}"` }))).join("");
+  const cell = (i) => { const c = E.cellAt(st, "a", i); return c ? card(c, { cls: (sel === i ? "sel" : "") + (merging.has(i) ? " pair" : ""), attr: `data-slot="${i}" data-drag="slot"` }) : empty({ attr: `data-slot="${i}"` }, i < N ? "空位" : "備選"); };
+  const mine = Array.from({ length: N }, (_, i) => cell(i)).join(""), bench = Array.from({ length: cells - N }, (_, i) => cell(N + i)).join("");
   const bad = /不夠|至少|滿了/.test(msg);
-  const hint = msg || (sel == null ? "把招式拖到左邊空位就買 · 把自己的牌拖回中間賣掉 +" + cfg.sell + " 金" : "再點一格換位置，或按「賣掉」");
+  const hint = msg || (sel == null ? "把招式拖到左邊空位就買 · 買到一樣的牌就升級 · 把自己的牌拖回中間賣掉 +" + cfg.sell + " 金" : "再點一格換位置，或按「賣掉」");
+  const stars = "★".repeat(sh.tier);
   frame.innerHTML = `<div class="shade m-shop"></div>
     ${cols({ a: mine, b: Array.from({ length: st.cfg.slots }, backCard).join("") }, { note: "他的牌開打才看得到" })}
     ${clock({ top: `ROUND <em>${st.round}</em> · 第 ${st.clash} 段前`, mid: `<div class="s t lat">角落時間</div>` })}
+    <div id="shopcol">
     <div id="store" data-sell="放這裡賣掉　+${cfg.sell} 金">
-      <div class="sh"><b>教練的招式單</b><small>第 ${sh.tier} 級 · 每張 ${cfg.cost} 金</small><div class="coin"><i></i><span class="lat">${sh.gold}</span><small>金</small></div></div>
+      <div class="sh"><b>教練的招式單</b><small><span class="stars">${stars}</span> 第 ${sh.tier} 級 · 每張 ${cfg.cost} 金</small>${sh.fresh ? `<span class="fresh">剛升級 · 免費換成新的一批</span>` : ""}<div class="coin"><i></i><span class="lat">${sh.gold}</span><small>金</small></div></div>
       <div class="offers">${offers}</div>
       <div class="alts">
         <button class="alt ${sh.gold >= cfg.reroll ? "" : "no"}" id="reroll"><span>重抽<small>${cfg.reroll} 金</small></span></button>
@@ -421,35 +425,38 @@ function shopScreen(msg = "") {
         <button class="alt ${E.canTier(st, "a") && sh.gold >= sh.upCost ? "" : "no"}" id="tier"><span>${E.canTier(st, "a") ? `升級招式單<small>${sh.upCost} 金</small>` : "招式單已最高級"}</span></button>
         ${sel != null ? `<button class="alt" id="sell"><span>賣掉<small>+${cfg.sell} 金</small></span></button>` : ""}
       </div>
-      <button class="go" id="fight"><span>開打</span><small class="lat">FIGHT</small></button>
+    </div>
+    <div class="blab"><b>備選</b><span>不上場 · 買到一樣的牌照樣升級 · 拖上去換人</span></div>
+    <div id="bench">${bench}</div>
+    <button class="go" id="fight"><span>開打</span><small class="lat">FIGHT</small></button>
     </div>
     <div id="say"><b class="${bad ? "bad" : "good"}"><span>${esc(hint)}</span></b></div>`;
   const buyAt = (i, slot = null) => {
     const id = sh.offers[i], p = id && E.place(st, "a", id);
-    if (!E.buy(st, "a", i)) return shopScreen(sh.gold < cfg.cost ? "金幣不夠" : "技能列滿了，先賣掉一張");
-    if (p.slot != null && slot != null && slot !== p.slot && !F.board[slot]) E.swap(st, "a", p.slot, slot);
-    sel = null; shopScreen(`買了${data.skills[id].name}`);
+    if (!E.buy(st, "a", i)) return shopScreen(sh.gold < cfg.cost ? "金幣不夠" : "技能列和備選都滿了，先賣掉一張");
+    if (p.slot != null && slot != null && slot !== p.slot && !E.cellAt(st, "a", slot)) E.swap(st, "a", p.slot, slot);
+    sel = null; shopScreen(p.merge != null ? `${data.skills[id].name}升到 Lv${E.cellAt(st, "a", p.merge).lv}` : `買了${data.skills[id].name}`);
   };
-  const slotOf = (n) => { const x = n.closest("#colA [data-slot]"); return x ? Number(x.dataset.slot) : null; };
+  const slotOf = (n) => { const x = n.closest("#colA [data-slot], #bench [data-slot]"); return x ? Number(x.dataset.slot) : null; };
   dnd = {
-    hot: (from, u) => (from.dataset.drag === "offer" ? (u.closest("#colA") ? u.closest("#colA .sk.empty") || $("#colA") : null) : u.closest("#store") || (u.closest("#colA [data-slot]") !== from ? u.closest("#colA [data-slot]") : null)),
+    hot: (from, u) => (from.dataset.drag === "offer" ? (u.closest("#colA, #bench") ? u.closest("#colA .sk.empty, #bench .sk.empty") || u.closest("#colA, #bench") : null) : u.closest("#store") || (slotOf(u) != null && slotOf(u) !== Number(from.dataset.slot) ? u.closest("[data-slot]") : null)),
     drop: (from, u) => {
-      if (from.dataset.drag === "offer") { if (u.closest("#colA")) buyAt(Number(from.dataset.offer), slotOf(u)); return; }
+      if (from.dataset.drag === "offer") { if (u.closest("#colA, #bench")) buyAt(Number(from.dataset.offer), slotOf(u)); return; }
       const i = Number(from.dataset.slot), j = slotOf(u);
-      if (u.closest("#store")) { const nm = data.skills[F.board[i].id].name; E.sell(st, "a", i); sel = null; shopScreen(`賣掉${nm}`); }
-      else if (j != null && j !== i) { E.swap(st, "a", i, j); sel = null; shopScreen(); }
+      if (j != null && j !== i) { E.swap(st, "a", i, j); sel = null; shopScreen(); }
+      else if (u.closest("#store")) { const nm = data.skills[E.cellAt(st, "a", i).id].name; E.sell(st, "a", i); sel = null; shopScreen(`賣掉${nm}`); }
     },
   };
   frame.querySelectorAll("[data-offer]").forEach((el) => (el.onclick = () => buyAt(Number(el.dataset.offer))));
-  frame.querySelectorAll("#colA .sk").forEach((el) => (el.onclick = () => {
+  frame.querySelectorAll("#colA .sk[data-slot], #bench .sk[data-slot]").forEach((el) => (el.onclick = () => {
     const i = Number(el.dataset.slot);
-    if (sel == null) { if (F.board[i]) sel = i; } else { if (i !== sel) E.swap(st, "a", sel, i); sel = null; }
+    if (sel == null) { if (E.cellAt(st, "a", i)) sel = i; } else { if (i !== sel) E.swap(st, "a", sel, i); sel = null; }
     shopScreen();
   }));
   if ($("#sell")) $("#sell").onclick = () => { E.sell(st, "a", sel); sel = null; shopScreen(); };
   $("#reroll").onclick = () => shopScreen(E.reroll(st, "a") ? "" : "金幣不夠");
   $("#freeze").onclick = () => { E.freeze(st, "a"); shopScreen(st.a.shop.frozen ? "招式單會留到下一段" : ""); };
-  $("#tier").onclick = () => shopScreen(E.tierUp(st, "a") ? "招式單升級了：之後會出現更強的牌" : E.canTier(st, "a") ? "金幣不夠" : "");
+  $("#tier").onclick = () => shopScreen(E.tierUp(st, "a") ? "招式單升級了：免費換成新等級的一批牌" : E.canTier(st, "a") ? "金幣不夠" : "");
   $("#fight").onclick = () => { if (!F.board.some(Boolean)) return shopScreen("至少要有一張牌"); sel = null; dnd = null; clash(++runId); };
   if (F.discover) discoverScreen();
 }
@@ -457,7 +464,7 @@ function shopScreen(msg = "") {
 function discoverScreen() {
   const F = st.a;
   const d = sheet(`<h2 class="gold">選一張，免費<small class="lat">FREE PICK</small></h2>
-    <div class="offers">${F.discover.map((id, i) => card({ id }, { offer: true, cls: "buy of-big", attr: `data-pick="${i}"`, note: E.place(st, "a", id) ? null : "技能列滿了：選了也放不下" })).join("")}</div>`);
+    <div class="offers">${F.discover.map((id, i) => card({ id }, { offer: true, cls: "buy of-big", attr: `data-pick="${i}"`, note: E.place(st, "a", id) ? null : "技能列和備選都滿了：選了也放不下" })).join("")}</div>`);
   d.querySelectorAll("[data-pick]").forEach((el) => (el.onclick = () => { const id = F.discover[el.dataset.pick]; E.pick(st, "a", Number(el.dataset.pick)); shopScreen(`拿到${data.skills[id].name}`); }));
 }
 
@@ -793,10 +800,10 @@ function pkTags(s, g) {
   const P = st.cfg.groundPoker, role = g.top === s ? "top" : "bottom", out = [];
   for (const u of st.c[s]) {
     if (!u || u.hp <= 0) continue;
-    const d = data.skills[u.id], m = u.gold ? st.cfg.golden : 1;
+    const d = data.skills[u.id], m = st.cfg.levelMul[(u.lv || 1) - 1];
     for (const f of d.fx) {
       if (f.when !== "ground") continue;
-      const n = (f.n || 0) * m;
+      const n = Math.round((f.n || 0) * m);
       if (f.do === "swap" && g.left.swap[s] > 0) out.push([d.name, `換一張暗牌 剩 ${g.left.swap[s]}`]);
       else if (f.do === "peek" && g.left.peek[s] > 0) out.push([d.name, `偷看一張 剩 ${g.left.peek[s]}`]);
       else if (f.do === "ante" && g.dealt === 1) out.push([d.name, `他多押 ${n}`]);

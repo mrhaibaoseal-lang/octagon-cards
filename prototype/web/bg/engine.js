@@ -26,11 +26,12 @@ export function prepare(data) {
 }
 export const defOf = (st, c) => (c ? st.data.skills[c.id] : null);
 /** A fresh copy of a card as it sits on a board. */
-export function make(st, id, gold = false) {
-  const d = st.data.skills[id], m = gold ? st.cfg.golden : 1;
-  return { id, gold, atk: d.atk * m, hp: d.hp * m, kw: Object.fromEntries(d.kw.map((k) => [k, true])) };
+export function make(st, id, lv = 1) {
+  const d = st.data.skills[id], m = st.cfg.levelMul[lv - 1];
+  return { id, lv, atk: Math.round(d.atk * m), hp: Math.round(d.hp * m), kw: Object.fromEntries(d.kw.map((k) => [k, true])) };
 }
-const mulOf = (st, c) => (c.gold ? st.cfg.golden : 1);
+/** The number multiplier of a card's level (config levelMul): its fx numbers and its ground contribution scale with it. Fx amounts are rounded where they land. */
+const mulOf = (st, c) => st.cfg.levelMul[(c.lv || 1) - 1];
 
 /** The stamina numbers of the ground game in use (the EA ground has its own block; the poker block is the default). */
 const groundStam = (cfg) => (cfg.ground.mode === "ea" ? cfg.groundEA : cfg.groundPoker);
@@ -38,8 +39,8 @@ export function createGame(data, aId, bId, seed = 1) {
   const cfg = data.config;
   const st = { data, cfg, rng: (seed >>> 0) || 1, round: 1, clash: 0, turn: 0, phase: "shop", over: null, log: [], rounds: [], wins: { a: 0, b: 0 }, c: null };
   for (const [s, id] of [["a", aId], ["b", bId]]) {
-    st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null,
-      shop: { gold: 0, tier: 1, offers: [], frozen: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 }, stam: groundStam(cfg).stamina };
+    st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), bench: Array(cfg.bench).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null,
+      shop: { gold: 0, tier: 1, offers: [], frozen: false, fresh: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 }, stam: groundStam(cfg).stamina };
   }
   beginTurn(st);
   return st;
@@ -66,7 +67,7 @@ function applyFx(st, list, self, fx, m, bought = null) {
   const n = fx.per ? alive(list).filter((c) => defOf(st, c).school === fx.per).length : 1;
   const hit = targets(st, list, self, fx, bought);
   for (const t of hit) {
-    if (fx.do === "buff") { t.atk += (fx.atk || 0) * m * n; t.hp += (fx.hp || 0) * m * n; }
+    if (fx.do === "buff") { t.atk += Math.round((fx.atk || 0) * m * n); t.hp += Math.round((fx.hp || 0) * m * n); }
     if (fx.do === "grant") t.kw[fx.kw] = true;
   }
   return hit;
@@ -96,39 +97,52 @@ function beginTurn(st) {
     if (st.turn > 1) sh.upCost = Math.max(0, sh.upCost - st.cfg.shop.tierDrop);
     if (sh.frozen) { const p = pool(st, sh.tier); sh.offers = sh.offers.filter(Boolean); while (sh.offers.length < offerCount(st, s)) sh.offers.push(pickOne(st, p).id); }
     else roll(st, s);
-    sh.frozen = false;
+    sh.frozen = false; sh.fresh = false;
   }
   ev(st, "shop", {});
 }
 
-/** Where a bought card goes: { triple: true } (it completes three of a kind) | { slot } | null (no room). */
-export function place(st, s, id) {
-  const B = st[s].board;
-  if (B.filter((c) => c && c.id === id && !c.gold).length >= 2) return { triple: true };
-  const slot = B.findIndex((c) => !c);
-  return slot >= 0 ? { slot } : null;
+// The shop's cells: 0..slots-1 are the board, slots..slots+bench-1 the bench. A benched card sits out the fight, triggers no effect of its own
+// (no start / win / play ...) and gets no buffs; it only counts for levelling up. The screen and the AI both talk in cell numbers.
+export const cellCount = (st) => st.cfg.slots + st.cfg.bench;
+export const cellAt = (st, s, i) => (i < st.cfg.slots ? st[s].board[i] : st[s].bench[i - st.cfg.slots]) ?? null;
+const setCell = (st, s, i, c) => { if (i < st.cfg.slots) st[s].board[i] = c; else st[s].bench[i - st.cfg.slots] = c; };
+/** The cell holding the copy of `id` that one more copy would level up (board first, the highest level below maxLevel), or -1. */
+export function mergeTarget(st, s, id) {
+  let best = -1;
+  for (let i = 0; i < cellCount(st); i++) { const c = cellAt(st, s, i); if (c && c.id === id && c.lv < st.cfg.maxLevel && (best < 0 || c.lv > cellAt(st, s, best).lv)) best = i; }
+  return best;
 }
-/** Put a new card on the board (a full board gets a temporary extra slot when the card completes a triple). */
+/** Where a bought card goes: { merge: cell } (it levels that card up, no room needed) | { slot: cell } (a free board cell, else a free bench cell) | null (no room). */
+export function place(st, s, id) {
+  const m = mergeTarget(st, s, id);
+  if (m >= 0) return { merge: m };
+  for (let i = 0; i < cellCount(st); i++) if (!cellAt(st, s, i)) return { slot: i };
+  return null;
+}
+/** Fold a freshly bought copy into card c: one level up. The buffs, worn-down points and keywords both carry stay; the base numbers follow levelMul. */
+function levelUp(st, c, copy) {
+  const d = defOf(st, c), M = st.cfg.levelMul, was = c.lv;
+  const bonusA = c.atk - Math.round(d.atk * M[was - 1]) + copy.atk - d.atk, bonusH = c.hp - Math.round(d.hp * M[was - 1]) + copy.hp - d.hp;
+  c.lv = was + 1;
+  c.atk = Math.round(d.atk * M[c.lv - 1]) + bonusA;
+  c.hp = Math.round(d.hp * M[c.lv - 1]) + bonusH;
+  Object.assign(c.kw, copy.kw);
+  if (copy.worn) c.worn = (c.worn || 0) + copy.worn;
+}
+/** Put a bought card where place() says (levelling up a copy you already hold, or into a free cell). Returns the card that now holds it. */
 function enter(st, s, id) {
-  const F = st[s], B = F.board, card = make(st, id);
-  let slot = B.findIndex((c) => !c);
-  if (slot < 0) { B.push(null); slot = B.length - 1; }
-  B[slot] = card;
-  const school = defOf(st, card).school;
+  const F = st[s], B = F.board, p = place(st, s, id), card = make(st, id), school = defOf(st, card).school;
   for (const fx of powerFx(st, s, "buy")) if (!fx.school || fx.school === school) applyFx(st, B, null, fx, 1, card);
-  for (const c of B) if (c && c !== card) for (const fx of defOf(st, c).fx) if (fx.when === "buy" && fx.school === school) applyFx(st, B, c, fx, mulOf(st, c));
-  for (const fx of defOf(st, card).fx) if (fx.when === "play") applyFx(st, B, card, fx, mulOf(st, card));
-  ev(st, "buy", { s, id });
-  // three of a kind fold into one golden card that keeps their buffs, and earn a pick from the next tier
-  const idx = B.map((c, i) => (c && c.id === id && !c.gold ? i : -1)).filter((i) => i >= 0);
-  if (idx.length >= 3) {
-    const d = st.data.skills[id], g = make(st, id, true);
-    for (const i of idx.slice(0, 3)) { g.atk += B[i].atk - d.atk; g.hp += B[i].hp - d.hp; if (B[i].worn) g.worn = (g.worn || 0) + B[i].worn; Object.assign(g.kw, B[i].kw); B[i] = null; }
-    B[idx[0]] = g;
-    reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1));
-    ev(st, "triple", { s, id });
-  }
-  B.length = st.cfg.slots;
+  const merged = p.merge != null, cell = merged ? p.merge : p.slot, home = merged ? cellAt(st, s, cell) : card;
+  if (merged) levelUp(st, home, card); else setCell(st, s, cell, card);
+  // the purchase counts for the cards on the board (a benched buy too); the new card's own "play" fires only when it is on the board
+  for (const c of B) if (c && c !== home) for (const fx of defOf(st, c).fx) if (fx.when === "buy" && fx.school === school) applyFx(st, B, c, fx, mulOf(st, c));
+  if (cell < st.cfg.slots) for (const fx of defOf(st, home).fx) if (fx.when === "play") applyFx(st, B, home, fx, mulOf(st, home));
+  ev(st, "buy", { s, id, cell, lv: home.lv, merged });
+  // reaching a reward level earns a pick from the next shop tier
+  if (merged && st.cfg.rewardAt.includes(home.lv)) { reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1)); ev(st, "levelup", { s, id, lv: home.lv }); }
+  return home;
 }
 export function buy(st, s, i) {
   const F = st[s], sh = F.shop, id = sh.offers[i];
@@ -138,7 +152,7 @@ export function buy(st, s, i) {
   enter(st, s, id);
   return true;
 }
-/** Take one of the offered reward cards (after a triple or a corner lesson). With no room the reward is lost. */
+/** Take one of the offered reward cards (after a level reward or a corner lesson). With no room (and nothing to level up) the reward is lost. */
 export function pick(st, s, i) {
   const F = st[s];
   if (!F.discover || !F.discover[i]) return false;
@@ -147,36 +161,44 @@ export function pick(st, s, i) {
   if (place(st, s, id)) enter(st, s, id);
   return true;
 }
-export function sell(st, s, slot) {
-  const F = st[s];
-  if (st.phase !== "shop" || !F.board[slot]) return false;
-  F.board[slot] = null;
-  F.shop.gold += st.cfg.shop.sell;
+export function sell(st, s, cell) {
+  if (st.phase !== "shop" || !cellAt(st, s, cell)) return false;
+  setCell(st, s, cell, null);
+  st[s].shop.gold += st.cfg.shop.sell;
   return true;
 }
-export function swap(st, s, i, j) { if (st.phase !== "shop") return false; const B = st[s].board; [B[i], B[j]] = [B[j], B[i]]; return true; }
+/** Swap two cells (board or bench; either may be empty). Moving between the board and the bench triggers nothing. */
+export function swap(st, s, i, j) {
+  if (st.phase !== "shop" || i === j || i < 0 || j < 0 || i >= cellCount(st) || j >= cellCount(st)) return false;
+  const a = cellAt(st, s, i), b = cellAt(st, s, j);
+  setCell(st, s, i, b); setCell(st, s, j, a);
+  return true;
+}
 export function reroll(st, s) {
   const sh = st[s].shop;
   if (st.phase !== "shop" || sh.gold < st.cfg.shop.reroll) return false;
-  sh.gold -= st.cfg.shop.reroll; sh.frozen = false;
+  sh.gold -= st.cfg.shop.reroll; sh.frozen = false; sh.fresh = false;
   roll(st, s);
   return true;
 }
 export function freeze(st, s) { if (st.phase !== "shop") return false; st[s].shop.frozen = !st[s].shop.frozen; return true; }
 export const canTier = (st, s) => st[s].shop.tier < st.cfg.shop.maxTier;
+/** Level the shop up. The shop is re-rolled for free right away with the new tier's cards (a freeze ends). */
 export function tierUp(st, s) {
   const sh = st[s].shop;
   if (st.phase !== "shop" || !canTier(st, s) || sh.gold < sh.upCost) return false;
   sh.gold -= sh.upCost;
   sh.tier++;
   sh.upCost = st.cfg.shop.tierCost[sh.tier] ?? 0;
+  sh.frozen = false; sh.fresh = true;
+  roll(st, s);
   return true;
 }
 
 // ---------- log ----------
 const view = (st) => {
   if (!st.c) return null;
-  const unitView = (u) => (u ? { uid: u.uid, id: u.id, gold: u.gold, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
+  const unitView = (u) => (u ? { uid: u.uid, id: u.id, lv: u.lv, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
   return { a: st.c.a.map(unitView), b: st.c.b.map(unitView), ground: st.c.ground ? structuredClone(st.c.ground) : null };
 };
 function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, stam: { a: st.a.stam, b: st.b.stam }, view: view(st) }; st.log.push(e); return e; }
@@ -309,7 +331,7 @@ function swing(st, u, t, mul) {
   u.swings++;
   // combo cards hit harder for every combo card this side threw just before
   let combo = 0;
-  if (u.kw.combo) { combo = Math.min(c.chain[s], st.cfg.combo.max) * st.cfg.combo.atk * mulOf(st, u); c.chain[s]++; } else c.chain[s] = 0;
+  if (u.kw.combo) { combo = Math.round(Math.min(c.chain[s], st.cfg.combo.max) * st.cfg.combo.atk * mulOf(st, u)); c.chain[s]++; } else c.chain[s] = 0;
   const hit = Math.round((power(st, u) + combo) * mul);
   ev(st, "attack", { s, from: u.uid, to: t.uid, mul, combo });
   const got = harm(st, t, hit, u);
@@ -320,10 +342,10 @@ function swing(st, u, t, mul) {
   if (got && t.hp > 0) for (const fx of defOf(st, u).fx) if (fx.when === "hit") {
     const m = mulOf(st, u);
     if (fx.do === "weaken") {
-      const n = Math.min(t.atk, fx.atk * m), real = st[o].board[t.slot];
+      const n = Math.min(t.atk, Math.round(fx.atk * m)), real = st[o].board[t.slot];
       t.atk -= n;
       // a lasting weaken also wears the real card down until the round ends
-      if (fx.lasting && real && real.id === t.id && real.gold === t.gold) { const k = Math.min(n, real.atk); real.atk -= k; real.worn = (real.worn || 0) + k; }
+      if (fx.lasting && real && real.id === t.id && real.lv === t.lv) { const k = Math.min(n, real.atk); real.atk -= k; real.worn = (real.worn || 0) + k; }
       ev(st, "weaken", { uid: t.uid, lasting: !!fx.lasting });
     }
     if (fx.do === "stun") { t.stun = true; ev(st, "stun", { uid: t.uid }); }
@@ -388,7 +410,7 @@ export function groundDamage(st, s, id) {
     const up = h.upKw && alive(st.c[s]).some((u) => u.kw[h.upKw]) ? 1 : 0;
     return h.byLayer[clamp((g ? g.layer : 1) + up, 1, h.byLayer.length) - 1];
   }
-  return h.base + (h.cardKw ? h.perCard * alive(st.c[s]).filter((u) => u.kw[h.cardKw]).reduce((n, u) => n + mulOf(st, u), 0) : 0);
+  return h.base + (h.cardKw ? h.perCard * Math.round(alive(st.c[s]).filter((u) => u.kw[h.cardKw]).reduce((n, u) => n + mulOf(st, u), 0)) : 0);
 }
 function runBeat(st) {
   const c = st.c, mv = {};
@@ -444,11 +466,11 @@ function deal21(st) {
   g.info = { bonus: { a: g21Bonus(st, "a"), b: g21Bonus(st, "b") }, bust: { a: g21Bust(st, "a"), b: g21Bust(st, "b") }, hits: { a: g21Hits(st, "a"), b: g21Hits(st, "b") }, subAt: g21SubAt(st) };
   ev(st, "g21deal", { top: g.top, layer: g.layer, hand: g.beat });
 }
-/** The top man's head start: one point for each of his ground cards (a golden one counts double), up to startCap. */
+/** The top man's head start: one point for each of his ground cards (scaled by its level's multiplier, then rounded), up to startCap. */
 export function g21Bonus(st, s) {
   const X = st.cfg.ground21, g = st.c?.ground;
   if (!g || g.top !== s) return 0;
-  return Math.min(X.startCap, alive(st.c[s]).filter((u) => u.kw[X.startKw]).reduce((n, u) => n + mulOf(st, u), 0));
+  return Math.min(X.startCap, Math.round(alive(st.c[s]).filter((u) => u.kw[X.startKw]).reduce((n, u) => n + mulOf(st, u), 0)));
 }
 export const g21Total = (st, s) => st.c.ground.hands[s].reduce((n, v) => n + v, 0) + g21Bonus(st, s);
 /** Which role decides first in a hand: "bottom" when ground21.topLast (the top man answers what he sees, like a dealer), else "top". */
@@ -577,7 +599,7 @@ export function evalHand(cards) {
   const hi = rest([], 5);
   return { cls: 0, score: pack(0, hi), hi: hi[0] };
 }
-const pFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "ground" && x.do === kind).map((x) => ({ ...x, n: (x.n || 0) * mulOf(st, u) })));
+const pFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "ground" && x.do === kind).map((x) => ({ ...x, n: Math.round((x.n || 0) * mulOf(st, u)) })));
 const pSum = (st, s, kind) => pFx(st, s, kind).reduce((n, x) => n + x.n, 0);
 function shuffled(st) {
   const d = Array.from({ length: 52 }, (_, i) => i);
@@ -750,7 +772,7 @@ const EAX = (st) => st.cfg.groundEA;
 // The fourth direction, down, means a different thing to each man: on top HOLD (no attack: get stamina back, drain his, and stuff his burst);
 // underneath BURST (costs X.burst stamina, stops any attack and earns a point of space, but a hold stuffs it).
 export const EA_MOVES = ["pass", "pound", "sub", "down"];
-const eFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "groundEA" && x.do === kind).map((x) => ({ ...x, n: (x.n || 0) * mulOf(st, u) })));
+const eFx = (st, s, kind) => alive(st.c[s]).flatMap((u) => defOf(st, u).fx.filter((x) => x.when === "groundEA" && x.do === kind).map((x) => ({ ...x, n: Math.round((x.n || 0) * mulOf(st, u)) })));
 const eSum = (st, s, kind) => eFx(st, s, kind).reduce((n, x) => n + x.n, 0);
 /** What the cards on the board do in this ground (fixed for the ground: nobody swings while they grapple). */
 function eaMods(st) {

@@ -64,33 +64,160 @@ test("shop: each side has its own offers and only draws cards of its tier or low
   assert.equal(st.a.shop.frozen, false, "frozen for one turn only");
 });
 
-test("three of a kind fold into one golden card with doubled stats that keeps the buffs, and earn a pick from the next tier", () => {
+const benchPut = (st, s, ids) => { st[s].bench = Array(st.cfg.bench).fill(null); ids.forEach((id, i) => { if (id) st[s].bench[i] = E.make(st, id); }); };
+
+test("levels: buying a copy you hold levels it up (Lv2 / Lv3 / Lv4 = 2 / 3 / 4 copies), keeps the buffs, and Lv3 / Lv4 earn a pick from the next tier", () => {
   const st = fresh("poirier");
-  offer(st, "a", ["cross", "cross", "cross"]);
-  E.buy(st, "a", 0); E.buy(st, "a", 1);
-  assert.equal(E.place(st, "a", "cross").triple, true);
+  offer(st, "a", ["cross", "cross", "cross", "cross"]);
+  const d = data.skills.cross, M = data.config.levelMul, plus = st.a.f.power.fx[0].atk, base = (lv) => Math.round(d.atk * M[lv - 1]);
+  E.buy(st, "a", 0);
+  assert.equal(E.mergeTarget(st, "a", "cross"), 0);
+  assert.deepEqual(E.place(st, "a", "cross"), { merge: 0 });
+  E.buy(st, "a", 1);
+  let cards = st.a.board.filter(Boolean);
+  assert.equal(cards.length, 1, "no new cell used");
+  assert.equal(cards[0].lv, 2);
+  assert.equal(cards[0].atk, base(2) + plus * 2, "Poirier's +1 on each of the two copies is kept on top of the level's numbers");
+  assert.equal(cards[0].hp, Math.round(d.hp * M[1]));
+  assert.equal(st.a.discover, null, "Lv2 earns no pick");
   E.buy(st, "a", 2);
-  const cards = st.a.board.filter(Boolean), d = data.skills.cross, plus = st.a.f.power.fx[0].atk;
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0].gold, true);
-  assert.equal(cards[0].atk, d.atk * 2 + plus * 3, "Poirier's +1 on each of the three is kept");
-  assert.equal(cards[0].hp, d.hp * 2);
+  assert.equal(st.a.board.filter(Boolean)[0].lv, 3);
+  assert.equal(st.a.board.filter(Boolean)[0].atk, base(3) + plus * 3);
   assert.equal(st.a.discover.length, data.config.shop.discover);
   for (const id of st.a.discover) assert.equal(data.skills[id].tier, 2);
-  assert.equal(E.buy(st, "a", 0), false, "must take the reward first");
+  assert.equal(E.buy(st, "a", 3), false, "must take the reward first");
   assert.ok(E.pick(st, "a", 0));
   assert.equal(st.a.discover, null);
   assert.equal(st.a.board.filter(Boolean).length, 2);
+  st.a.shop.gold = 99;
+  E.buy(st, "a", 3);
+  const top = st.a.board.find((c) => c && c.id === "cross");
+  assert.equal(top.lv, 4);
+  assert.equal(top.atk, base(4) + plus * 4);
+  assert.ok(st.a.discover, "Lv4 earns a pick too");
 });
 
-test("a full board can still take the third copy", () => {
+test("levels: at the top level another copy is a new card that needs a cell; a full board and bench refuse it", () => {
   const st = fresh();
-  put(st, "a", ["cross", "cross", "jab", "jab", "teep", "clinch"]);
-  offer(st, "a", ["cross", "lowkick"]);
-  assert.equal(E.buy(st, "a", 1), false, "no room for a new card");
+  put(st, "a", ["cross", "jab", "jab", "teep", "clinch", "highguard"]); benchPut(st, "a", ["lowkick", "sprawl", "slipstep"]);
+  st.a.board[0].lv = data.config.maxLevel;
+  offer(st, "a", ["cross", "cross"]);
+  assert.equal(E.place(st, "a", "cross"), null, "everything is full and the top-level copy cannot take another");
+  assert.equal(E.buy(st, "a", 0), false);
+  E.sell(st, "a", 5);
   assert.ok(E.buy(st, "a", 0));
+  const lv = st.a.board.filter((c) => c && c.id === "cross").map((c) => c.lv).sort();
+  assert.deepEqual(lv, [1, data.config.maxLevel]);
+  assert.ok(E.buy(st, "a", 1), "now the new Lv1 copy levels up with the next one");
+  assert.equal(st.a.board.filter((c) => c && c.id === "cross" && c.lv === 2).length, 1);
+});
+
+test("levels: a full board does not stop a level-up, and a new card spills onto the bench; the bench counts for levelling", () => {
+  const st = fresh();
+  put(st, "a", ["cross", "jab", "jab", "teep", "clinch", "highguard"]);
+  offer(st, "a", ["cross", "lowkick", "lowkick", "sprawl"]);
+  assert.deepEqual(E.place(st, "a", "lowkick"), { slot: data.config.slots }, "the first free cell after the board is the bench");
+  assert.ok(E.buy(st, "a", 1));
   assert.equal(st.a.board.length, data.config.slots);
-  assert.equal(st.a.board.filter((c) => c && c.gold).length, 1);
+  assert.equal(st.a.bench[0].id, "lowkick");
+  assert.ok(E.buy(st, "a", 2), "a copy of a benched card levels it up");
+  assert.equal(st.a.bench[0].lv, 2);
+  assert.equal(st.a.bench.filter(Boolean).length, 1);
+  assert.ok(E.buy(st, "a", 0), "the board is full but the cross levels up in place");
+  assert.equal(st.a.board.filter((c) => c && c.lv === 2).length, 1);
+});
+
+test("levels: level numbers follow levelMul, rounded, and the fx numbers follow them too", () => {
+  const st = fresh();
+  const M = data.config.levelMul;
+  for (const id of ["jab", "knee", "heavyhands"]) for (let lv = 1; lv <= data.config.maxLevel; lv++) {
+    const c = E.make(st, id, lv), d = data.skills[id];
+    assert.equal(c.atk, Math.round(d.atk * M[lv - 1]));
+    assert.equal(c.hp, Math.round(d.hp * M[lv - 1]));
+  }
+  // jab: "start of each clash: the card on the right +2 attack", multiplied by the jab's own level
+  put(st, "a", ["jab", "cross"]); put(st, "b", ["highguard"]);
+  st.a.board[0].lv = 3;
+  E.startClash(st);
+  assert.equal(st.c.a[1].atk, data.skills.cross.atk + Math.round(2 * M[2]));
+});
+
+test("levels: the bench sits out the fight and triggers nothing", () => {
+  const st = fresh("poirier");
+  put(st, "a", ["cross"]); benchPut(st, "a", ["jab", "heavyhands", null]);
+  put(st, "b", ["highguard"]);
+  const before = structuredClone(st.a.bench);
+  E.startClash(st);
+  assert.equal(st.c.a.filter(Boolean).length, 1, "only the board fights");
+  assert.equal(st.c.a[0].atk, data.skills.cross.atk, "the benched jab's start effect did not fire");
+  let n = 0;
+  while (st.phase === "clash" && n++ < 300) E.step(st);
+  assert.deepEqual(st.a.bench, before, "nothing happened to the benched cards");
+  assert.equal(st.a.bench[0].atk, data.skills.jab.atk);
+});
+
+test("levels: the bench gets no buffs, but moving cards between the board and the bench is free and fires nothing", () => {
+  const st = fresh();
+  put(st, "a", ["cross", "lowkick"]); benchPut(st, "a", ["bodyshot", null, null]);
+  offer(st, "a", ["coach"]);
+  E.buy(st, "a", 0);
+  assert.equal(st.a.bench[0].atk, data.skills.bodyshot.atk, "the coach's buff and bodyshot's own growth skip the bench");
+  const c = data.config, cell = c.slots; // the bench's first cell
+  assert.ok(E.swap(st, "a", cell, 5), "bench card to an empty board cell");
+  assert.equal(st.a.board[5].id, "bodyshot");
+  assert.equal(st.a.board[5].atk, data.skills.bodyshot.atk);
+  assert.ok(E.swap(st, "a", 0, cell), "board card to the bench");
+  assert.equal(st.a.bench[0].id, "cross");
+  assert.equal(E.swap(st, "a", 0, 0), false);
+  const gold = st.a.shop.gold;
+  assert.ok(E.sell(st, "a", cell), "a benched card can be sold");
+  assert.equal(st.a.shop.gold, gold + c.shop.sell);
+  assert.equal(st.a.bench[0], null);
+});
+
+test("shop: levelling the shop up re-rolls it for free with the new tier's cards and ends a freeze", () => {
+  const st = fresh();
+  st.a.shop.gold = 99;
+  E.freeze(st, "a");
+  const up = st.a.shop.upCost;
+  assert.ok(E.tierUp(st, "a"));
+  assert.equal(st.a.shop.gold, 99 - up, "the re-roll costs nothing");
+  assert.equal(st.a.shop.frozen, false);
+  assert.equal(st.a.shop.fresh, true);
+  assert.equal(st.a.shop.offers.length, data.config.shop.offers[2]);
+  let any = false;
+  for (let i = 0; i < 40; i++) { st.a.shop.tier = 1; st.a.shop.offers = []; st.a.shop.upCost = 0; E.tierUp(st, "a"); if (st.a.shop.offers.some((id) => data.skills[id].tier === 2)) any = true; for (const id of st.a.shop.offers) assert.ok(data.skills[id].tier <= 2); }
+  assert.ok(any, "tier-2 cards can show up");
+  E.reroll(st, "a");
+  assert.equal(st.a.shop.fresh, false);
+});
+
+test("levels: worn-down points and granted keywords carry into the level-up", () => {
+  const st = fresh();
+  put(st, "a", ["lowkick"]);
+  st.a.board[0].worn = 1; st.a.board[0].atk -= 1; st.a.board[0].kw.slip = true;
+  offer(st, "a", ["lowkick"]);
+  E.buy(st, "a", 0);
+  const c = st.a.board[0], d = data.skills.lowkick;
+  assert.equal(c.lv, 2);
+  assert.equal(c.worn, 1);
+  assert.equal(c.atk, Math.round(d.atk * data.config.levelMul[1]) - 1, "the worn point stays worn");
+  assert.equal(c.kw.slip, true);
+});
+
+test("levels: the shopping AI levels up cards it holds, uses the bench without breaking, and every bout still ends", () => {
+  for (let i = 0; i < 30; i++) {
+    const st = runGame(data, "makhachev", "holloway", 700 + i, shoppers.leveler);
+    assert.ok(st.over);
+    for (const s of ["a", "b"]) {
+      assert.equal(st[s].board.length, data.config.slots);
+      assert.equal(st[s].bench.length, data.config.bench);
+      for (const c of [...st[s].board, ...st[s].bench]) if (c) assert.ok(c.lv >= 1 && c.lv <= data.config.maxLevel);
+    }
+  }
+  let merges = 0;
+  for (let i = 0; i < 20; i++) merges += runGame(data, "poirier", "holloway", 900 + i, shoppers.leveler).log.filter((e) => e.t === "buy" && e.s === "a" && e.merged).length;
+  assert.ok(merges / 20 >= 3, "the levelling plan really levels cards up: " + merges / 20);
 });
 
 test("shop effects: on-play buffs the school, on-buy grows the card that asked, and both are permanent", () => {

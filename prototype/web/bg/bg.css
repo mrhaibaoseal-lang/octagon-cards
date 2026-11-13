@@ -81,14 +81,26 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .sk .dur b{background:linear-gradient(180deg,#f0544d,#8f1c18);color:#fff;clip-path:polygon(0 0,100% 0,100% 62%,50% 100%,0 62%);padding-bottom:3px}
 .sk .st+.st{margin:0 4px 0 1px}.sk.r .st+.st{margin:0 1px 0 4px}
 .sk .st b.up{color:#9dffb0}.sk .st b.down{color:#ffb070}
-/* 金卡（三張合成）：金底、金框、兩顆亮星 */
-.sk.gold .card{background:linear-gradient(180deg,#fff6d6,#f3d586 62%,#dcae45)}
-.sk.gold .ty{background:linear-gradient(180deg,#4a3608,#1d1503)}
-.sk.gold::before{content:"";position:absolute;inset:-2px;background:linear-gradient(180deg,#fff0b8,#e79c14);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%)}
-.sk.gold.r::before{clip-path:polygon(12px 0,100% 0,100% 100%,0 100%,0 12px)}
-.sk.gold{filter:drop-shadow(0 0 5px rgba(255,190,60,.55)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
-.sk.gold .nm{color:#4a3200}
-/* 商店裡再買這張就湊成三張：手上那兩張用虛線框 */
+/* 牌的等級（買到一樣的牌就升一級）：星星＝這張牌來自第幾級商店；框＝升過幾次。Lv2 銀框、Lv3 金框、Lv4 冠軍腰帶；角落小標籤再寫一次 */
+.lv{font-size:7.5px;letter-spacing:0;white-space:nowrap}
+.sk.l2::before,.sk.l3::before,.sk.l4::before{content:"";position:absolute;inset:-3px;clip-path:polygon(0 0,calc(100% - 13px) 0,100% 13px,100% 100%,0 100%)}
+.sk.r.l2::before,.sk.r.l3::before,.sk.r.l4::before{clip-path:polygon(13px 0,100% 0,100% 100%,0 100%,0 13px)}
+.sk.l2::before{inset:-4px;background:linear-gradient(180deg,#ffffff,#b9c6dc 30%,#58657c 55%,#e9eef7)}
+.sk.l3::before{background:linear-gradient(180deg,#fff3c2,#f0b52e 45%,#a86a06)}
+.sk.l4::before{inset:-5px;clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,0 100%);
+  background:radial-gradient(circle,#fff6d0 0 1.4px,transparent 1.8px) 0 0/8px 8px,linear-gradient(180deg,#ffe7a0,#d4950f 40%,#7a2b12 41%,#5a1a0c 59%,#d4950f 60%,#ffe7a0)}
+.sk.r.l4::before{clip-path:polygon(15px 0,100% 0,100% 100%,0 100%,0 15px)}
+.sk.l2{filter:drop-shadow(0 0 6px rgba(190,215,255,.75)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.sk.l3{filter:drop-shadow(0 0 6px rgba(255,190,60,.6)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.sk.l4{filter:drop-shadow(0 0 4px rgba(255,90,60,.9)) drop-shadow(0 0 10px rgba(255,200,80,.85)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
+.sk.l3 .card{background:linear-gradient(180deg,#fff8e0,#f1dfa8 70%,#ddc077)}
+.sk.l4 .card{background:linear-gradient(180deg,#fff6d6,#f3d586 62%,#dcae45)}
+.sk.l4 .ty{background:linear-gradient(180deg,#4a3608,#1d1503)}
+.sk.l3 .nm,.sk.l4 .nm{color:#4a3200}
+.ltag{position:absolute;z-index:3;right:30px;top:-6px;font-size:9px;font-weight:700;font-style:italic;padding:0 4px;line-height:13px;color:#17130a;transform:skewX(-12deg);box-shadow:0 1px 0 #000;white-space:nowrap}
+.sk.r .ltag{right:auto;left:30px}
+.l2 .ltag{background:linear-gradient(180deg,#fff,#aeb6c4)}.l3 .ltag{background:linear-gradient(180deg,#fff0bd,#f0b52e)}.l4 .ltag{background:linear-gradient(180deg,#ffe7a0,#d4950f);color:#5a1a0c}
+/* 商店裡有一張買了會讓它升級：手上那張用虛線框 */
 .sk.pair::after{content:"";position:absolute;inset:-3px;border:1.5px dashed var(--cg);opacity:.9;pointer-events:none}
 .flag{position:absolute;right:14px;top:-9px;z-index:3;font-size:10px;font-weight:700;color:#17130a;padding:2px 8px;background:linear-gradient(180deg,#fff0bd,#f6b93a);box-shadow:0 2px 0 #7a4d04,0 0 10px rgba(255,190,60,.7);transform:skewX(-12deg);white-space:nowrap}
 .flag span{display:inline-block;transform:skewX(12deg)}
@@ -114,7 +126,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .sk.buy{cursor:pointer}
 .sk.buy:hover{transform:translateY(-3px)}
 .sk.no{filter:saturate(.4) brightness(.7) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
-.sk.triple{animation:glow 1s infinite alternate}
+.sk.levels{animation:glow 1s infinite alternate}
 @keyframes glow{to{filter:drop-shadow(0 0 12px rgba(255,190,60,.95)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}}
 /* 選中／可出手／目標／拖曳中的各種狀態 */
 .sk.sel,.sk.aiming{transform:translateX(var(--dx)) scale(1.04);filter:drop-shadow(0 0 7px rgba(255,200,90,.9)) drop-shadow(0 3px 3px rgba(0,0,0,.8));z-index:3}
@@ -122,7 +134,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .sk.r.sel::before,.sk.r.aiming::before{clip-path:polygon(12px 0,100% 0,100% 100%,0 100%,0 12px)}
 .sk.aiming{filter:drop-shadow(0 0 9px rgba(255,120,50,.95)) drop-shadow(0 3px 3px rgba(0,0,0,.8))}
 .sk.can{filter:drop-shadow(0 0 3px rgba(130,195,255,1)) drop-shadow(0 0 9px rgba(90,170,255,.95)) drop-shadow(0 2px 2px rgba(0,0,0,.7))}
-.sk.gold.can{filter:drop-shadow(0 0 3px rgba(130,195,255,1)) drop-shadow(0 0 9px rgba(90,170,255,.95)) drop-shadow(0 0 5px rgba(255,190,60,.55))}
+.sk.l3.can,.sk.l4.can{filter:drop-shadow(0 0 3px rgba(130,195,255,1)) drop-shadow(0 0 9px rgba(90,170,255,.95)) drop-shadow(0 0 5px rgba(255,190,60,.55))}
 .sk.tgt{cursor:pointer}
 .sk.tgt::after{content:"";position:absolute;inset:-4px;border:2px solid var(--cg);pointer-events:none;
   clip-path:polygon(0 0,14px 0,14px 3px,calc(100% - 14px) 3px,calc(100% - 14px) 0,100% 0,100% 100%,calc(100% - 14px) 100%,calc(100% - 14px) calc(100% - 3px),14px calc(100% - 3px),14px 100%,0 100%);filter:drop-shadow(0 0 4px rgba(255,200,90,.9))}
@@ -320,19 +332,29 @@ h1 span{color:transparent;-webkit-text-stroke:1.5px var(--cg);text-shadow:none}
 
 /* ---------- 商店：角落時間 ---------- */
 .shade.m-shop{background:radial-gradient(ellipse at 50% 40%,rgba(6,8,12,.78),rgba(6,8,12,.9))}
-#store{position:absolute;left:190px;width:464px;top:47px;display:flex;flex-direction:column;gap:6px;z-index:3}
+#shopcol{position:absolute;left:190px;width:464px;top:47px;display:flex;flex-direction:column;gap:4px;z-index:3}
+#store{position:relative;display:flex;flex-direction:column;gap:4px}
 .sh{display:flex;align-items:baseline;gap:8px;height:22px}
 .sh b{font-size:15px;font-style:italic}
 .sh small{font-size:10px;color:#aab0bd}
+.sh .stars{color:var(--cg);letter-spacing:0}
+.fresh{align-self:center;font-size:10px;font-weight:700;color:#17130a;padding:2px 9px;background:linear-gradient(180deg,#fff0bd,#f6b93a);transform:skewX(-12deg);box-shadow:0 0 10px rgba(255,190,60,.7);white-space:nowrap}
 .coin{margin-left:auto;align-self:center;display:flex;align-items:center;gap:6px;font-size:20px;font-weight:700;font-style:italic;color:var(--cg);padding:0 12px 0 8px;height:22px;background:linear-gradient(180deg,#2a2d35,#0c0d11);transform:skewX(-12deg);box-shadow:inset 0 0 0 1px rgba(255,207,107,.4)}
 .coin>*{}
 .coin i{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff3c4,#f1b63c 55%,#9a6a10);box-shadow:0 0 6px rgba(255,190,60,.7)}
 .coin small{font-size:9px;font-style:normal;color:#c9ccd6}
-#store .offers{display:grid;grid-template-columns:1fr 1fr;gap:9px 8px;padding-top:3px}
-#store .offers .sk.empty{height:60px}
+#store .offers{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 8px;padding-top:2px}
+#store .offers .sk{height:56px}
+#store .offers .flag{right:4px;font-size:9.5px}
+#store .offers .sk.empty{height:56px}
 #store .alts{display:flex;gap:8px;justify-content:center;margin-top:2px}
 #store .alts .alt{flex:1}
-#store .go{position:relative;align-self:center;width:220px;margin-top:6px}
+.blab{display:flex;justify-content:space-between;font-size:10px;color:#aab0bd;letter-spacing:.08em;line-height:11px}
+.blab b{color:#d7dae2;font-weight:700;letter-spacing:.2em}
+#bench{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;height:46px}
+#bench .sk{height:46px}
+#bench .nm{font-size:14px}
+#shopcol .go{position:relative;align-self:center;width:200px;height:32px;font-size:17px}
 .drag-slot #store::after{content:attr(data-sell);position:absolute;left:-6px;right:-6px;top:26px;bottom:-4px;display:flex;align-items:center;justify-content:center;z-index:6;
   background:rgba(42,31,8,.92);border:2px dashed #a37a1c;color:var(--cg);font-size:17px;font-weight:700;font-style:italic}
 .drag-slot #store.hot::after{border-color:var(--cg);background:rgba(74,54,10,.95)}
