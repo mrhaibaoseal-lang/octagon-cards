@@ -39,7 +39,7 @@ export function createGame(data, aId, bId, seed = 1) {
   const cfg = data.config;
   const st = { data, cfg, rng: (seed >>> 0) || 1, round: 1, clash: 0, turn: 0, phase: "shop", over: null, log: [], rounds: [], wins: { a: 0, b: 0 }, c: null };
   for (const [s, id] of [["a", aId], ["b", bId]]) {
-    st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), bench: Array(cfg.bench).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null,
+    st[s] = { id, f: data.fighters[id], hp: cfg.hp, board: Array(cfg.slots).fill(null), bench: Array(cfg.bench).fill(null), shown: [], lostLast: false, bonusGold: 0, discover: null, training: null,
       shop: { gold: 0, tier: 1, offers: [], frozen: false, fresh: false, upCost: cfg.shop.tierCost[1] }, stats: { won: 0, dmg: 0 }, stam: groundStam(cfg).stamina };
   }
   beginTurn(st);
@@ -146,11 +146,35 @@ function enter(st, s, id) {
   ev(st, "buy", { s, id, cell, lv: home.lv, n: home.n, merged, levelled: home.lv > before });
   // reaching a reward level earns a pick from the next shop tier
   if (home.lv > before && st.cfg.rewardAt.includes(home.lv)) { reward(st, s, Math.min(st.cfg.shop.maxTier, F.shop.tier + 1)); ev(st, "levelup", { s, id, lv: home.lv }); }
+  // reaching the training level: choose a direction for this card (config train)
+  if (before < st.cfg.train.at && home.lv >= st.cfg.train.at && !home.train) { F.training = home; ev(st, "levelup", { s, id, lv: home.lv, train: true }); }
   return home;
+}
+/** The two training directions open to card c (config train.dirs of its school): { id, name, atk, hp, kw, swap }.
+ * A direction whose keyword the card already has turns into config train.fallback's flat atk / hp (swap: true). */
+export function trainOptions(st, c) {
+  const T = st.cfg.train;
+  return (T.dirs[defOf(st, c).school] || []).map((o) => {
+    const swap = !!(o.kw && c.kw[o.kw]), g = swap ? T.fallback : o;
+    return { id: o.id, name: o.name, kw: swap ? null : o.kw || null, atk: g.atk || 0, hp: g.hp || 0, swap };
+  });
+}
+/** A direction by id (for the card's label): { id, name, atk, hp, kw } as written in config, or null. */
+export function trainDef(st, id) { for (const list of Object.values(st.cfg.train.dirs)) { const o = list.find((x) => x.id === id); if (o) return o; } return null; }
+/** Take training direction i for the card waiting in F.training. The bonus is flat (no level multiplier) and stays when the card levels up. */
+export function train(st, s, i) {
+  const F = st[s], c = F.training, o = c && trainOptions(st, c)[i];
+  if (!o) return false;
+  c.atk += o.atk; c.hp += o.hp;
+  if (o.kw) c.kw[o.kw] = true;
+  c.train = o.id; c.trainSwap = o.swap;
+  F.training = null;
+  ev(st, "train", { s, id: c.id, dir: o.id });
+  return true;
 }
 export function buy(st, s, i) {
   const F = st[s], sh = F.shop, id = sh.offers[i];
-  if (st.phase !== "shop" || F.discover || !id || sh.gold < st.cfg.shop.cost || !place(st, s, id)) return false;
+  if (st.phase !== "shop" || F.discover || F.training || !id || sh.gold < st.cfg.shop.cost || !place(st, s, id)) return false;
   sh.gold -= st.cfg.shop.cost;
   sh.offers[i] = null;
   enter(st, s, id);
@@ -167,6 +191,7 @@ export function pick(st, s, i) {
 }
 export function sell(st, s, cell) {
   if (st.phase !== "shop" || !cellAt(st, s, cell)) return false;
+  if (st[s].training === cellAt(st, s, cell)) st[s].training = null; // the card is gone, so is its training
   setCell(st, s, cell, null);
   st[s].shop.gold += st.cfg.shop.sell;
   return true;
@@ -202,14 +227,14 @@ export function tierUp(st, s) {
 // ---------- log ----------
 const view = (st) => {
   if (!st.c) return null;
-  const unitView = (u) => (u ? { uid: u.uid, id: u.id, lv: u.lv, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
+  const unitView = (u) => (u ? { uid: u.uid, id: u.id, lv: u.lv, train: u.train, trainSwap: u.trainSwap, atk: u.atk, pow: power(st, u), hp: u.hp, kw: { ...u.kw }, dead: u.hp <= 0, stun: !!u.stun } : null);
   return { a: st.c.a.map(unitView), b: st.c.b.map(unitView), ground: st.c.ground ? structuredClone(st.c.ground) : null };
 };
 function ev(st, t, o = {}) { const e = { t, ...o, hp: { a: st.a.hp, b: st.b.hp }, stam: { a: st.a.stam, b: st.b.stam }, view: view(st) }; st.log.push(e); return e; }
 
 // ---------- clash ----------
 export function startClash(st) {
-  if (st.phase !== "shop" || st.a.discover || st.b.discover) return false;
+  if (st.phase !== "shop" || st.a.discover || st.b.discover || st.a.training || st.b.training) return false;
   st.phase = "clash";
   let uid = 0;
   const c = (st.c = { n: 0, turn: null, pending: null, opt: null, ace: null, reacted: false, ground: null, grounds: 0, ko: null, sub: null, gchoice: null, glast: { a: null, b: null }, chain: { a: 0, b: 0 }, a: [], b: [] });

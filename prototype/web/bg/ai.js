@@ -21,6 +21,13 @@ function cardWorth(st, c, d, s) {
   for (const k of Object.keys(c.kw)) v += kwWorth(st, s, c, k);
   return v + d.fx.filter((x) => x.when !== "play" && x.when !== "ground" && x.when !== "groundEA").length * 2;
 }
+/** What one training direction is worth to the card holding it, side s: the flat points plus the keyword (a swap-in has no keyword, only points). */
+export function trainWorth(st, s, c, o) { return o.atk + o.hp + (o.kw ? kwWorth(st, s, c, o.kw) : 0); }
+/** The index of the training direction side s should take for card c: the more valuable one (sharp), or a random one. */
+export function trainPick(st, s, c, sharp = true) {
+  const opts = E.trainOptions(st, c).map((o, i) => [i, trainWorth(st, s, c, o)]).sort((x, y) => y[1] - x[1]);
+  return sharp ? opts[0][0] : Math.floor(E.rand(st) * opts.length);
+}
 /** What an offered card is worth to side s right now. */
 function offerWorth(st, s, id, o = {}) {
   const d = st.data.skills[id], B = st[s].board.filter(Boolean), f = st[s].f;
@@ -62,6 +69,7 @@ export function shop(st, s, skill = st[s].f.ai?.skill ?? 1, o = {}) {
   const F = st[s], sh = F.shop, cfg = st.cfg.shop, sharp = () => E.rand(st) < skill, cells = E.cellCount(st);
   let rerolls = 0;
   for (let guard = 0; guard < 30; guard++) {
+    if (F.training) { E.train(st, s, trainPick(st, s, F.training, sharp())); continue; }
     if (F.discover) {
       const opts = F.discover.map((id, i) => [i, E.place(st, s, id) ? offerWorth(st, s, id) : -1]).sort((x, y) => y[1] - x[1]);
       E.pick(st, s, sharp() ? opts[0][0] : Math.floor(E.rand(st) * opts.length));
@@ -517,6 +525,7 @@ export function runGame(data, aId, bId, seed, shopper = shoppers.smart, timing =
   while (!st.over && guard++ < 60) {
     if (st.phase === "corner") { E.corner(st, "a", shopper === shoppers.none ? "heal" : cornerPick(st, "a")); E.corner(st, "b", cornerPick(st, "b")); continue; }
     if (st.a.discover && shopper === shoppers.none) E.pick(st, "a", 0);
+    if (st.a.training && shopper === shoppers.none) E.train(st, "a", 0);
     shopper(st);
     shop(st, "b");
     if (!E.playClash(st, timing, pick, gpick)) break;

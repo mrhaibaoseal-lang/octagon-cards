@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { loadData } from "./load.node.js";
 import * as E from "./engine.js";
-import { shop, shoppers, runGame, groundWeights, groundPick, groundRead, grounders, g21Threshold, g21Pick, g21Smart, grounders21, pokerDist, pokerStyle, pokerPick, pokerEquity, groundersPoker, eaTable, eaPick, eaRead, groundersEA } from "./ai.js";
+import { shop, trainPick, trainWorth, shoppers, runGame, groundWeights, groundPick, groundRead, grounders, g21Threshold, g21Pick, g21Smart, grounders21, pokerDist, pokerStyle, pokerPick, pokerEquity, groundersPoker, eaTable, eaPick, eaRead, groundersEA } from "./ai.js";
 
 const data = loadData(); data.config.ground.mode = "rps"; // the guessing-game tests; the blackjack ground has its own copy (d21) further down
 const fresh = (a = "holloway", b = "makhachev", seed = 3) => E.createGame(data, a, b, seed);
@@ -66,11 +66,12 @@ test("shop: each side has its own offers and only draws cards of its tier or low
 
 const benchPut = (st, s, ids) => { st[s].bench = Array(st.cfg.bench).fill(null); ids.forEach((id, i) => { if (id) st[s].bench[i] = E.make(st, id); }); };
 
-test("levels: copies add up (Lv2 / Lv3 / Lv4 = config copies in total), keep the buffs, and Lv3 / Lv4 earn a pick from the next tier", () => {
-  const st = fresh("poirier"), K = data.config.copies, total = K[K.length - 1];
+test("levels: copies add up (Lv2 / Lv3 / Lv4 = config copies in total), keep the buffs; Lv3 asks for a training direction, Lv4 earns a pick from the next tier", () => {
+  const st = fresh("poirier"), K = data.config.copies, total = K[K.length - 1], T = data.config.train;
   const d = data.skills.cross, M = data.config.levelMul, plus = st.a.f.power.fx[0].atk, base = (lv) => Math.round(d.atk * M[lv - 1]);
   st.a.shop.gold = 999;
   const buyOne = () => { offer(st, "a", ["cross"]); assert.ok(E.buy(st, "a", 0)); };
+  let trained = 0;
   buyOne();
   assert.equal(E.mergeTarget(st, "a", "cross"), 0);
   assert.deepEqual(E.place(st, "a", "cross"), { merge: 0 });
@@ -80,18 +81,107 @@ test("levels: copies add up (Lv2 / Lv3 / Lv4 = config copies in total), keep the
     assert.equal(cards.filter((x) => x.id === "cross").length, 1, "no new cell used");
     assert.equal(c.n, n);
     assert.equal(c.lv, lv, n + " copies");
-    assert.equal(c.atk, base(lv) + plus * n, "Poirier's +1 on every copy is kept on top of the level's numbers");
+    assert.equal(c.atk, base(lv) + plus * n + trained, "Poirier's +1 on every copy and the training are kept on top of the level's numbers");
     assert.equal(c.hp, Math.round(d.hp * M[lv - 1]));
-    const justUp = K.includes(n) && data.config.rewardAt.includes(lv);
-    assert.equal(!!st.a.discover, justUp, n + " copies: a pick only on reaching a reward level");
+    const justUp = K.includes(n) && data.config.rewardAt.includes(lv), justTrain = K.includes(n) && lv === T.at;
+    assert.equal(!!st.a.discover, justUp, n + " copies: a free pick only on reaching a reward level");
+    assert.equal(st.a.training === c, justTrain, n + " copies: a training choice only on reaching the training level");
     if (justUp) {
       for (const id of st.a.discover) assert.ok(data.skills[id].tier >= 2);
       offer(st, "a", ["cross"]);
       assert.equal(E.buy(st, "a", 0), false, "must take the reward first");
       assert.ok(E.pick(st, "a", 0));
     }
+    if (justTrain) {
+      offer(st, "a", ["cross"]);
+      assert.equal(E.buy(st, "a", 0), false, "must pick a direction first");
+      assert.equal(E.startClash(st), false, "no fight before the training is chosen");
+      assert.ok(E.train(st, "a", 0));
+      trained = c.atk - (base(lv) + plus * n);
+      assert.ok(trained > 0 && c.train);
+    }
   }
   assert.equal(st.a.board.find((c) => c && c.id === "cross").lv, data.config.maxLevel);
+});
+
+test("training: Lv3 offers the card's school two directions, each giving what config says (flat, no level multiplier)", () => {
+  const T = data.config.train;
+  for (const [school, dirs] of Object.entries(T.dirs)) {
+    assert.equal(dirs.length, 2, school);
+    const id = Object.values(data.skills).find((d) => d.school === school && !dirs.some((x) => x.kw && d.kw.includes(x.kw))).id;
+    for (let i = 0; i < 2; i++) {
+      const st = fresh();
+      st.a.shop.gold = 99; put(st, "a", [id]); st.a.board[0] = E.make(st, id, 2); st.a.board[0].n = data.config.copies[2] - 1;
+      const c = st.a.board[0];
+      offer(st, "a", [id]); assert.ok(E.buy(st, "a", 0));
+      const atk = c.atk, hp = c.hp;
+      assert.equal(c.lv, 3);
+      assert.equal(st.a.training, c);
+      assert.equal(st.a.discover, null, "no 3-pick at Lv3 any more");
+      const o = E.trainOptions(st, c);
+      assert.deepEqual(o.map((x) => x.id), dirs.map((x) => x.id));
+      assert.ok(E.train(st, "a", i));
+      const want = dirs[i];
+      assert.equal(c.atk, atk + (want.atk || 0), school + " " + want.id);
+      assert.equal(c.hp, hp + (want.hp || 0));
+      if (want.kw) assert.equal(c.kw[want.kw], true);
+      assert.equal(c.train, want.id);
+      assert.equal(st.a.training, null);
+      assert.equal(E.train(st, "a", 0), false, "nothing left to choose");
+    }
+  }
+});
+
+test("training: a direction whose keyword the card already has becomes flat attack and durability", () => {
+  const T = data.config.train;
+  const st = fresh();
+  put(st, "a", ["sprawl"]); // a def card with the sprawl keyword
+  const c = st.a.board[0];
+  const o = E.trainOptions(st, c);
+  const sp = o.find((x) => x.id === "sprawlbase");
+  assert.equal(sp.swap, true); assert.equal(sp.kw, null);
+  assert.equal(sp.atk, T.fallback.atk); assert.equal(sp.hp, T.fallback.hp);
+  assert.equal(o.find((x) => x.id === "ironbody").swap, false);
+  st.a.training = c; const atk = c.atk, hp = c.hp;
+  assert.ok(E.train(st, "a", o.indexOf(sp)));
+  assert.equal(c.atk, atk + T.fallback.atk); assert.equal(c.hp, hp + T.fallback.hp);
+  assert.equal(c.trainSwap, true);
+});
+
+test("training: the direction survives levelling up to Lv4, which still gives the 3-pick; selling the card cancels it", () => {
+  const st = fresh("poirier"), K = data.config.copies;
+  st.a.shop.gold = 999;
+  put(st, "a", ["cross"]);
+  const c = st.a.board[0];
+  c.lv = 3; c.n = K[2];
+  st.a.training = c; assert.ok(E.train(st, "a", 0)); // heavy hand: +3 attack
+  const atk = c.atk, was = Math.round(data.skills.cross.atk * data.config.levelMul[2]);
+  offer(st, "a", ["cross", "cross"]);
+  assert.ok(E.buy(st, "a", 0)); assert.ok(E.buy(st, "a", 1));
+  assert.equal(c.lv, 4); assert.equal(c.train, "heavyhand");
+  assert.equal(c.atk, Math.round(data.skills.cross.atk * data.config.levelMul[3]) + (atk - was) + st.a.f.power.fx[0].atk * 2, "the +3 is not multiplied and not lost");
+  assert.ok(st.a.discover && st.a.discover.length === data.config.shop.discover, "Lv4 still has the free 3-pick");
+  assert.equal(st.a.training, null);
+  assert.ok(E.pick(st, "a", 0));
+  const s2 = fresh(); put(s2, "a", ["jab"]); s2.a.training = s2.a.board[0];
+  assert.ok(E.sell(s2, "a", 0)); assert.equal(s2.a.training, null);
+});
+
+test("training: the shopping AI picks a direction by itself and keeps the better-valued one", () => {
+  const st = fresh();
+  put(st, "a", ["jab"]); // punch card: heavy hand (+3) vs slip
+  const c = st.a.board[0];
+  const w = E.trainOptions(st, c).map((o) => trainWorth(st, "a", c, o));
+  const best = w.indexOf(Math.max(...w));
+  assert.equal(trainPick(st, "a", c, true), best);
+  // a grappler with ground partners wants the takedown; one facing no wrestlers still gets a valid pick
+  st.a.training = c; st.a.shop.gold = 0;
+  shop(st, "a", 1);
+  assert.equal(st.a.training, null); assert.ok(c.train);
+  // the full-game runners finish with the training resolved even when side a never shops
+  const g = runGame(data, "holloway", "poirier", 5, shoppers.none);
+  assert.ok(g.over);
+  assert.equal(g.a.training, null);
 });
 
 test("levels: at the top level another copy is a new card that needs a cell; a full board and bench refuse it", () => {

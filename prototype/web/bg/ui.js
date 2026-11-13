@@ -137,6 +137,12 @@ function effectLine(d) {
   if (k) { const t = data.config.ground.mode === "ea" && KW_EA[k] ? KW_EA[k] : KW_TEXT[k]; return `${KW[k]}：${t(data.config)}`; }
   return "沒有特殊效果，就是數值高";
 }
+/** What a training direction does, in words (o from E.trainOptions / E.trainDef; swap: the keyword was already there, so it became flat points). */
+function trainText(o, swap = false) {
+  const g = swap ? data.config.train.fallback : o, pts = [g.atk ? `攻擊 +${g.atk}` : "", g.hp ? `耐力 +${g.hp}` : ""].filter(Boolean).join("、");
+  if (o.kw && !swap) return `得到「${KW[o.kw]}」`;
+  return swap ? `已經有「${KW[o.kw]}」了，改成${pts}` : pts;
+}
 /** One card. c = a board card / clash unit / { id } for a shop offer. o: side ("b" mirrors it), offer (taller, with the effect line), flag, cls, attr, note */
 const LV_TAG = { 2: "Lv2", 3: "Lv3", 4: "Lv4 腰帶" }, LV_FRAME = { 2: "銀框", 3: "金框", 4: "冠軍腰帶" };
 function card(c, o = {}) {
@@ -151,8 +157,8 @@ function card(c, o = {}) {
       <div class="tx"><div class="nm">${esc(d.name)}</div><div class="tg">${tags}</div></div>
       <div class="st atk"><b class="lat ${aCls}">${atk}</b></div><div class="st dur"><b class="lat ${up(hp, d.hp)}">${Math.max(0, hp)}</b></div>`;
   const body = o.offer ? `<div class="card"><div class="top">${head}</div><div class="fxt ${o.note ? "note" : ""}"><span>${esc(o.note || effectLine(d))}</span></div></div>` : `<div class="card">${head}</div>`;
-  return `<div class="sk ${lv > 1 ? "l" + lv : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.lv ? `data-lv="${lv}" data-n="${c.n || data.config.copies[lv - 1]}"` : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
-    ${lv > 1 ? `<i class="ltag lat">${LV_TAG[lv]}${lv < data.config.maxLevel && c.n ? ` <small>${c.n}/${data.config.copies[lv]}</small>` : ""}</i>` : ""}${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${body}</div>`;
+  return `<div class="sk ${lv > 1 ? "l" + lv : ""} ${o.side === "b" ? "r" : ""} ${o.offer ? "of" : ""} ${c.dead ? "dead" : ""} ${off ? "off" : ""} ${o.cls || ""}" data-id="${c.id}" data-kw="${kw.join(",")}" data-atk="${atk}" data-hp="${Math.max(0, hp)}" ${c.lv ? `data-lv="${lv}" data-n="${c.n || data.config.copies[lv - 1]}"` : ""} ${c.worn ? `data-worn="${c.worn}"` : ""} ${c.train ? `data-train="${c.train}" data-tswap="${c.trainSwap ? 1 : 0}"` : ""} ${o.note ? `data-note="${esc(o.note)}"` : ""} ${o.attr || ""}>
+    ${lv > 1 ? `<i class="ltag lat">${LV_TAG[lv]}${lv < data.config.maxLevel && c.n ? ` <small>${c.n}/${data.config.copies[lv]}</small>` : ""}</i>` : ""}${o.flag ? `<div class="flag"><span>${esc(o.flag)}</span></div>` : ""}${c.train ? `<i class="train k-${KIND[d.school]}"><span>${esc(E.trainDef({ cfg: data.config }, c.train).name)}</span></i>` : ""}${body}</div>`;
 }
 
 // ---------- card details: mouse over a card, or press and hold on touch ----------
@@ -165,9 +171,10 @@ function showTip(node) {
   tipEl.innerHTML = `<b>${esc(d.name)}</b><span>${SCHOOL[d.school]}・第 ${d.tier} 級商店${node.dataset.lv ? `・Lv${lv}${lv > 1 ? "（" + LV_FRAME[lv] + "）" : ""}` : ""}</span>
     <div class="st"><i class="atk">${node.dataset.atk}</i>攻擊<i class="hp">${node.dataset.hp}</i>耐力</div>
     ${d.fx.some((f) => f.when !== "ground") ? `<p>${esc(d.text)}</p>` : ""}${data.config.ground.mode === "poker" ? d.fx.filter((f) => f.when === "ground").map((f) => `<p><em>地面</em>${esc(f.text)}</p>`).join("") : ""}${kws.map((k) => `<p><em>${KW[k]}</em>${data.config.ground.mode === "ea" && KW_EA[k] ? KW_EA[k](data.config) : KW_TEXT[k](data.config)}</p>`).join("")}
+    ${node.dataset.train ? `<p><em>${esc(E.trainDef({ cfg: data.config }, node.dataset.train).name)}</em>${trainText(E.trainDef({ cfg: data.config }, node.dataset.train), node.dataset.tswap === "1")}（Lv${data.config.train.at} 訓練，固定加值）</p>` : ""}
     ${node.dataset.worn ? `<p class="dim">腿傷：攻擊 −${node.dataset.worn}，這回合結束才恢復。</p>` : ""}
     ${!d.fx.length && !kws.length ? `<p class="dim">沒有特殊效果，就是數值高。</p>` : ""}
-    ${node.dataset.lv ? `<p class="dim">${lv > 1 ? `Lv${lv}：數值與效果的數字 ×${M[lv - 1]}。` : ""}${lv < maxLv ? `已有 ${node.dataset.n} 張，湊滿 ${data.config.copies[lv]} 張升 Lv${lv + 1}（再 ${data.config.copies[lv] - Number(node.dataset.n)} 張；${M[lv]} 倍${data.config.rewardAt.includes(lv + 1) ? "，還能免費三選一" : ""}）。` : "已是最高級，再買一樣的就是一張新牌。"}</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
+    ${node.dataset.lv ? `<p class="dim">${lv > 1 ? `Lv${lv}：數值與效果的數字 ×${M[lv - 1]}。` : ""}${lv < maxLv ? `已有 ${node.dataset.n} 張，湊滿 ${data.config.copies[lv]} 張升 Lv${lv + 1}（再 ${data.config.copies[lv] - Number(node.dataset.n)} 張；${M[lv]} 倍${data.config.rewardAt.includes(lv + 1) ? "，還能免費三選一" : lv + 1 === data.config.train.at ? "，還能選一個訓練方向" : ""}）。` : "已是最高級，再買一樣的就是一張新牌。"}</p>` : ""}${node.dataset.note ? `<p class="note">${esc(node.dataset.note)}</p>` : ""}`;
   if (tipEl.parentNode !== frame) frame.appendChild(tipEl);
   const p = pos(node), h = node.offsetHeight / 2, w = tipEl.offsetWidth, th = tipEl.offsetHeight;
   let y = p.y - h - th - 6;
@@ -459,7 +466,18 @@ function shopScreen(msg = "") {
   $("#freeze").onclick = () => { E.freeze(st, "a"); shopScreen(st.a.shop.frozen ? "招式單會留到下一段" : ""); };
   $("#tier").onclick = () => shopScreen(E.tierUp(st, "a") ? "招式單升級了：免費換成新等級的一批牌" : E.canTier(st, "a") ? "金幣不夠" : "");
   $("#fight").onclick = () => { if (!F.board.some(Boolean)) return shopScreen("至少要有一張牌"); sel = null; dnd = null; clash(++runId); };
-  if (F.discover) discoverScreen();
+  if (F.training) trainScreen();
+  else if (F.discover) discoverScreen();
+}
+
+/** Lv3: pick one of the two training directions for the card that just levelled (replaces the free 3-pick at that level). */
+function trainScreen() {
+  const F = st.a, c = F.training, d = data.skills[c.id], opts = E.trainOptions(st, c);
+  const prev = (o) => card({ ...c, atk: c.atk + o.atk, hp: c.hp + o.hp, kw: { ...c.kw, ...(o.kw ? { [o.kw]: true } : {}) }, train: o.id, trainSwap: o.swap }, { cls: "tr-prev" });
+  const sh = sheet(`<h2 class="gold">訓練營：${esc(d.name)}往哪個方向練？<small class="lat">TRAINING CAMP</small></h2>
+    <div class="body">選一個，練完不能改。這張牌賣掉，練的東西也跟著沒了。</div>
+    <div class="opts tr">${opts.map((o, i) => `<button class="opt" data-train="${i}">${prev(o)}<b>${esc(o.name)}</b><small>${esc(trainText(o, o.swap))}</small></button>`).join("")}</div>`);
+  sh.querySelectorAll("[data-train]").forEach((el) => (el.onclick = () => { const o = opts[Number(el.dataset.train)]; E.train(st, "a", Number(el.dataset.train)); shopScreen(`${d.name}練了「${o.name}」`); }));
 }
 
 function discoverScreen() {

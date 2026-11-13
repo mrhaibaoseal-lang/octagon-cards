@@ -665,3 +665,12 @@ h1 span{color:transparent;-webkit-text-stroke:1.5px var(--cg);text-shadow:none}
 .gmode #gtend{top:62px}
 .eabar #qte{top:auto;bottom:62px}
 .eabar #cap{bottom:44px}
+/* Lv3 訓練方向：牌左下角的流派色布條；二選一面板 */
+.train{position:absolute;z-index:3;left:-4px;bottom:-7px;font-size:9.5px;font-weight:800;font-style:italic;line-height:13px;padding:0 6px;transform:skewX(-12deg);color:#17130a;box-shadow:0 1px 0 #000;white-space:nowrap}
+.train span{display:inline-block;transform:skewX(12deg)}
+.train.k-p{background:linear-gradient(180deg,#ffd98a,#e08a1c)}.train.k-k{background:linear-gradient(180deg,#9ff0dc,#1f9f88)}.train.k-d{background:linear-gradient(180deg,#cfe0ff,#5f86cc)}.train.k-g{background:linear-gradient(180deg,#ecc4fb,#9a4fc4)}
+.sk.r .train{left:auto;right:-4px}
+.sheet .opts.tr .opt{display:flex;flex-direction:column;gap:4px;padding:14px 12px 10px}
+.sheet .opts.tr .opt .sk{height:50px;pointer-events:none;margin-bottom:6px}
+.sheet .opts.tr .opt b{font-size:17px}
+.sheet .opts.tr .opt .ltag{display:none}
