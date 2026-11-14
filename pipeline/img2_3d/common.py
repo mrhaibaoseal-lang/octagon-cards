@@ -57,8 +57,8 @@ def prepared(name, size=1024, fill=0.85):
     if name.endswith("_head"):  # head and neck only: TRELLIS.2 turns a big chest into a solid block
         img = Image.open(prepared(name[:-5])).convert("RGBA")
         img = img.crop((0, 0, img.width, neck_cut(img)))
-    else:
-        img = cutout(INPUTS[name])
+    else:  # named Topuria inputs, else any picture in inputs/ (gen_head.py writes <fighter>_gemini_real.png)
+        img = cutout(INPUTS.get(name) or OUT / "inputs" / f"{name}.png")
     img = img.crop(img.getchannel("A").point(lambda v: 255 if v > 20 else 0).getbbox())
     s = max(img.size) / fill
     canvas = Image.new("RGBA", (round(s), round(s)), (0, 0, 0, 0))

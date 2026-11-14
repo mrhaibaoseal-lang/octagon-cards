@@ -16,6 +16,7 @@
 | `compare.py` | 渲染所有結果並排成 `comparison.png` |
 | `fix_texture.py` | 把 TRELLIS.2 貼圖的顏色分佈對齊輸入圖（逐色版直方圖對齊），存成 `<name>_fix.glb` |
 | `gemini_paint.py` + `paint_head_blender.py` | 只留 TRELLIS.2 的形狀：灰模四個角度排成 2×2 綠底圖，Gemini 照照片重畫（一次約 NT$5），再依表面朝向投影烘回 UV 貼圖；沒被看到的地方沿用修色貼圖。目前最好的投影參數：`--reuse --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _occ`（見「眼睛」一節）。`paint_head_blender.py vis` 在 Blender 對每個貼圖點往四個鏡頭打射線，存 `vis.npy`要用 `uv run --no-project --with google-genai --with google-auth --with pillow --with numpy --with trimesh python -I` 跑（venv 沒有 google-genai） |
+| `solid_head.py` | Blender：捲髮頭先體素重建成實心外殼、xatlas 展 UV、烘回顏色，再接 `smooth_head.py`（見「換選手驗證：O'Malley」） |
 | `attach_head.py` | Blender：開 `skinned.blend`（不存檔），切掉身體的頭，把生成的頭縮放、對齊後綁到 Head 骨頭，出正面與 3/4 全身圖。目前最好的參數：`--blend -0.03 0.02 --lift 0.015 --blend-color 0.07 --close`（`--close` 另出頭頸四角度近拍 `<out>_close.png`；`--face` 出眼睛高度的臉部特寫 `<out>_face.png`；`--debug-red` 把新頭塗紅） |
 
 ## 各工具
@@ -101,3 +102,23 @@
 - 使用者覺得手繪身體太黃、接縫明顯（同日）：`match_body_skin.py <head.glb> <dir>_painted` 把身體膚色（中亮度、r>g>b 的像素）的中位數逐色版調成頭的（這次 gain 1.17/1.12/1.28），原檔留 `skin_raw.png`；`attach_head.py --toon` 的身體描邊關掉 rim（身體在脖子切開，rim 會在脖子畫一圈線）。`body_painted_cmp.png` 由左至右：寫實身體、手繪原色、手繪校色後。脖子那圈線和色差都消失。
 - 再修（同日）：頭頂的綠色殘留是 Gemini 綠幕滲進頭髮貼圖，`degreen.py arcane_half.glb` 把綠色明顯高過紅藍的貼圖點（外擴 2 格，約 4100 點）用旁邊的顏色一圈圈補回 → `arcane_half_ng.glb`。側面肩膀那條線是身體描邊：肩膀擋在斜方肌前面時，反轉外殼畫出內輪廓，描邊減半也還在；頭本來就沒描邊，所以 `--ink` 預設改 0（全身都不描邊），看起來一樣好。
 - **目前最好的一版**：`blender -b <private>/_model3d/topuria_painted/skinned.blend -P pipeline/img2_3d/attach_head.py -- <private>/_img2_3d/trellis2/arcane_half_ng.glb out.png --blend -0.03 0.02 --lift 0.015 --blend-color 0.07 --close --toon` → `body_painted.png`、`body_painted_close.png`。使用者：「整體看起來棒透了」，刺青目前可以接受。
+
+## 換選手驗證：O'Malley（2026-11-15，畫風已正式採用）
+- 產出：`cmp_topuria_omalley_full.png`（全身並排）、`cmp_topuria_omalley_close.png`（頭頸四角度，上 Topuria、下 O'Malley）、`om_body_ar.png`、`om_body_ar_close.png`。Gemini 共 4 次：頭像、頭四角度、身體兩次（第一次沒照姿勢）。
+- **指令（新選手照這個跑，`<P>` = `<private>/_img2_3d`）**：
+  1. `gen_head.py --fighter omalley` → `inputs/omalley_gemini_real.png`
+  2. `run_trellis2.py --src D:/img2_3d/src/TRELLIS.2 --inputs omalley_gemini_real`（約 6 分鐘，顯存峰值 7.7GB）
+  3. `fix_texture.py omalley_gemini_real`
+  4. 捲髮／蓬鬆頭髮才要：`blender -b -P solid_head.py -- <P>/trellis2/omalley_gemini_real_fix.glb <P>/trellis2/omalley_solid.glb --voxel 0.015`
+  5. `smooth_head.py <solid 或 fix>.glb omalley_smooth.glb` → `exaggerate_head.py ... omalley_arcane3.glb --brow 0.007 --jaw 1.06 --chin 0.005`
+  6. `gemini_paint.py --mesh omalley_arcane3 --fighter omalley --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar` → `degreen.py`
+  7. `paint_body.py omalley` → `bake_skin.py --dir <private>/_model3d/omalley_painted` → 看 `align_check.png`（紅線要貼著人）→ `match_body_skin.py` → `attach_head.py`（參數同 Topuria，加 `--toon`）
+- **只對 Topuria 有效、已改成通用的地方**：
+  - `common.py` 輸入表只有 Topuria：現在 `inputs/<名字>.png` 都能用。`gemini_paint.py` 的選手名、髮型、照片寫死 Topuria：加 `--fighter`（名字取 `paint_skin.FIGHTERS`、照片 `_source/<fighter>_ufc.png`）與 `--hair`（頭部外觀，預設查 `HAIR` 表）。
+  - `fix_texture.py` 逐色版對齊直方圖：輸入圖大半是粉紅頭髮時，臉被拉成黃綠色。預設改成只對齊亮度、保留色相；`--rgb` 是舊做法（Topuria 那顆頭用的）。
+  - `smooth_head.py`：膚色基準原本取額頭，O'Malley 的額頭被瀏海蓋住；改取眼睛下方到鼻尖的臉中央。頭毛原本只看「比膚色暗」，染色頭髮不暗；加上色度距離（`--hue 1.2`，Topuria 頭頂只到 0.7，不受影響）。遮罩擴散原本按網格圈數，臉的網格粗 3 倍時會漫過整張臉；改成依臉部邊長換算（以 Topuria 的 0.011 頭高為準）。找到的眼睛離比例預估超過 0.02 頭高（被黑點或刺青拉走）就用預估值。改完 Topuria 的遮罩 71k 點（原本 73k），眼睛位置不變。
+  - `paint_body.py`：大爆炸頭讓 Gemini 把整個人縮小、手放下、腳切掉，烘上去短褲跑到膝蓋。提示詞結尾補一句「頭之後會換掉，頭髮貼頭皮、不超出白模頭的輪廓，手照白模平舉」，重抽一次就對齊。舊的嘗試存成 `painted_sheet_<n>.png`。坑：`paint_skin.py` 的 O'Malley 描述被 Gemini 改過（未 commit），拿掉了「不是大爆炸頭」那句。
+- **新增 `solid_head.py`**（捲髮用）：TRELLIS.2 把捲髮做成一條條空心管子，網子狀，磨 150 次只會縮成網、還把太陽穴拉凹。改成體素重建成實心外殼（`--voxel 0.015` 頭高）＋閉合（往外推 1.5 格、重建、推回，填掉 TRELLIS 臉上小破洞變成的方坑）→ 只留最大的外殼 → xatlas 展 UV（在 TRELLIS venv 跑）→ 原本的底色接到自發光再烘（用漫射烘，金屬度會讓粉紅變黑）。坑：Blender 的 smart project 在這種凹凸外殼上只用到 5～23% 的貼圖，每個面約 1 像素，最小的面烘成黑點；xatlas 用到 50～62%。
+- 坑：Blender `-b` 的輸出路徑要給絕對路徑，相對路徑不知道寫到哪去。
+- **和 Topuria 比**：一樣好的是畫風統一（頭身同一套手繪感、膚色接得上、脖子看不出接縫）、身體刺青是清楚的彩色圖形、三視圖對位準、眼睛清楚、認得出是誰（粉紅捲髮、山羊鬍、臉上小刺青）。比較差的是頭髮是一整團光滑的「蘑菇頭」，捲度只靠貼圖畫，輪廓不蓬；額頭瀏海下有幾塊淡橘色（沒有任何角度看得到、用周圍補的）；右臉頰「♥ love」刺青被拉成一道粉紅；後頸髮際有幾小塊膚色斑；臉因為閉合變得稍微圓胖。白色短褲在三階光下陰影偏藍，看起來有點半透明。
+- 可再試（要再呼叫 Gemini 就先問）：在最後的 `omalley_arcane3` 上重新呼叫一次 `gemini_paint.py`（這次為了省額度，沿用前一版網格畫的圖，形狀有些微差異）；頭髮輪廓要蓬可能要手動做幾個髮束。

@@ -23,6 +23,7 @@ ap.add_argument("--hair-iter", type=int, default=30)
 ap.add_argument("--brow-iter", type=int, default=40)
 ap.add_argument("--dark", type=float, default=0.5, help="hair = luminance below this x the face skin's median")
 ap.add_argument("--beard", type=float, default=0.55, help="stubble = neighbourhood-averaged luminance below this x skin")
+ap.add_argument("--hue", type=float, default=1.2, help="hair = neighbourhood chromaticity this far from the cheek skin (x10); catches dyed hair, 0 = off")
 ap.add_argument("--eye-r", type=float, default=0.03, help="eyeball protection radius, as a fraction of head height")
 ap.add_argument("--brow-up", type=float, default=0.09, help="brow band reaches this far above the eye (x head height)")
 ap.add_argument("--debug-lum", choices=["raw", "blur"], default=None, help="with --debug: show luminance instead")
@@ -102,27 +103,49 @@ for side in (-1, 1):
     win = (np.abs(P[:, 0] - g[0]) < 0.05 * Hh) & (np.abs(P[:, 2] - g[2]) < 0.04 * Hh) & (P[:, 1] < nose[1] + 0.15 * Hh)
     m = win & (lum > np.percentile(lum[win], 85)) & (sat < np.percentile(sat[win], 50))
     e = np.median(P[m], 0) if m.sum() >= 5 else g
+    if np.hypot(*(e - g)[[0, 2]]) > 0.02 * Hh:  # dark specks or tattoos pulled it off: trust the proportions
+        print("eye", side, "found", e.round(4).tolist(), "too far from the guess; using the guess")
+        e = g.copy()
     # The eyeball's surface: the frontmost point within a small radius of that (x, z).
     near = win & (np.hypot(P[:, 0] - e[0], P[:, 2] - e[2]) < 0.015 * Hh)
     e[1] = P[near, 1].min() if near.any() else e[1]
     eyes.append(e)
 eyes = np.array(eyes)
-# Skin reference: the forehead (the whole front of the face is pulled down by the beard).
+# Skin reference: the middle of the face from just under the eyes down to the nose tip. The forehead can be under a
+# fringe (O'Malley) and the lower face under a beard (Topuria); this box is bare skin on both and big enough
+# (a few hundred vertices) not to land on one highlight.
 ec = eyes.mean(0)
-fh = (np.abs(P[:, 0] - ec[0]) < 0.07 * Hh) & (P[:, 2] > ec[2] + 0.09 * Hh) & (P[:, 2] < ec[2] + 0.17 * Hh)
-fh &= P[:, 1] < ec[1] + 0.1 * Hh
-skin = np.median(lum[fh])
-print("head height", round(Hh, 4), "skin lum", round(float(skin), 3), "nose", nose.round(4).tolist(),
-      "eyes", eyes.round(4).tolist())
+ck = (np.abs(P[:, 0] - ec[0]) < 0.06 * Hh) & (P[:, 2] < ec[2] - 0.02 * Hh) & (P[:, 2] > nose[2] - 0.0 * Hh)     & (P[:, 1] < ec[1]) & (np.min(np.linalg.norm(P[:, None, :] - eyes[None], axis=2), 1) > 0.03 * Hh)
+skin_col = np.median(col[ck], 0)
+skin = float(skin_col @ [0.299, 0.587, 0.114])
+# Chromaticity distance from the skin (each colour divided by its own sum, so baked-in shading does not count): dyed
+# hair (pink, blue) is not darker than skin but a different hue.
+chroma = col / np.maximum(col.sum(1, keepdims=True), 1e-3)
+# Blur steps are mesh rings; a coarse face (O'Malley's curls take most of TRELLIS's vertices) spreads 8 rings much
+# further. Scale the step counts so the spread in metres matches Topuria's face (median edge 0.011 x head height).
+elen = np.linalg.norm(P[E[:, 0]] - P[E[:, 1]], axis=1)
+face_e = np.median(np.concatenate([elen[ck[E[:, 0]]], elen[ck[E[:, 1]]]])) / Hh
+ring = lambda k: max(1, round(k * (0.011 / face_e) ** 2))  # noqa: E731
+print("face edge", round(float(face_e), 5), "x head; blur 8 ->", ring(8))
+cdist = np.linalg.norm(chroma - skin_col / max(skin_col.sum(), 1e-3), axis=1) * 10
+print("head height", round(Hh, 4), "skin rgb", skin_col.round(3).tolist(), "nose", nose.round(4).tolist(),
+      "eyes", eyes.round(4).tolist(), "cheek verts", int(ck.sum()))
 
 d_eye = np.min(np.linalg.norm(P[:, None, :] - eyes[None], axis=2), 1)
 r = a.eye_r * Hh
 keep_eye = np.clip((d_eye - r) / (0.6 * r), 0, 1)  # 0 at the eyeball, 1 a bit outside
 
 # Hair: dark texels; stubble is skin and hair mixed, so judge on the colour averaged over a neighbourhood too.
-lum_b = blur(lum, 8)
+lum_b = blur(lum, ring(8))
 # Stubble has skin-coloured specks; a narrow mask leaves them as pits, so close the holes (blur, then boost).
-hair = blur(((lum < a.dark * skin) | (lum_b < a.beard * skin)).astype(float), 8)
+cd_b = blur(cdist, ring(8))
+_face = ck
+_top = P[:, 2] > ec[2] + 0.2 * Hh
+print("colour distance (blurred) p10/50/90: face", np.percentile(cd_b[_face], [10, 50, 90]).round(2).tolist(),
+      "top", np.percentile(cd_b[_top], [10, 50, 90]).round(2).tolist())
+print("face verts flagged: dark", int((ck & (lum < a.dark * skin)).sum()), "stubble", int((ck & (lum_b < a.beard * skin)).sum()),
+      "hue", int((ck & (cd_b > a.hue)).sum()), "of", int(ck.sum()))
+hair = blur(((lum < a.dark * skin) | (lum_b < a.beard * skin) | ((cd_b > a.hue) & (a.hue > 0))).astype(float), ring(8))
 hair = np.clip(hair * 2.5, 0, 1) * keep_eye
 
 # Brow band: above each eye up to --brow-up, a little wider than the eye socket, front-facing.
@@ -133,7 +156,7 @@ for e in eyes:
     dz = (P[:, 2] - e[2]) / (a.brow_up * Hh)
     band = (dx < 1) & (dz > -0.15) & (dz < 1) & (P[:, 1] < e[1] + 0.06 * Hh)
     brow = np.maximum(brow, band.astype(float))
-brow = blur(brow, 4) * keep_eye
+brow = blur(brow, ring(4)) * keep_eye
 
 w_hair = np.maximum(hair, brow)
 print("vertices", n, "hair/beard/brow", int((hair > 0.5).sum()), "brow band", int((brow > 0.5).sum()),

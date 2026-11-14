@@ -24,15 +24,29 @@ STYLE_NEW = ("Style: hand-painted stylised animation look, like painterly concep
              "light, very light shading (shading is added later),")
 
 
+# The head is replaced by the TRELLIS.2 head later, so the body sheet only needs a head-sized head. A big hairdo
+# (O'Malley's afro) made Gemini shrink and re-pose the whole figure (arms down, legs cropped), and the bake landed the
+# shorts on the knees. Appended to every fighter's prompt.
+HEAD_AND_POSE = ("\nThe head will be replaced later: paint his hair short and close to the scalp, staying inside the mannequin's "
+                 "head outline, whatever his real hairstyle is. Again: the arms stay held straight out to the sides exactly "
+                 "like the mannequin, and every figure keeps the mannequin's exact size, from the top of the head to the bare "
+                 "feet with green margin below the feet.")
+
+
 def main():
     fighter = sys.argv[1]
     src = ps.PRIVATE / "_model3d" / fighter
     d = ps.PRIVATE / "_model3d" / f"{fighter}_painted"
+    if (d / "painted_sheet.png").exists():  # keep earlier tries as painted_sheet_<n>.png
+        n = 1
+        while (d / f"painted_sheet_{n}.png").exists():
+            n += 1
+        (d / "painted_sheet.png").rename(d / f"painted_sheet_{n}.png")
     if not d.exists():
         shutil.copytree(src, d, ignore=shutil.ignore_patterns("*.blend1", "_keys"))
     name, look, shorts = ps.FIGHTERS[fighter]
     assert STYLE_OLD in ps.PROMPT, "paint_skin.PROMPT changed: update STYLE_OLD"
-    prompt = ps.PROMPT.replace(STYLE_OLD, STYLE_NEW).format(name=name, look=look, shorts=shorts)
+    prompt = ps.PROMPT.replace(STYLE_OLD, STYLE_NEW).format(name=name, look=look, shorts=shorts) + HEAD_AND_POSE
     guide = Image.open(d / "guide_sheet.png").convert("RGB")
     aw, ah = 21, 9
     padded = Image.new("RGB", (guide.width, max(round(guide.width * ah / aw), guide.height)), (0, 255, 0))

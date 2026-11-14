@@ -2,6 +2,13 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-15 · Claude Opus 5.5（《奧術》畫風正式採用＋換 O'Malley 驗證流程）
+- 做了：RULES §4、`docs/ART_SPEC.md`、AGENTS §0 改成《奧術》式手繪畫風（3D 模型唯一來源，寫實與像素路線列為歷史／不再嘗試）；用 O'Malley 從頭跑一次流程，把只對 Topuria 有效的地方改成通用（`fix_texture`、`smooth_head`、`gemini_paint --fighter`、`paint_body` 提示詞），新增捲髮用的 `solid_head.py`。
+- 驗證：並排圖 `_img2_3d/cmp_topuria_omalley_full.png`、`..._close.png`；Topuria 的磨平遮罩改完幾乎不變；Gemini 4 次（約 NT$20）。
+- 結果：畫風、膚色、脖子接縫、身體刺青和 Topuria 一樣好；捲髮是光滑的一整團、額頭幾塊補色、臉頰刺青被拉長，比較差。
+- **要使用者確認**：O'Malley 這個程度可不可以；要不要再花約 NT$5 在最終網格上重畫一次頭。`pipeline/model3d/` 有 Gemini 未 commit 的修改（含 O'Malley 描述改成大爆炸頭），沒動。
+- 下一步：使用者看圖決定；之後可再試第三位（光頭或長髮）。
+
 ## 2026-11-15 · Claude Opus 5.5（選手畫風：寫實 → 《奧術》方向）
 - 做了：頭髮鬍子眉毛磨平（`smooth_head.py`）；使用者覺得寫實很糟，改試風格：《奧術》方向（`exaggerate_head.py` 臉型誇張化＋`gemini_paint.py --style painted`＋`style_head.py` 卡通光描邊）與復古低面數（`retro_head.py`）。
 - 驗證：只看渲染圖，對照在 `_img2_3d/style_cmp2.png`；Gemini 呼叫一次（約 NT$5）。
@@ -15,10 +22,3 @@
 - 驗證：只改文件；本機顯卡 RTX 5050 筆電版 8GB，可試小型的開源圖生 3D 模型，不保證可用。
 - **要使用者確認**：先試哪一項；要不要先和 Gemini 對齊（`pipeline/model3d/` 有 Gemini 未 commit 的修改，沒動）。
 - 下一步：照舊先做 V3 灰盒原型；品質實驗和它並行、互不干擾。
-
-## 2026-11-14 · Claude Opus 5.5（厚實版 UI 套進 bg）
-- 做了：把 `sketch-thick.html` 的材質與厚度套進 `bg/bg.css`、`bg/ui.js`：商店改成八角籠牌桌＋籠外選手＋下方教練托盤、直式實體卡；其他畫面版面不變，換金屬板、立體按鈕、寶石／鋼盾數字、橫式厚卡。
-- 和草圖不同：商店提示條放在兩排牌中間；托盤 4／5 張招式時牌自動縮小；「留到下一段」改叫「保留」（滑過有說明）；招式效果文字只在 tooltip 和免費三選一裡。
-- 驗證：測試 70 項全過；844×390 走過選單 → 選人 → 商店（拖買、拖進備選、拖回托盤賣、Lv2 → Lv3 訓練、Lv4 三選一、5 張招式單）→ 打完一場 → 結算，再看 `?ground=ea&jump=top`；主控台只有 favicon 404。
-- **要使用者確認**：卡上小字清不清楚、托盤 5 張時擠不擠、商店只在 tooltip 看效果可不可以。
-- 下一步：依使用者試玩意見微調。

@@ -26,8 +26,8 @@ BLENDER = "C:/Program Files/Blender Foundation/Blender 5.2/blender.exe"
 PROMPT = """The first image shows one 3D head sculpt from four angles on a pure green background, in a 2 by 2 grid:
 top left: front; top right: seen from his left side (profile facing left of the picture); bottom left: back;
 bottom right: seen from his right side (profile facing right of the picture).
-Paint every view as the MMA fighter Ilia Topuria, photo-realistic. The next image is a photo of him for likeness: copy his real
-skin tone, eyes, eyebrows, nose, lips, short haircut with faded sides, hairline and beard exactly.
+Paint every view as the MMA fighter {name}, photo-realistic. The next image is a photo of him for likeness: copy his real
+skin tone, eyes, eyebrows, nose, lips, {hair} exactly.
 VERY IMPORTANT: this is texture painting. Keep every head exactly where it is, the same size, outline and angle as the
 sculpt; eyes, nose, mouth, ears, hairline and beard must sit exactly on the sculpt's own eyes, nose, mouth, ears, hair and beard.
 Do not move, resize or redraw the outline. Even soft studio light from the front, no strong shadows, no highlights,
@@ -37,16 +37,23 @@ No text, no logos."""
 PROMPT_PAINTED = """The first image shows one 3D head sculpt from four angles on a pure green background, in a 2 by 2 grid:
 top left: front; top right: seen from his left side (profile facing left of the picture); bottom left: back;
 bottom right: seen from his right side (profile facing right of the picture).
-Paint every view as the MMA fighter Ilia Topuria in a hand-painted stylised animation look: like painterly concept art
+Paint every view as the MMA fighter {name} in a hand-painted stylised animation look: like painterly concept art
 for a high-end animated series, flat shapes of colour with visible brush strokes, simplified planes on the face,
 graphic dark eyebrows and lash lines, crisp painted eyes with a clear iris and a small catch light, beard and hair painted as
 a few solid shapes with a handful of strands, warm skin with subtle cool tones, no photographic pores or noise.
-The next image is a photo of him for likeness: keep his skin tone, eye shape, brows, nose, lips, short haircut with faded
-sides, hairline and beard shape.
+The next image is a photo of him for likeness: keep his skin tone, eye shape, brows, nose, lips, {hair}.
 VERY IMPORTANT: this is texture painting. Keep every head exactly where it is, the same size, outline and angle as the
 sculpt; eyes, nose, mouth, ears, hairline and beard must sit exactly on the sculpt's own eyes, nose, mouth, ears, hair and beard.
 Do not move, resize or redraw the outline. Even soft light from the front, no strong cast shadows (shading is added later).
 All four must be the same man. Keep the background pure flat green #00FF00. No text, no logos."""
+
+
+# Head-only look per fighter (paint_skin.FIGHTERS describes the whole body). Others fall back to a generic line.
+HAIR = {
+    "topuria": "short haircut with faded sides, hairline and beard shape",
+    "omalley": "curly vibrant solid hot pink and magenta hair on all sides of the head (no blue), hairline, thin dark "
+               "goatee and light stubble, and his small face tattoos",
+}
 
 
 def blender(*args):
@@ -77,6 +84,8 @@ def gemini(grid, photo, model, prompt=PROMPT):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mesh", default="gemini_real_fix")
+    ap.add_argument("--fighter", default="topuria", help="key in paint_skin.FIGHTERS; photo _source/<fighter>_ufc.png")
+    ap.add_argument("--hair", default=None, help="head look for the prompt (default: HAIR[fighter] or a generic line)")
     ap.add_argument("--model", default="gemini-3-pro-image")
     ap.add_argument("--style", choices=["real", "painted"], default="real", help="painted = hand-painted animation look")
     ap.add_argument("--reuse", action="store_true", help="reuse painted.png (no new Gemini call)")
@@ -102,7 +111,9 @@ def main():
     grid.save(work / "grid.png")
     painted = work / args.painted
     if not (args.reuse and painted.exists()):
-        gemini(grid, ps.PRIVATE / "_source/topuria_ufc.png", args.model, PROMPT_PAINTED if args.style == "painted" else PROMPT).resize((2 * S, 2 * S), Image.LANCZOS).save(painted)
+        prompt = (PROMPT_PAINTED if args.style == "painted" else PROMPT).format(
+            name=ps.FIGHTERS[args.fighter][0], hair=args.hair or HAIR.get(args.fighter, "hair, hairline and facial hair"))
+        gemini(grid, ps.PRIVATE / f"_source/{args.fighter}_ufc.png", args.model, prompt).resize((2 * S, 2 * S), Image.LANCZOS).save(painted)
         print("painted", painted)
     if not (work / "pos.npy").exists():
         blender("bake", glb, work)
