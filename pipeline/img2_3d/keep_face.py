@@ -10,6 +10,7 @@ Face mask: points facing the camera take their label from the TRELLIS input imag
 hues; his hair is red, pink and blue), the rest from the raw colour seen along the inward normal plus a smooth-surface
 test; the face grows from the nose tip and the neck base, hair islands inside it (blue tattoos) become face, small holes
 close. Face vertices snap to the nearest raw point; ones over a TRELLIS hole are refilled from their neighbours.
+"""
 
 import argparse
 import sys
