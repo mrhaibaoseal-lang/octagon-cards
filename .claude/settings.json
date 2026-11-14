@@ -32,18 +32,14 @@
     ]
   },
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/docs/session-check.js\"" }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "startup|clear|compact",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/docs/brief.js\"" }
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/docs/brief.js\""
+          }
         ]
       }
     ]
