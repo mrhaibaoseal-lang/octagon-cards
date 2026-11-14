@@ -4,9 +4,9 @@
 
 ## 2026-11-15 · Claude Opus 5.5（《奧術》畫風正式採用＋換 O'Malley 驗證流程）
 - 做了：RULES §4、`docs/ART_SPEC.md`、AGENTS §0 改成《奧術》式手繪畫風（3D 模型唯一來源，寫實與像素路線列為歷史／不再嘗試）；用 O'Malley 從頭跑一次流程，把只對 Topuria 有效的地方改成通用（`fix_texture`、`smooth_head`、`gemini_paint --fighter`、`paint_body` 提示詞），新增捲髮用的 `solid_head.py`。
-- 驗證：並排圖 `_img2_3d/cmp_topuria_omalley_full.png`、`..._close.png`；Topuria 的磨平遮罩改完幾乎不變；Gemini 4 次（約 NT$20）。
+- 驗證：並排圖 `_img2_3d/cmp_topuria_omalley_full.png`、`..._close.png`（三列：Topuria／沿用版／重畫版）；Topuria 的磨平遮罩改完幾乎不變；Gemini 5 次（約 NT$25，第 5 次使用者同意重畫頭）。
 - 結果：畫風、膚色、脖子接縫、身體刺青和 Topuria 一樣好；捲髮是光滑的一整團、額頭幾塊補色、臉頰刺青被拉長，比較差。
-- **要使用者確認**：O'Malley 這個程度可不可以；要不要再花約 NT$5 在最終網格上重畫一次頭。`pipeline/model3d/` 有 Gemini 未 commit 的修改（含 O'Malley 描述改成大爆炸頭），沒動。
+- **要使用者確認**：O'Malley 沿用版和重畫版哪個好、這個程度可不可以；臉頰與額頭的斑是網格造成的，要修就從形狀下手。`pipeline/model3d/` 有 Gemini 未 commit 的修改（含 O'Malley 描述改成大爆炸頭），沒動。
 - 下一步：使用者看圖決定；之後可再試第三位（光頭或長髮）。
 
 ## 2026-11-15 · Claude Opus 5.5（選手畫風：寫實 → 《奧術》方向）
