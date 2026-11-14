@@ -33,6 +33,7 @@ ap.add_argument("--voxel", type=float, default=0.012)
 ap.add_argument("--tex", type=int, default=2048)
 ap.add_argument("--close", type=float, default=1.5, help="fill pits and gaps narrower than 2x this many voxels (0 = off); "
                 "TRELLIS's small face holes became square pits after the remesh")
+ap.add_argument("--no-uv", action="store_true", help="shape only (no UVs, no bake): quick look, or keep_face.py input")
 a = ap.parse_args(argv)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -87,6 +88,12 @@ bpy.context.view_layer.objects.active = lo
 print("loose parts", len(parts))
 print("solid verts", len(lo.data.vertices), "faces", len(lo.data.polygons), "from", len(hi.data.vertices))
 bpy.ops.object.shade_smooth()
+
+if a.no_uv:
+    bpy.data.objects.remove(hi)
+    bpy.ops.export_scene.gltf(filepath=a.out, export_format="GLB", use_selection=True)
+    print("saved", a.out, "(no UVs)")
+    sys.exit(0)
 
 # UVs with xatlas (what TRELLIS.2 itself uses), run in the TRELLIS venv: Blender's smart project on this lumpy shell
 # made thousands of tiny islands and used only ~5-23% of the image, so the smallest faces baked black.

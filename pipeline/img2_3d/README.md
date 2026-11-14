@@ -132,3 +132,10 @@
 - 真人照片也能直接跑：`inputs/omalley_photo.png`（從 `_source/omalley_fullbody_ufc.png` 裁 (170,0,790,760)，有 alpha）→ 長窄臉、頭髮輪廓最像本人，但頭略斜、貼圖亂（反正會重畫）。使用者說第 1、5 列都不錯；選第 1 列（正面對稱，好投影）。
 - `keep_face.py processed.glb raw_fix.glb out.glb`：原始網格顏色不是粉紅的點（皮膚、鬍子、脖子）貼回原始表面，髮際線用鄰點平均過渡。**還沒好**：處理後的網格只有 29k 點（voxel 0.015），貼回去臉還是糊（`clay_keep_cmp.png` 第三列）；頭頂只有一半被判成頭髮（印出的分高度統計），外殼離原始髮管約 0.008，最近點常是頭皮或暗縫，取 12 個鄰點平均也沒用。
 - 下一步建議：(1) 分類改用幾何，例如原始網格每點往外的法線方向、離頭骨中心的距離，或把正面輸入圖投影上去看是不是粉紅；(2) `solid_head` 用更細的 voxel（0.006，`--close` 依比例加大）讓臉有足夠的點；(3) 或者不貼回，直接把原始網格的臉區域和處理後的頭髮外殼接在一起。臉型在灰模上和第 1 列一樣才上色。
+
+## 臉貼回原始網格（2026-11-15 第二輪）
+- 比對圖 `clay_keep_new_cmp.png`（上到下：原始網格、舊最終、新＋捲髮塊、新＋平滑一團）。第 3、4 列的臉和第 1 列一樣（長窄臉、鼻樑、眼窩、鬍子）。
+- 指令：`solid_head.py <P>/trellis2/omalley_gemini_real_fix.glb <P>/trellis2/omalley_solid06.glb --voxel 0.006 --close 3.5 --no-uv` → `keep_face.py omalley_solid06.glb omalley_gemini_real_fix.glb omalley_keep06.glb --image <P>/inputs/omalley_gemini_real_rgba.png`（第 4 列再加 `--hair-mesh omalley_smooth.glb --hair-smooth 60`）。
+- 坑：(1) 他的頭髮是紅、粉、藍三色，舊的「粉紅」判斷把紅藍當皮膚 → 改成色相（皮膚約 5～60°、飽和度 0.4 以下算皮膚）；(2) 頭頂底下看得到頭皮，「最近點顏色」不可靠 → 面向鏡頭的點用 TRELLIS 輸入圖投影判斷，其餘看沿法線往內打到的顏色；(3) numpy `a[idx] |= b` 重複索引只留最後一筆，遮罩成長、侵蝕全錯 → 用 `np.logical_or.at`；(4) 藍色刺青被當頭髮留下凹坑 → 被臉包住的頭髮小島算臉；(5) 落在 TRELLIS 破洞上的點會凹下去 → 改用鄰點補平；(6) 細網格（19 萬點）跑 xatlas 超過 45 分鐘沒完 → `solid_head --no-uv` 只做形狀，UV 等形狀定案、減面後再做。
+- 試過不行：細網格上 Taubin 平滑 120 次磨不掉捲髮塊（凹凸跨太多點）；`--close` 開到 6、10 會沿法線推擠自己摺起來；把頭髮貼到 `omalley_smooth` 表面會摺出細皺（第 4 列），再體素重建變成滿是小孔；`omalley_smooth` 細分後貼臉，UV 接縫把網格切開、分類變一塊塊。
+- 下一步：使用者選頭髮（第 3 或 4 列）→ 減面到約 6 萬面＋xatlas UV → `gemini_paint.py` 上色（要再呼叫 Gemini 先問，剩 1 次）。第 3、4 列臉上看得到原始網格的平面三角形，上色後應該不明顯；不要用 `exaggerate_head --jaw`。
