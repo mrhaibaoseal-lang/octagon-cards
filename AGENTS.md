@@ -44,6 +44,7 @@
 - 舊 Swift 引擎的數值與規則已不是規格，不要當成參考依據。
 
 ## 5. 分工（2026-11-08 使用者決定）
+- **V3（2026-11-14 使用者決定）**：美術改由 Gemini 與 Claude 一起做（使用者認為 Claude 較懂 3D），V3 範圍內 Claude 可以碰 3D 角色與場景；下面舊分工適用於 V3 以前的流程，誰做哪一項開工前寫進「美術待辦」。
 - **Gemini 3.8 Flash 負責所有 3D／像素角色美術**：`pipeline/model3d/` 的流程、Gemini 生圖、白模與頭身比、精靈圖渲染、特效與地面雙人姿勢。待辦在 `docs/TASKS.md`「美術待辦」，做法與踩過的坑在 `pipeline/model3d/README.md`。
 - **Claude 只做遊戲面的策劃與實作**：戰鬥規則、數值、AI、模擬、`prototype/web/` 的玩法與介面、`docs/GAME_DESIGN.md`。不改 `pipeline/model3d/`，也不替美術重畫或調白模。
 - **兩邊交界**：精靈圖接進 `stage.js` 由 Gemini 做（使用者 2026-11-08 指定）；Claude 不改 `stage.js`，遊戲面需要畫面配合時寫進「美術待辦」。`game.js`、`stage.js` 若有別人未 commit 的修改，不要動、不要提交。
