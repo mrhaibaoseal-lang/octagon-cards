@@ -98,3 +98,4 @@
 - `paint_body.py topuria`：把 `_model3d/topuria` 複製成 `_model3d/topuria_painted`（原本的 skin 不動），沿用 `paint_skin.py` 的三視圖提示詞、只換掉 Style 那句改成手繪動畫風，Gemini 一次（約 NT$5）；再 `bake_skin.py --dir .../topuria_painted` 烘回 UV。接頭：`attach_head.py` 用 `topuria_painted/skinned.blend`、`--toon`。產出 `body_painted.png`、`body_painted_close.png`、前後對照 `body_painted_cmp.png`（左：寫實身體，右：手繪身體）。
 - 結果：頭和身體畫風統一，刺青變成清楚的黑色圖形，肌肉是幾塊平面。
 - 還剩：Gemini 自己編了胸口老虎和手臂花臂，不一定是本人真正的刺青（要對照片確認）；三視圖整張只有 1584×672，烘到身體後刺青細節偏糊；3/4 那格一隻手臂沒照姿勢張開，這次烘起來看不出問題。
+- 使用者覺得手繪身體太黃、接縫明顯（同日）：`match_body_skin.py <head.glb> <dir>_painted` 把身體膚色（中亮度、r>g>b 的像素）的中位數逐色版調成頭的（這次 gain 1.17/1.12/1.28），原檔留 `skin_raw.png`；`attach_head.py --toon` 的身體描邊關掉 rim（身體在脖子切開，rim 會在脖子畫一圈線）。`body_painted_cmp.png` 由左至右：寫實身體、手繪原色、手繪校色後。脖子那圈線和色差都消失。

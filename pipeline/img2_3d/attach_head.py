@@ -420,6 +420,7 @@ if a.toon:
         ob.data.materials.append(ink)
         so = ob.modifiers.new("ink", "SOLIDIFY")
         so.thickness, so.use_flip_normals, so.material_offset, so.offset = 0.003, True, k, 1
+        so.use_rim = False  # the body is cut open at the neck: a rim there draws an ink ring round the neck
     rim = bpy.data.objects.new("rim", bpy.data.lights.new("rim", "SUN"))
     rim.data.energy, rim.data.color = 2.0, (0.6, 0.75, 1.0)
     rim.rotation_euler = (math.radians(70), 0, math.radians(150))
