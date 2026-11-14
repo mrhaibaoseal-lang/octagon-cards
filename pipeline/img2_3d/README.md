@@ -93,3 +93,8 @@
 - 全身：`attach_head.py ... arcane_half.glb ... --close --toon`，身體和頭都換成三階卡通光、輪廓光，身體加描邊。產出 `body_toon.png`、`body_toon_close.png`。身體雖然是寫實貼圖，套卡通光後和頭還算搭；刺青仍是模糊的照片感。
 - 坑：描邊（反轉外殼）不能加在掃描來的頭上：網格不平，外殼從臉和脖子穿出來變成一堆波浪線。頭不加描邊。
 - 還剩：身體貼圖要用同一個手繪風重畫（刺青、肌肉線條）；脖子切口有一圈細描邊線；後腦下方有一點綠幕殘色。
+
+## 身體手繪重畫（2026-11-15 第四輪）
+- `paint_body.py topuria`：把 `_model3d/topuria` 複製成 `_model3d/topuria_painted`（原本的 skin 不動），沿用 `paint_skin.py` 的三視圖提示詞、只換掉 Style 那句改成手繪動畫風，Gemini 一次（約 NT$5）；再 `bake_skin.py --dir .../topuria_painted` 烘回 UV。接頭：`attach_head.py` 用 `topuria_painted/skinned.blend`、`--toon`。產出 `body_painted.png`、`body_painted_close.png`、前後對照 `body_painted_cmp.png`（左：寫實身體，右：手繪身體）。
+- 結果：頭和身體畫風統一，刺青變成清楚的黑色圖形，肌肉是幾塊平面。
+- 還剩：Gemini 自己編了胸口老虎和手臂花臂，不一定是本人真正的刺青（要對照片確認）；三視圖整張只有 1584×672，烘到身體後刺青細節偏糊；3/4 那格一隻手臂沒照姿勢張開，這次烘起來看不出問題。
