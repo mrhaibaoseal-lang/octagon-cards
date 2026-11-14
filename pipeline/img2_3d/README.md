@@ -87,3 +87,9 @@
 - 《奧術》方向：`exaggerate_head.py`（眉骨往前 1.4%、下巴下段加寬 12%、下巴往前 1%，眼睛不動）→ `trellis2/arcane.glb` → `gemini_paint.py --mesh arcane --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar`（Gemini 一次約 NT$5；提示詞描述手繪動畫風，不寫作品名）→ `style_head.py --style painted --kuwahara 0`（三階光、冷色陰影、藍色輪廓光、描邊）。Gemini 畫的四格在 `paint/arcane/painted.png`。目前最好看的一版。
 - 復古方向：`retro_head.py --faces 1500`：體素重建成平均的四邊形網格（QuadriFlow 在 `-b` 背景模式不會執行，面數不變），重新展 UV，從原頭烘到 256 px 貼圖、最近點取樣。1500 面像 2000 年前後的遊戲；500 面鼻子烘壞（烘焙距離不夠）、耳朵變糊。
 - 胸口仍是舊貼圖，接到身體時會切掉，不用管。
+
+## 臉型減半與全身卡通（2026-11-15 第三輪）
+- 使用者覺得臉型誇張太多：`exaggerate_head.py arcane_paint_ar.glb arcane_half.glb --brow -0.007 --jaw 0.946 --chin -0.005` 往回推一半（貼圖跟著點走，不用重畫）。
+- 全身：`attach_head.py ... arcane_half.glb ... --close --toon`，身體和頭都換成三階卡通光、輪廓光，身體加描邊。產出 `body_toon.png`、`body_toon_close.png`。身體雖然是寫實貼圖，套卡通光後和頭還算搭；刺青仍是模糊的照片感。
+- 坑：描邊（反轉外殼）不能加在掃描來的頭上：網格不平，外殼從臉和脖子穿出來變成一堆波浪線。頭不加描邊。
+- 還剩：身體貼圖要用同一個手繪風重畫（刺青、肌肉線條）；脖子切口有一圈細描邊線；後腦下方有一點綠幕殘色。

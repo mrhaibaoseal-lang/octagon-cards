@@ -32,6 +32,7 @@ ap.add_argument("--blend-color", type=float, default=0.05, help="with --blend: f
 ap.add_argument("--lift", type=float, default=0.0, help="raise the aligned head this much (m): a longer neck")
 ap.add_argument("--close", action="store_true", help="also render <out>_close.png: head and neck from front, 3/4, side, back")
 ap.add_argument("--face", action="store_true", help="also render <out>_face.png: eyes-height close-up from front, 3/4, side")
+ap.add_argument("--toon", action="store_true", help="3-tone toon light, cool shadows, rim light and ink outline on everything")
 ap.add_argument("--match-skin", action="store_true", help="scale the head's vertex colours to the body's neck skin")
 a = ap.parse_args(argv)
 
@@ -372,6 +373,58 @@ sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
 sun.data.energy = 3.5
 sun.rotation_euler = (math.radians(50), 0, math.radians(-30))
 scene.collection.objects.link(sun)
+if a.toon:
+    # Same look as style_head.py --style painted: whatever feeds Base Color x a 3-step light ramp, as emission.
+    for ob in [o for o in scene.objects if o.type == "MESH" and o.visible_get()]:
+        for m in ob.data.materials:
+            if not m or not m.use_nodes:
+                continue
+            nt = m.node_tree
+            bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
+            if not bsdf or not out:
+                continue
+            bc = bsdf.inputs["Base Color"]
+            src = bc.links[0].from_socket if bc.links else None
+            d = nt.nodes.new("ShaderNodeBsdfDiffuse")
+            s2r = nt.nodes.new("ShaderNodeShaderToRGB")
+            ramp = nt.nodes.new("ShaderNodeValToRGB")
+            cr = ramp.color_ramp
+            cr.interpolation = "CONSTANT"
+            cr.elements[0].position, cr.elements[0].color = 0.0, (0.32, 0.30, 0.42, 1)
+            cr.elements[1].position, cr.elements[1].color = 0.22, (0.72, 0.68, 0.70, 1)
+            cr.elements.new(0.55).color = (1.0, 0.97, 0.92, 1)
+            mul = nt.nodes.new("ShaderNodeMix")
+            mul.data_type, mul.blend_type = "RGBA", "MULTIPLY"
+            mul.inputs["Factor"].default_value = 1.0
+            if src:
+                nt.links.new(src, mul.inputs[6])
+            else:
+                mul.inputs[6].default_value = bc.default_value
+            em = nt.nodes.new("ShaderNodeEmission")
+            nt.links.new(d.outputs["BSDF"], s2r.inputs["Shader"])
+            nt.links.new(s2r.outputs["Color"], ramp.inputs["Fac"])
+            nt.links.new(ramp.outputs["Color"], mul.inputs[7])
+            nt.links.new(mul.outputs[2], em.inputs["Color"])
+            nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
+        if ob == head:  # the scanned head is too uneven: an inverted hull pokes through it as wavy lines
+            continue
+        ink = bpy.data.materials.get("ink") or bpy.data.materials.new("ink")
+        ink.use_backface_culling = True
+        ink.use_nodes = True
+        ink.node_tree.nodes.clear()
+        ie = ink.node_tree.nodes.new("ShaderNodeEmission")
+        ie.inputs["Color"].default_value = (0.03, 0.02, 0.03, 1)
+        ink.node_tree.links.new(ie.outputs["Emission"], ink.node_tree.nodes.new("ShaderNodeOutputMaterial").inputs["Surface"])
+        k = len(ob.data.materials)
+        ob.data.materials.append(ink)
+        so = ob.modifiers.new("ink", "SOLIDIFY")
+        so.thickness, so.use_flip_normals, so.material_offset, so.offset = 0.003, True, k, 1
+    rim = bpy.data.objects.new("rim", bpy.data.lights.new("rim", "SUN"))
+    rim.data.energy, rim.data.color = 2.0, (0.6, 0.75, 1.0)
+    rim.rotation_euler = (math.radians(70), 0, math.radians(150))
+    scene.collection.objects.link(rim)
+    scene.world.color = (0.16, 0.17, 0.2)
 cam = bpy.data.objects.new("expcam", bpy.data.cameras.new("expcam"))
 cam.data.type = "ORTHO"
 cam.data.ortho_scale = body_top * 1.08
