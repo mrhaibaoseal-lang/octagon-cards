@@ -32,6 +32,7 @@ ap.add_argument("--blend-color", type=float, default=0.05, help="with --blend: f
 ap.add_argument("--lift", type=float, default=0.0, help="raise the aligned head this much (m): a longer neck")
 ap.add_argument("--close", action="store_true", help="also render <out>_close.png: head and neck from front, 3/4, side, back")
 ap.add_argument("--face", action="store_true", help="also render <out>_face.png: eyes-height close-up from front, 3/4, side")
+ap.add_argument("--ink", type=float, default=0.0, help="with --toon: body outline width (m), 0 = none (default: an outline draws a line where the shoulder overlaps the trapezius)")
 ap.add_argument("--toon", action="store_true", help="3-tone toon light, cool shadows, rim light and ink outline on everything")
 ap.add_argument("--match-skin", action="store_true", help="scale the head's vertex colours to the body's neck skin")
 a = ap.parse_args(argv)
@@ -407,7 +408,7 @@ if a.toon:
             nt.links.new(ramp.outputs["Color"], mul.inputs[7])
             nt.links.new(mul.outputs[2], em.inputs["Color"])
             nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
-        if ob == head:  # the scanned head is too uneven: an inverted hull pokes through it as wavy lines
+        if ob == head or a.ink <= 0:  # the scanned head is too uneven: an inverted hull pokes through it as wavy lines
             continue
         ink = bpy.data.materials.get("ink") or bpy.data.materials.new("ink")
         ink.use_backface_culling = True
@@ -419,7 +420,7 @@ if a.toon:
         k = len(ob.data.materials)
         ob.data.materials.append(ink)
         so = ob.modifiers.new("ink", "SOLIDIFY")
-        so.thickness, so.use_flip_normals, so.material_offset, so.offset = 0.003, True, k, 1
+        so.thickness, so.use_flip_normals, so.material_offset, so.offset = a.ink, True, k, 1
         so.use_rim = False  # the body is cut open at the neck: a rim there draws an ink ring round the neck
     rim = bpy.data.objects.new("rim", bpy.data.lights.new("rim", "SUN"))
     rim.data.energy, rim.data.color = 2.0, (0.6, 0.75, 1.0)

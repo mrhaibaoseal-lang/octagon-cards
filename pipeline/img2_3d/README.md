@@ -99,3 +99,5 @@
 - 結果：頭和身體畫風統一，刺青變成清楚的黑色圖形，肌肉是幾塊平面。
 - 還剩：Gemini 自己編了胸口老虎和手臂花臂，不一定是本人真正的刺青（要對照片確認）；三視圖整張只有 1584×672，烘到身體後刺青細節偏糊；3/4 那格一隻手臂沒照姿勢張開，這次烘起來看不出問題。
 - 使用者覺得手繪身體太黃、接縫明顯（同日）：`match_body_skin.py <head.glb> <dir>_painted` 把身體膚色（中亮度、r>g>b 的像素）的中位數逐色版調成頭的（這次 gain 1.17/1.12/1.28），原檔留 `skin_raw.png`；`attach_head.py --toon` 的身體描邊關掉 rim（身體在脖子切開，rim 會在脖子畫一圈線）。`body_painted_cmp.png` 由左至右：寫實身體、手繪原色、手繪校色後。脖子那圈線和色差都消失。
+- 再修（同日）：頭頂的綠色殘留是 Gemini 綠幕滲進頭髮貼圖，`degreen.py arcane_half.glb` 把綠色明顯高過紅藍的貼圖點（外擴 2 格，約 4100 點）用旁邊的顏色一圈圈補回 → `arcane_half_ng.glb`。側面肩膀那條線是身體描邊：肩膀擋在斜方肌前面時，反轉外殼畫出內輪廓，描邊減半也還在；頭本來就沒描邊，所以 `--ink` 預設改 0（全身都不描邊），看起來一樣好。
+- **目前最好的一版**：`blender -b <private>/_model3d/topuria_painted/skinned.blend -P pipeline/img2_3d/attach_head.py -- <private>/_img2_3d/trellis2/arcane_half_ng.glb out.png --blend -0.03 0.02 --lift 0.015 --blend-color 0.07 --close --toon` → `body_painted.png`、`body_painted_close.png`。使用者：「整體看起來棒透了」，刺青目前可以接受。
