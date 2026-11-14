@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>厚實版商店草圖</title>
+<style>
+/* 草圖：商店畫面「厚實版」。只是看感覺，不接遊戲邏輯。
+   做法：光從上方來（亮上緣、暗下緣）、每件東西有厚度（底邊實色陰影）、
+   材質（帆布、黑色護墊、金屬）、形狀不是只有長方形（寶石、盾、硬幣）、東西彼此疊壓。 */
+:root{
+  --punch:#e0453f; --kick:#2f86e0; --grap:#2fb57a; --def:#1fb0b2;
+  --gold:#ffcf4a; --gold-d:#9a6a00; --ink:#0b0d11;
+  --noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .5 0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+  --weave:repeating-linear-gradient(45deg,rgba(255,255,255,.035) 0 2px,transparent 2px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.05) 0 2px,transparent 2px 4px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;color:#fff;font-family:"Bahnschrift","Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif;overflow:hidden;user-select:none}
+#stage{position:relative;width:844px;height:390px;margin:0 auto;overflow:hidden;
+  background:
+    radial-gradient(ellipse 60% 70% at 50% -10%,rgba(255,240,210,.22),transparent 60%),
+    radial-gradient(ellipse 120% 90% at 50% 120%,#1a1410,#050608 70%);
+}
+/* 觀眾席：一層一層模糊的人頭剪影＋閃光燈 */
+#crowd{position:absolute;inset:0 0 auto 0;height:170px;opacity:.55;
+  background:
+    radial-gradient(circle at 12% 40%,rgba(255,255,255,.7) 0 1px,transparent 2px),
+    radial-gradient(circle at 63% 28%,rgba(255,255,255,.6) 0 1px,transparent 2px),
+    radial-gradient(circle at 81% 52%,rgba(255,255,255,.7) 0 1px,transparent 2px),
+    radial-gradient(circle at 37% 60%,rgba(255,255,255,.5) 0 1px,transparent 2px),
+    radial-gradient(ellipse 14px 18px at 7px 22px,#15120f 60%,transparent 62%) 0 60px/22px 34px,
+    radial-gradient(ellipse 14px 18px at 7px 22px,#1d1813 60%,transparent 62%) 11px 84px/22px 34px;
+  background-repeat:no-repeat,no-repeat,no-repeat,no-repeat,repeat-x,repeat-x;
+  filter:blur(1.2px)}
+
+/* ── 八角籠：帆布地墊＋黑色護墊框（取代 Hearthstone 的石頭木頭框）── */
+#cage{position:absolute;left:118px;right:118px;top:44px;bottom:96px;
+  clip-path:polygon(9% 0,91% 0,100% 18%,100% 100%,0 100%,0 18%);
+  background:linear-gradient(#0c0d10,#000);padding:7px}
+#cage::before{/* 護墊：黑色皮革，上緣亮、下緣暗，中間一條紅色縫線 */
+  content:"";position:absolute;inset:0;clip-path:inherit;
+  background:
+    linear-gradient(90deg,transparent 49.6%,rgba(255,255,255,.06) 49.6% 50.4%,transparent 50.4%),
+    linear-gradient(#3a3d44,#16171b 30%,#0b0c0e 70%,#25262b);}
+#mat{position:relative;height:100%;clip-path:polygon(8.6% 0,91.4% 0,100% 17.4%,100% 100%,0 100%,0 17.4%);
+  background:
+    radial-gradient(ellipse 70% 80% at 50% 30%,rgba(255,250,235,.16),transparent 70%),
+    var(--weave),
+    linear-gradient(#5b5f66,#3f434a 55%,#2a2d33);
+  box-shadow:inset 0 10px 18px rgba(0,0,0,.55),inset 0 -14px 20px rgba(0,0,0,.6)}
+#mat::before{content:"";position:absolute;inset:0;background:var(--noise);opacity:.35;mix-blend-mode:overlay}
+#mat .logo{position:absolute;left:50%;top:54%;transform:translate(-50%,-50%) scaleY(.55);
+  font:900 italic 64px/1 "Bahnschrift",sans-serif;letter-spacing:6px;color:rgba(0,0,0,.18);
+  text-shadow:0 1px 0 rgba(255,255,255,.06)}
+#mat .lane{position:absolute;left:5%;right:5%;height:1px;background:rgba(255,255,255,.08);box-shadow:0 1px 0 rgba(0,0,0,.35)}
+
+/* ── 上方轉播條：金屬板，有斜角、厚度、往下投影 ── */
+.plate{position:absolute;top:0;height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  filter:drop-shadow(0 4px 0 rgba(0,0,0,.6)) drop-shadow(0 8px 10px rgba(0,0,0,.5))}
+.plate .face{position:absolute;inset:0;z-index:-1}
+.plate.blue{left:0;width:250px}
+.plate.blue .face{clip-path:polygon(0 0,100% 0,93% 100%,0 100%);
+  background:linear-gradient(#5ea8ff,#1f5fc2 45%,#123c80 55%,#0d2c60);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.5)}
+.plate.red{right:0;width:250px;justify-content:flex-end}
+.plate.red .face{clip-path:polygon(7% 0,100% 0,100% 100%,0 100%);
+  background:linear-gradient(#ff7b6e,#c52c26 45%,#8e1914 55%,#621009)}
+.plate .face::after{content:"";position:absolute;left:0;right:0;top:0;height:46%;background:linear-gradient(rgba(255,255,255,.28),rgba(255,255,255,.05))}
+.pt{width:34px;height:34px;border-radius:4px;overflow:hidden;background:#111;border:2px solid #e8edf5;
+  box-shadow:0 2px 0 #000,inset 0 0 0 1px #000;flex:none}
+.pt img{width:100%;height:100%;object-fit:cover;object-position:top}
+.nm{font:900 italic 20px/1 "Bahnschrift",sans-serif;letter-spacing:.5px;
+  text-shadow:0 2px 0 rgba(0,0,0,.55),0 0 1px #000}
+.hpbox{display:flex;align-items:center;gap:5px}
+.hpbar{width:70px;height:9px;border-radius:2px;background:#07101e;box-shadow:inset 0 1px 2px #000,0 1px 0 rgba(255,255,255,.25);padding:1px}
+.hpbar i{display:block;height:100%;border-radius:1px;background:linear-gradient(#b8ffcf,#3ecf8e 50%,#1f8f5c)}
+.hpn{font:900 18px/1 "Bahnschrift";text-shadow:0 2px 0 rgba(0,0,0,.6)}
+.round{position:absolute;left:50%;top:0;transform:translateX(-50%);width:230px;height:46px;text-align:center;
+  filter:drop-shadow(0 4px 0 #000) drop-shadow(0 8px 10px rgba(0,0,0,.6))}
+.round .face{position:absolute;inset:0;clip-path:polygon(0 0,100% 0,90% 100%,10% 100%);
+  background:linear-gradient(#4a4f58,#1b1e24 50%,#0f1115);}
+.round .face::before{content:"";position:absolute;inset:2px 3px 3px;clip-path:polygon(0 0,100% 0,90% 100%,10% 100%);
+  background:linear-gradient(#2b2f37,#121419);box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.round .face::after{content:"";position:absolute;left:12%;right:12%;bottom:0;height:3px;background:linear-gradient(90deg,var(--kick),#fff8,var(--punch))}
+.round b{position:relative;display:block;font:700 9px/1 "Bahnschrift";letter-spacing:3px;color:#c7cbd3;padding-top:7px}
+.round span{position:relative;display:block;font:900 italic 17px/1.2 "Bahnschrift","Microsoft JhengHei";color:var(--gold);
+  text-shadow:0 2px 0 #000}
+
+/* ── 選手：大張站在籠子兩側，壓在框上（像 EA 選人畫面那樣出血） ── */
+.fighter{position:absolute;bottom:58px;height:250px;z-index:3;filter:drop-shadow(0 6px 6px rgba(0,0,0,.8)) brightness(.95)}
+.fighter.l{left:-8px} .fighter.r{right:-8px;transform:scaleX(-1)}
+.shadow{position:absolute;bottom:52px;width:120px;height:16px;border-radius:50%;background:radial-gradient(rgba(0,0,0,.75),transparent 70%);z-index:2}
+.dummy{position:absolute;bottom:58px;width:90px;height:220px;z-index:3;border-radius:40px 40px 10px 10px;
+  background:linear-gradient(90deg,#000a,#0000 40%,#0006),linear-gradient(var(--c),#111)}
+
+/* ── 牌：直式、有厚度的實體卡 ── */
+.card{--c:var(--punch);position:relative;width:64px;height:88px;border-radius:7px;flex:none;
+  background:linear-gradient(#2a2d33,#0d0e11);padding:3px;
+  box-shadow:0 3px 0 #000,0 5px 0 rgba(0,0,0,.35),0 8px 12px rgba(0,0,0,.6);
+  transition:transform .15s}
+.card::before{/* 金屬邊框：流派色，上亮下暗 */
+  content:"";position:absolute;inset:0;border-radius:7px;padding:3px;
+  background:linear-gradient(color-mix(in srgb,var(--c) 30%,#fff),var(--c) 35%,color-mix(in srgb,var(--c) 45%,#000) 80%,color-mix(in srgb,var(--c) 70%,#fff));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+.card .art{position:relative;height:100%;border-radius:4px;overflow:hidden;
+  background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--c) 70%,#fff3),color-mix(in srgb,var(--c) 30%,#000) 75%);
+  box-shadow:inset 0 0 0 1px #000,inset 0 4px 8px rgba(0,0,0,.5)}
+.card .art svg{position:absolute;left:50%;top:38%;width:62%;transform:translate(-50%,-50%);
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.5))}
+.card .art::after{content:"";position:absolute;inset:0;background:linear-gradient(155deg,rgba(255,255,255,.22),transparent 40%)}
+.card .rib{/* 名字布條，比卡片寬，左右折角 */
+  position:absolute;left:-5px;right:-5px;bottom:20px;height:17px;z-index:2;
+  background:linear-gradient(#f4f1ea,#cfc8b8);color:#15171c;text-align:center;
+  font:900 11px/17px "Microsoft JhengHei","PingFang TC";letter-spacing:1px;
+  clip-path:polygon(0 0,100% 0,96% 50%,100% 100%,0 100%,4% 50%);
+  box-shadow:0 2px 0 rgba(0,0,0,.5)}
+.gem{position:absolute;bottom:-6px;z-index:3;width:24px;height:26px;display:grid;place-items:center;
+  font:900 15px/1 "Bahnschrift";text-shadow:0 1.5px 0 #000,0 0 2px #000;filter:drop-shadow(0 2px 0 #000)}
+.gem::before{content:"";position:absolute;inset:0;z-index:-1}
+.gem.atk{left:-6px}
+.gem.atk::before{clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);
+  background:radial-gradient(circle at 35% 28%,#ffd0c4 0 8%,#ff5a45 30%,#9b130b 85%)}
+.gem.hp{right:-6px}
+.gem.hp::before{clip-path:polygon(0 0,100% 0,100% 55%,50% 100%,0 55%);
+  background:radial-gradient(circle at 35% 25%,#fff 0 6%,#c9d1dc 30%,#59626f 90%)}
+.stars{position:absolute;top:-5px;left:50%;transform:translateX(-50%);z-index:3;display:flex;gap:1px}
+.stars i{width:11px;height:11px;background:radial-gradient(circle at 40% 35%,#fff6c8,var(--gold) 45%,var(--gold-d));
+  clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);filter:drop-shadow(0 1px 0 #000)}
+.card.lv2::before{background:linear-gradient(#fff,#c9d1dc 35%,#6b7480 80%,#e9eef5)}
+.card.lv3::before{background:linear-gradient(#fff6c8,var(--gold) 35%,var(--gold-d) 80%,#ffe9a0)}
+.card.lv3{box-shadow:0 3px 0 #000,0 0 14px rgba(255,207,74,.45),0 8px 12px rgba(0,0,0,.6)}
+.card:hover{transform:translateY(-4px)}
+.punch{--c:var(--punch)} .kick{--c:var(--kick)} .grap{--c:var(--grap)} .def{--c:var(--def)}
+
+/* 對手蓋著的牌：牌背 */
+.back{width:46px;height:62px;border-radius:6px;padding:3px;flex:none;
+  background:linear-gradient(#5a1d1a,#2a0c0a);box-shadow:0 2px 0 #000,0 5px 8px rgba(0,0,0,.6)}
+.back div{height:100%;border-radius:4px;border:1px solid rgba(255,190,170,.25);
+  background:repeating-linear-gradient(45deg,rgba(255,255,255,.05) 0 3px,transparent 3px 6px),radial-gradient(circle,#7a2420,#2c0907);
+  display:grid;place-items:center;font:900 16px "Bahnschrift";color:rgba(255,200,190,.35)}
+/* 空位：印在帆布上的淡框，不是虛線方塊 */
+.slot{width:64px;height:88px;border-radius:7px;flex:none;
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.45),0 1px 0 rgba(255,255,255,.07);background:rgba(0,0,0,.12)}
+.slot.sm{width:46px;height:62px}
+
+.row{position:absolute;left:0;right:0;display:flex;justify-content:center;gap:9px}
+#opp{top:14px} #mine{top:104px;gap:10px}
+.tag{position:absolute;font:700 9px/1 "Bahnschrift","Microsoft JhengHei";letter-spacing:2px;color:rgba(255,255,255,.45);text-shadow:0 1px 0 #000}
+
+/* ── 下方：教練的托盤（商店），牌像手牌一樣從下面冒出來 ── */
+#tray{position:absolute;left:136px;right:150px;bottom:-8px;height:104px;z-index:4}
+#tray .bgl{position:absolute;inset:0;clip-path:polygon(4% 0,96% 0,100% 100%,0 100%);
+  background:linear-gradient(#3b3229,#231d17 40%,#140f0b);filter:drop-shadow(0 -4px 8px #000)}
+#tray::before{content:"";position:absolute;inset:3px 3px 0;clip-path:polygon(3.6% 0,96.4% 0,100% 100%,0 100%);
+  background:var(--noise),linear-gradient(#2a221b,#18130f);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);z-index:0}
+#tray::after{content:"";position:absolute;left:4%;right:4%;top:0;height:2px;background:linear-gradient(90deg,transparent,rgba(255,220,170,.4),transparent)}
+#tray .inner{position:relative;height:100%;display:flex;align-items:flex-start;gap:12px;padding:10px 18px 0}
+.offers{display:flex;gap:10px;margin-top:-26px}
+.offers .card{width:72px;height:100px}
+.offers .card:nth-child(1){transform:rotate(-4deg) translateY(4px)}
+.offers .card:nth-child(3){transform:rotate(4deg) translateY(4px)}
+.offers .card:hover{transform:translateY(-10px) scale(1.06);z-index:5}
+.ctrl{display:flex;flex-direction:column;gap:6px;margin-left:auto;align-items:flex-end}
+.coin{display:flex;align-items:center;gap:6px;font:900 22px/1 "Bahnschrift";text-shadow:0 2px 0 #000}
+.coin i{width:26px;height:26px;border-radius:50%;
+  background:radial-gradient(circle at 38% 32%,#fff7cf 0 10%,var(--gold) 35%,#b77f00 75%,#6e4a00);
+  box-shadow:inset 0 0 0 2px rgba(110,74,0,.8),inset 0 0 0 4px rgba(255,236,160,.6),0 3px 0 #3a2700}
+.btn{position:relative;border:0;cursor:pointer;font:900 13px/1 "Microsoft JhengHei","Bahnschrift";color:#e9edf3;
+  padding:8px 12px;border-radius:5px;letter-spacing:1px;
+  background:linear-gradient(#5d636d,#30343b 50%,#24272d);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 4px 0 #0c0d0f,0 6px 8px rgba(0,0,0,.6);
+  text-shadow:0 1px 0 #000;transition:transform .06s,box-shadow .06s}
+.btn:active{transform:translateY(3px);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 0 #0c0d0f,0 2px 4px rgba(0,0,0,.6)}
+.btn small{font-size:10px;color:var(--gold);margin-left:4px}
+#fight{position:absolute;right:16px;bottom:16px;z-index:6;width:122px;height:52px;border-radius:8px;
+  font:900 italic 24px/1 "Microsoft JhengHei","Bahnschrift";color:#2a1a00;letter-spacing:2px;
+  background:linear-gradient(#fff3b8,#ffd44f 30%,#f0a800 70%,#c98600);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.8),inset 0 -3px 0 rgba(120,70,0,.5),0 6px 0 #6b4300,0 9px 14px rgba(0,0,0,.7),0 0 24px rgba(255,200,60,.35);
+  text-shadow:0 1px 0 rgba(255,255,255,.6)}
+#fight small{display:block;font:800 9px/1.4 "Bahnschrift";letter-spacing:3px;color:#5a3a00;font-style:normal}
+#fight:active{transform:translateY(5px);box-shadow:inset 0 2px 0 rgba(255,255,255,.8),0 1px 0 #6b4300,0 3px 6px rgba(0,0,0,.7)}
+#bench{display:flex;gap:5px;align-items:flex-start;padding-top:4px;margin-right:6px}
+#bench .slot{width:44px;height:60px;background:rgba(0,0,0,.4)}
+#bench .tag{position:static;writing-mode:vertical-rl;margin-right:2px}
+
+/* 說明疊層 */
+#note{position:absolute;inset:0;z-index:20;display:none;pointer-events:none}
+#note.on{display:block}
+.n{position:absolute;width:20px;height:20px;border-radius:50%;background:#ffcf4a;color:#000;font:900 12px/20px "Bahnschrift";text-align:center;box-shadow:0 2px 0 #000}
+#legend{position:absolute;right:8px;top:50px;width:250px;z-index:21;display:none;background:rgba(5,6,8,.92);border:1px solid #333;border-radius:6px;padding:8px 10px;font:12px/1.5 "Microsoft JhengHei";color:#ddd}
+#legend.on{display:block}
+#legend b{color:#ffcf4a}
+#toggle{position:absolute;left:6px;top:46px;z-index:22;font:11px "Microsoft JhengHei";background:#000a;color:#ccc;border:1px solid #444;border-radius:10px;padding:2px 10px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="crowd"></div>
+
+  <div id="cage"><div id="mat">
+    <div class="logo">OCTAGON</div>
+    <div class="lane" style="top:96px"></div>
+    <span class="tag" style="left:9%;top:4px">對手 · 蓋著</span>
+    <div class="row" id="opp"></div>
+    <span class="tag" style="left:5%;top:98px;color:rgba(140,190,255,.7)">你的招式</span>
+    <div class="row" id="mine"></div>
+  </div></div>
+
+  <div class="shadow" style="left:10px"></div><div class="shadow" style="right:10px"></div>
+  <div id="fl"></div><div id="fr"></div>
+
+  <div class="plate blue"><div class="face"></div>
+    <div class="pt"><img src="assets/private/poirier/portrait.png" alt="" onerror="this.remove()"></div>
+    <div><div class="nm">POIRIER</div>
+      <div class="hpbox"><div class="hpbar"><i style="width:90%"></i></div><span class="hpn">45</span></div></div>
+  </div>
+  <div class="round"><div class="face"></div><b>ROUND 1 · 第 1 段前</b><span>角落時間</span></div>
+  <div class="plate red"><div class="face"></div>
+    <div style="text-align:right"><div class="nm">HOLLOWAY</div>
+      <div class="hpbox" style="justify-content:flex-end"><span class="hpn">45</span><div class="hpbar"><i style="width:90%;margin-left:auto"></i></div></div></div>
+    <div class="pt"><img src="assets/private/holloway/portrait.png" alt="" onerror="this.remove()"></div>
+  </div>
+
+  <div id="tray"><div class="bgl"></div><div class="inner">
+    <div id="bench"><span class="tag">備選</span><div class="slot"></div><div class="slot"></div><div class="slot"></div></div>
+    <div class="offers" id="offers"></div>
+    <div class="ctrl">
+      <div class="coin"><i></i>3</div>
+      <button class="btn">重抽<small>1 金</small></button>
+    </div>
+  </div></div>
+  <button id="fight">開打<small>FIGHT</small></button>
+
+  <div id="note">
+    <span class="n" style="left:250px;top:8px">1</span>
+    <span class="n" style="left:128px;top:60px">2</span>
+    <span class="n" style="left:330px;top:150px">3</span>
+    <span class="n" style="left:40px;top:120px">4</span>
+    <span class="n" style="left:300px;top:290px">5</span>
+    <span class="n" style="left:700px;top:310px">6</span>
+  </div>
+  <div id="legend">
+    <b>1</b> 轉播條是金屬板：斜角、上亮下暗、底下有實色厚度和投影。<br>
+    <b>2</b> 牌桌就是八角籠：帆布地墊（織紋＋頂燈）、黑色皮革護墊當外框，取代平面方框。<br>
+    <b>3</b> 牌改成直式實體卡：流派色金屬邊、攻擊是紅寶石、耐久是鋼盾、名字布條比卡寬、星星釘在上緣。<br>
+    <b>4</b> 選手大張站在籠外兩側、壓在框上，畫面有前後層次。<br>
+    <b>5</b> 商店是教練托盤，三張牌像手牌一樣從下面冒出、微微歪斜，滑過會抬起。<br>
+    <b>6</b> 按鈕有厚度：按下去會往下沉。空位改成印在帆布上的淡凹痕。
+  </div>
+  <button id="toggle">顯示／隱藏說明</button>
+</div>
+<script>
+const ICON={
+  punch:'<svg viewBox="0 0 40 40"><path d="M9 17c0-4 3-6 6-6h12c4 0 6 3 6 6v6c0 6-4 10-10 10h-6c-5 0-8-4-8-9z" fill="#fff" opacity=".92"/><path d="M15 11v8M21 11v8M27 12v7" stroke="#0006" stroke-width="2"/><path d="M9 21h8" stroke="#0005" stroke-width="2"/></svg>',
+  kick:'<svg viewBox="0 0 40 40"><path d="M6 10l13 9 13-2c3 0 4 3 2 5l-9 4c-3 1-6 1-8-1L4 15z" fill="#fff" opacity=".92"/><path d="M27 18l7-1" stroke="#0005" stroke-width="2"/></svg>',
+  def:'<svg viewBox="0 0 40 40"><path d="M20 4l13 5v10c0 9-6 14-13 17C13 33 7 28 7 19V9z" fill="#fff" opacity=".92"/><path d="M20 8v24" stroke="#0004" stroke-width="2"/></svg>',
+  grap:'<svg viewBox="0 0 40 40"><circle cx="14" cy="12" r="5" fill="#fff"/><circle cx="27" cy="16" r="5" fill="#fff" opacity=".8"/><path d="M8 34c0-8 3-14 8-15l10 3c4 2 7 6 7 12z" fill="#fff" opacity=".92"/></svg>',
+};
+const card=(n,s,a,h,lv=1,stars=1)=>`<div class="card ${s} ${lv>1?'lv'+lv:''}"><div class="stars">${'<i></i>'.repeat(stars)}</div><div class="art">${ICON[s]}</div><div class="rib">${n}</div><span class="gem atk">${a}</span><span class="gem hp">${h}</span></div>`;
+document.getElementById('opp').innerHTML='<div class="back"><div>?</div></div>'.repeat(3)+'<div class="slot sm"></div>'.repeat(3);
+document.getElementById('mine').innerHTML=card('刺拳','punch',2,1)+card('低踢','kick',3,3,2,1)+card('防摔','def',4,6,3,2)+'<div class="slot"></div>'.repeat(3);
+document.getElementById('offers').innerHTML=card('側閃','def',2,1)+card('直拳','punch',3,2)+card('前踢','kick',1,3);
+const fighter=(id,side,c)=>`<img class="fighter ${side}" src="assets/private/${id}/idle.png" alt="" onerror="this.outerHTML='<div class=&quot;dummy&quot; style=&quot;${side==='l'?'left':'right'}:20px;--c:${c}&quot;></div>'">`;
+document.getElementById('fl').outerHTML=fighter('poirier','l','#2f86e0');
+document.getElementById('fr').outerHTML=fighter('holloway','r','#e0453f');
+document.getElementById('toggle').onclick=()=>{note.classList.toggle('on');legend.classList.toggle('on')};
+</script>
+</body>
+</html>
