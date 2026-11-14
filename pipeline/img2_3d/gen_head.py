@@ -3,6 +3,9 @@ as an input for the image-to-3D experiment. Reuses the token / photo helpers of 
 without changing that file.
 
   uv run --no-project --with google-genai --with google-auth --with pillow python -I pipeline/img2_3d/gen_head.py --fighter topuria
+
+--look adds a description that overrides the reference photos' hair / look (e.g. a big afro the 3D model should not copy);
+--name sets the output name (default <fighter>_gemini_real).
 """
 import argparse
 import sys
@@ -28,6 +31,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--fighter", required=True)
     ap.add_argument("--model", default="gemini-3-pro-image")
+    ap.add_argument("--look", default="", help="extra look description; overrides the hair in the reference photos")
+    ap.add_argument("--name", default="", help="output name without .png (default <fighter>_gemini_real)")
     args = ap.parse_args()
     if not ps.DEFAULT_PROJECT:
         sys.exit("No GCP project: write pipeline/model3d/local.json or set GCP_PROJECT")
@@ -35,6 +40,11 @@ def main() -> None:
     photos = [p for p in [src / f"{args.fighter}_ufc.png", *sorted(src.glob(f"*{args.fighter}*fullbody*.png"))] if p.exists()]
     if not photos:
         sys.exit(f"No photo for {args.fighter} in _source/")
+
+    prompt = PROMPT
+    if args.look:
+        prompt = prompt.replace("hairline, hair and beard", "and beard") + (
+            " IMPORTANT, this overrides the hair in the reference photos: " + args.look)
 
     from google import genai
     from google.genai import types
@@ -46,7 +56,7 @@ def main() -> None:
     client = genai.Client(vertexai=True, project=ps.DEFAULT_PROJECT, location="global", credentials=Credentials(token=token))
     resp = client.models.generate_content(
         model=args.model,
-        contents=[*(ps.prepare_reference_photo(p) for p in photos), PROMPT],
+        contents=[*(ps.prepare_reference_photo(p) for p in photos), prompt],
         config=types.GenerateContentConfig(
             response_modalities=["IMAGE", "TEXT"],
             image_config=types.ImageConfig(aspect_ratio="1:1", image_size="1K"),
@@ -56,7 +66,7 @@ def main() -> None:
         for part in cand.content.parts or []:
             if part.inline_data and part.inline_data.data:
                 OUT.mkdir(parents=True, exist_ok=True)
-                out = OUT / f"{args.fighter}_gemini_real.png"
+                out = OUT / f"{args.name or args.fighter + '_gemini_real'}.png"
                 Image.open(BytesIO(part.inline_data.data)).convert("RGB").save(out)
                 print(f"saved {out}")
                 return

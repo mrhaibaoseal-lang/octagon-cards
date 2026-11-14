@@ -17,6 +17,7 @@
 | `fix_texture.py` | 把 TRELLIS.2 貼圖的顏色分佈對齊輸入圖（逐色版直方圖對齊），存成 `<name>_fix.glb` |
 | `gemini_paint.py` + `paint_head_blender.py` | 只留 TRELLIS.2 的形狀：灰模四個角度排成 2×2 綠底圖，Gemini 照照片重畫（一次約 NT$5），再依表面朝向投影烘回 UV 貼圖；沒被看到的地方沿用修色貼圖。目前最好的投影參數：`--reuse --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _occ`（見「眼睛」一節）。`paint_head_blender.py vis` 在 Blender 對每個貼圖點往四個鏡頭打射線，存 `vis.npy`要用 `uv run --no-project --with google-genai --with google-auth --with pillow --with numpy --with trimesh python -I` 跑（venv 沒有 google-genai） |
 | `solid_head.py` | Blender：捲髮頭先體素重建成實心外殼、xatlas 展 UV、烘回顏色，再接 `smooth_head.py`（見「換選手驗證：O'Malley」） |
+| `keep_face.py` | Blender：把 `solid_head`／`smooth_head` 處理過的頭的臉貼回 TRELLIS 原始表面，只有頭髮保留處理後的形狀（見「臉被磨掉」） |
 | `attach_head.py` | Blender：開 `skinned.blend`（不存檔），切掉身體的頭，把生成的頭縮放、對齊後綁到 Head 骨頭，出正面與 3/4 全身圖。目前最好的參數：`--blend -0.03 0.02 --lift 0.015 --blend-color 0.07 --close`（`--close` 另出頭頸四角度近拍 `<out>_close.png`；`--face` 出眼睛高度的臉部特寫 `<out>_face.png`；`--debug-red` 把新頭塗紅） |
 
 ## 各工具
@@ -123,3 +124,11 @@
 - **和 Topuria 比**：一樣好的是畫風統一（頭身同一套手繪感、膚色接得上、脖子看不出接縫）、身體刺青是清楚的彩色圖形、三視圖對位準、眼睛清楚、認得出是誰（粉紅捲髮、山羊鬍、臉上小刺青）。比較差的是頭髮是一整團光滑的「蘑菇頭」，捲度只靠貼圖畫，輪廓不蓬；額頭瀏海下有幾塊淡橘色（沒有任何角度看得到、用周圍補的）；右臉頰「♥ love」刺青被拉成一道粉紅；後頸髮際有幾小塊膚色斑；臉因為閉合變得稍微圓胖。白色短褲在三階光下陰影偏藍，看起來有點半透明。
 - 可再試（要再呼叫 Gemini 就先問）：在最後的 `omalley_arcane3` 上重新呼叫一次 `gemini_paint.py`（這次為了省額度，沿用前一版網格畫的圖，形狀有些微差異）；頭髮輪廓要蓬可能要手動做幾個髮束。
 - **重畫頭（同日，使用者同意，Gemini 第 5 次）**：在最終網格 `omalley_arcane3` 上重新呼叫 `gemini_paint.py ... --tag _new`（沿用版的工作檔移到 `paint/omalley_arcane3/_reused/`）→ `om_body_new*.png`。`cmp_topuria_omalley_close.png` 現在三列：Topuria、沿用版、重畫版；全身並排改用重畫版。結果：頭髮邊緣、後頸的膚色斑都乾淨了，捲度畫得更有層次；**臉頰那道粉紅和額頭的淡橘斑還在**，可見是網格造成的（臉頰該處的形狀摺到、瀏海下的凹處沒有任何角度看得到），不是投影錯位。要修得從形狀下手（閉合後對臉頰與額頭再做一次局部平滑），不是再抽 Gemini。重畫版的眼睛是棕色、臉偏年輕一般，像本人的程度略低於沿用版。
+
+## O'Malley 頭型重做：臉被磨掉（2026-11-15）
+- 使用者：整顆頭、整張臉的形狀都不對（頭髮、顏色不是主因）。
+- 試過貼頭短髮：`gen_head.py --fighter omalley --name omalley_tight --look "<短捲髮、露耳、單一粉紅>"`（`--look` 會蓋掉照片的髮型）。形狀乾淨、比例對、不用 `solid_head`，但 Gemini 把臉改成方下巴的帥哥臉，**使用者說和本人沒關係**。輸入頭像會改臉，換髮型不能只靠提示詞。
+- **灰模比對**（`render_turntable.py --clay --head 1.0`，`clay_face_cmp.png`，上到下：真人照、原始、實心化、舊最終、短髮、真人照片版）：TRELLIS 原始網格（`omalley_gemini_real_fix`）是長窄臉、像本人；`solid_head` 在臉上留下小坑；`smooth_head` 的頭髮遮罩（`om_mask.png` 紅色）蓋滿臉頰、太陽穴、鬍子，重度平滑把眼睛、鼻子、顴骨磨掉，這才是「頭型不對」。`exaggerate_head --jaw 1.06` 再加寬下巴，O'Malley 是窄下巴，不要用。
+- 真人照片也能直接跑：`inputs/omalley_photo.png`（從 `_source/omalley_fullbody_ufc.png` 裁 (170,0,790,760)，有 alpha）→ 長窄臉、頭髮輪廓最像本人，但頭略斜、貼圖亂（反正會重畫）。使用者說第 1、5 列都不錯；選第 1 列（正面對稱，好投影）。
+- `keep_face.py processed.glb raw_fix.glb out.glb`：原始網格顏色不是粉紅的點（皮膚、鬍子、脖子）貼回原始表面，髮際線用鄰點平均過渡。**還沒好**：處理後的網格只有 29k 點（voxel 0.015），貼回去臉還是糊（`clay_keep_cmp.png` 第三列）；頭頂只有一半被判成頭髮（印出的分高度統計），外殼離原始髮管約 0.008，最近點常是頭皮或暗縫，取 12 個鄰點平均也沒用。
+- 下一步建議：(1) 分類改用幾何，例如原始網格每點往外的法線方向、離頭骨中心的距離，或把正面輸入圖投影上去看是不是粉紅；(2) `solid_head` 用更細的 voxel（0.006，`--close` 依比例加大）讓臉有足夠的點；(3) 或者不貼回，直接把原始網格的臉區域和處理後的頭髮外殼接在一起。臉型在灰模上和第 1 列一樣才上色。

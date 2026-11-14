@@ -20,6 +20,7 @@ ap.add_argument("--rot-x", type=float, default=0.0, help="extra X rotation (deg)
 ap.add_argument("--rot-z", type=float, default=0.0, help="extra Z rotation (deg) so the face looks at -Y")
 ap.add_argument("--head", type=float, default=0.45)
 ap.add_argument("--size", type=int, default=320)
+ap.add_argument("--clay", action="store_true", help="flat grey material: judge the shape without the texture")
 a = ap.parse_args(argv)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -39,6 +40,16 @@ obj.parent = None
 obj.rotation_mode = "XYZ"  # glTF imports use quaternions, which would ignore rotation_euler
 obj.rotation_euler = (math.radians(a.rot_x), 0, math.radians(a.rot_z))
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+if a.clay:
+    clay = bpy.data.materials.new("clay")
+    clay.diffuse_color = (0.6, 0.6, 0.6, 1)
+    clay.use_nodes = True
+    bsdf = clay.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.6, 0.6, 0.6, 1)
+    bsdf.inputs["Roughness"].default_value = 0.8
+    bsdf.inputs["Metallic"].default_value = 0.0
+    obj.data.materials.clear()
+    obj.data.materials.append(clay)
 
 pts = [obj.matrix_world @ v.co for v in obj.data.vertices]
 lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
