@@ -185,3 +185,10 @@
 - 坑：`head_height_now` 的 `max()` 不能寫在迴圈裡面（O(n²)，Blender 會卡死）；頭高要加上 `--lift`（下巴比頭頂多掉的量）才和接完的量測一致。
 - 驗證要用渲染出來的側面輪廓，不能只看量測表：同一張圖量輪廓寬（頭頂下 2／4／6／8／10／12 cm，換成 cm 用身高比例）：Volkanovski 修前 16.3／20.5／22.8／24.7／25.4／26.2，修後 13.9／17.8／19.9／21.2／22.0／22.8，Topuria 13.1／17.4／18.5／19.7／20.3／20.8。修後仍比 Topuria 大約 8%（修前 23%）。
 - 坑：`mock_fighter.py` 的輸出前綴一定要用絕對路徑；Blender 把相對路徑當成磁碟根目錄（`C:\_mockup\`），舊圖不會被覆蓋，會拿舊渲染當新的比。這一節第一版的「前後對照」就是這樣比到同一張舊圖。
+
+## Volkanovski 頭型重做：交給 Gemini（2026-11-16）
+- 縮放救不了。`attach_head` 修完的頭（輪廓寬只比 Topuria 大 8%）使用者看還是太大、「是頭型的問題」；試過逐層壓到 Topuria 的外形（輪廓只差 3%），肉眼一樣不對、臉還變形，已放棄、沒提交。
+- 原因在源頭：不同階段的原始網格，頭頂到脖子對齊後頭頂下 6 cm 的寬／前後（cm）：Topuria `arcane_half_ng` 15.7／20.3；Volkanovski Gemini 正面頭像生的 `volkanovski_gemini_real` 19.9／24.2（16 cm 嘴高度 25.7／29.2，Topuria 18.7／22.6）；真人照片生的 `volkanovski_photo2` 17.7／20.5（接近正常，但頭歪約 20 度，見前面「第三位」）。後面的磨平、封孔、上色都沒讓它變胖，是 `gen_head` 產的那張頭像生出來就胖（臉往前凸約 5 cm、後腦多約 2 cm）。
+- 量法：把網格頭頂到最窄脖子對齊成 24.4 cm 再量各層（腳本不在 repo，邏輯同 `attach_head.py` 找脖子）；驗收要看渲染出來的側面輪廓寬，不只看 `attach_head` 印的表。
+- 做過但沒成功：把 `inputs/volkanovski_gemini_real.png` 左右壓窄 18% 存成 `inputs/volkanovski_narrow.png`，想在本機重跑 TRELLIS；兩次都因記憶體失敗（Windows 虛擬記憶體 1455、CUDA OOM：顯示卡被別的程式先佔 1.5 GB）。要重跑先關瀏覽器等程式：`HF_HOME=D:/img2_3d/hf D:/img2_3d/venv/Scripts/python.exe pipeline/img2_3d/run_trellis2.py --src D:/img2_3d/src/TRELLIS.2 --inputs volkanovski_narrow`（約 4 分鐘），再量寬，通過再跑 `make_head.py`。
+- 使用者決定這顆頭交給 Gemini 處理（2026-11-16）；新頭接上後用 `attach_head.py` 的頭身比表加上渲染輪廓驗收，目標：頭頂下 6 cm 約 15.5 × 20 cm，嘴高度不超過約 19 × 23 cm。
