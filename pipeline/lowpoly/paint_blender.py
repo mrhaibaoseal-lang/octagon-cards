@@ -39,8 +39,11 @@ BODY_CELL = (404, 864)  # 5 cells -> 2020 x 864, about 21:9
 _hg = ob.vertex_groups.get("mixamorig:Head")
 if _hg is not None:
     IS_HEAD = [any(e.group == _hg.index and e.weight > 0.5 for e in v.groups) for v in mesh.vertices]
+    # painted from the head views: also the jaw and beard, which MPFB weights partly to the neck (framing keeps IS_HEAD)
+    PAINT_HEAD = [any(e.group == _hg.index and e.weight > 0.15 for e in v.groups) for v in mesh.vertices]
 else:
     IS_HEAD = [(ob.matrix_world @ v.co).z > a.head_z for v in mesh.vertices]
+    PAINT_HEAD = IS_HEAD
 HEAD_CELL = 512
 
 if a.mode == "atlas":
@@ -116,7 +119,7 @@ elif a.mode == "bake":
     scene.render.engine = "CYCLES"
     scene.cycles.samples = 1
     attr = mesh.color_attributes.new("headmask", "FLOAT_COLOR", "POINT")
-    for i, h in enumerate(IS_HEAD):
+    for i, h in enumerate(PAINT_HEAD):
         attr.data[i].color = (1.0, 1.0, 1.0, 1.0) if h else (0.0, 0.0, 0.0, 1.0)
     for name, src in (("pos", "Position"), ("nrm", "Normal"), ("part", "headmask")):
         img = bpy.data.images.new(name, a.tex, a.tex, float_buffer=True)

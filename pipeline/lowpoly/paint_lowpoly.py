@@ -93,7 +93,7 @@ def main():
     ap.add_argument("--out-tex", type=int, default=1024, help="final texture size")
     ap.add_argument("--power", type=float, default=3.0)
     ap.add_argument("--tag", default="")
-    ap.add_argument("--green-margin", type=int, default=3, help="skip painted pixels this close to the green screen")
+    ap.add_argument("--green-margin", type=int, default=1, help="skip painted pixels this close to the green screen")
     ap.add_argument("--clay", default="_lowpoly/mpfb/mpfb_feather_muscle_5000_guide.blend", help="painted in this pose (private/)")
     ap.add_argument("--meta", default="_lowpoly/mpfb/mpfb_feather_muscle_guide_meta.json", help="build_mpfb meta, or none")
     ap.add_argument("--pose", default="_lowpoly/mpfb/mpfb_feather_muscle_5000.blend", help="shown in this pose (private/), or none")
@@ -184,7 +184,8 @@ def main():
             x = np.clip(px.astype(int), 0, W - 1) + (k % cols) * W
             y = np.clip(py.astype(int), 0, H - 1) + (k // cols) * H
             col = pimg[y, x]
-            w = np.clip(nrm @ to_cam, 0, 1) ** a.power * (covered & inside & seen[:, k] & ~green[y, x] & part)
+            vpart = part if v["yaw"] is not None else np.ones_like(part)  # the top view also paints the crown of the head
+            w = np.clip(nrm @ to_cam, 0, 1) ** a.power * (covered & inside & seen[:, k] & ~green[y, x] & vpart)
             if g == "head" and v["yaw"] != 0:  # the profiles redraw the nose elsewhere; the nose takes the front view only
                 w[nose] = 0
             acc += col * w[:, None]
@@ -195,6 +196,13 @@ def main():
     col = (acc / np.maximum(wsum, 1e-6)[:, None]).reshape(T, T, 3) * known[..., None]
     cov = covered.reshape(T, T)
     print("painted share of covered texels", round(float(known[cov].mean()), 3))
+    if (WORK / "outside.npy").exists():
+        out_ = np.load(WORK / "outside.npy").reshape(T, T) & cov
+        print("painted share of the outside surface", round(float(known[out_].mean()), 3))
+        miss = out_ & ~known
+        zz = pos[:, 2].reshape(T, T)
+        print("unpainted outside by height (m):", {f"{lo:.1f}": round(float((miss & (zz >= lo) & (zz < lo + 0.3)).sum() / max(miss.sum(), 1)), 2)
+                                                 for lo in np.arange(0, 1.8, 0.3)})
     # unseen texels (between the legs, under the arms) take the colour around them
     cnt = known.astype(np.float32)
     for _ in range(T):
