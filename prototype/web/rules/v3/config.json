@@ -12,7 +12,7 @@
   },
   "parts": {
     "_doc": "頭／身體／腳各 max 點，不顯示。頭傷 headSoft 比例會慢慢回（回氣區每秒 headHealOut、交火區 headHealIn），其餘留到比賽結束。倒地：打中頭、招式 weight >= knockWeight 時機率 = knockK x (頭傷/max)^3 x 傷害/knockDmgRef，頭傷滿 max 必倒。身體傷每 1 點讓體力上限掉 bodyCeil；超過 bodyHeavy 後回氣 x bodyRegen。腳傷讓移動速度 x (1 - 腳傷/max x legSlow)。",
-    "max": 100, "headSoft": 0.6, "headHealOut": 3, "headHealIn": 1,
+    "max": 100, "dmgScale": 0.4, "headSoft": 0.6, "headHealOut": 3, "headHealIn": 1,
     "knockK": 0.35, "knockDmgRef": 10, "knockWeight": 2,
     "bodyCeil": 0.4, "bodyHeavy": 50, "bodyRegen": 0.7, "legSlow": 0.35,
     "wobbleHead": 60

@@ -62,6 +62,7 @@ export function inRange(st, f, id) {
 // damage goes to one body part (hidden). Head: part of it heals, part stays. Head hits by a heavy move can drop the target.
 function wound(st, t, m, dmg, knockCheck = false) {
   const p = st.cfg.parts, part = m.target;
+  dmg *= p.dmgScale; // damage points -> part points (tuning knob)
   t.parts[part] = Math.min(p.max, t.parts[part] + dmg);
   if (part === "head") {
     t.headPerm = Math.min(p.max, t.headPerm + dmg * (1 - p.headSoft));

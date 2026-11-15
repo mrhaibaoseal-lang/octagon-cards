@@ -16,7 +16,8 @@ test("jab in range hits, out of range misses", () => {
   let ev = run(st, 400, [{ atk: "jab" }]);
   assert.ok(ev.some((e) => e.type === "hit" && e.move === "jab"));
   assert.ok(Math.abs(ev.find((e) => e.type === "hit").dmg - cfg.moves.jab.dmg) < 1e-9);
-  assert.ok(st.f[1].parts.head > cfg.moves.jab.dmg - 1 && st.f[1].parts.head <= cfg.moves.jab.dmg);
+  const pts = cfg.moves.jab.dmg * cfg.parts.dmgScale;
+  assert.ok(st.f[1].parts.head > pts - 0.5 && st.f[1].parts.head <= pts);
   st = createFight(cfg, { kits }); at(st, 2.5);
   ev = run(st, 400, [{ atk: "jab" }]);
   assert.ok(ev.some((e) => e.type === "miss"));
@@ -121,7 +122,7 @@ test("stamina comes back faster outside the striking zone than inside", () => {
 });
 
 test("a full head means a knockdown; a fresh head rarely falls to one cross", () => {
-  let st = createFight(cfg, { kits }); at(st, 1.2); st.f[1].parts.head = 95;
+  let st = createFight(cfg, { kits }); at(st, 1.2); st.f[1].parts.head = cfg.parts.max - 0.5;
   run(st, 600, [{ atk: "cross" }]);
   assert.equal(st.phase, "over"); assert.equal(st.how, "KO"); assert.equal(st.winner, 0);
   let falls = 0;
@@ -134,7 +135,7 @@ test("40% of head damage stays, the rest heals outside the zone", () => {
   const hit = run(st, 600, [{ atk: "cross" }]).find((e) => e.type === "hit").dmg; assert.ok(hit > 0);
   st.f[0].x = -5; st.f[1].x = 5; // far apart
   run(st, 20000, [{}, {}]);
-  assert.ok(Math.abs(st.f[1].headPerm - hit * 0.4) < 1e-6);
+  assert.ok(Math.abs(st.f[1].headPerm - hit * cfg.parts.dmgScale * (1 - cfg.parts.headSoft)) < 1e-6);
   assert.ok(Math.abs(st.f[1].parts.head - st.f[1].headPerm) < 1e-6);
 });
 
