@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>V3 灰盒</title>
+<style>
+:root{--blue:#2f7bff;--red:#e8383d;--gold:#f2c14e;--ink:#eef1f6;--dim:#8b93a3;--plate:linear-gradient(#3a3f49,#1d2027)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;color:var(--ink);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+#stage{position:absolute;left:50%;top:50%;width:844px;height:390px;transform-origin:0 0;overflow:hidden;background:#05070a}
+#stage canvas{position:absolute;inset:0;width:844px!important;height:390px!important}
+.bar{position:absolute;top:10px;width:300px;height:42px;background:var(--plate);border:1px solid #555;border-radius:4px;box-shadow:0 3px 0 #000,inset 0 1px 0 #6a707c;padding:4px 8px}
+.bar.l{left:12px}.bar.r{right:12px;text-align:right}
+.bar .nm{font:800 13px/1 inherit;font-family:inherit;letter-spacing:.5px}
+.bar.l .nm{color:#9cc0ff}.bar.r .nm{color:#ffa3a6}
+.meter{height:8px;margin-top:4px;background:#0008;border-radius:2px;overflow:hidden;position:relative}
+.meter i{position:absolute;top:0;bottom:0;border-radius:2px;transition:width .15s}
+.bar.l .hp i{left:0;background:linear-gradient(90deg,#1e5fd8,#59a0ff)}
+.bar.r .hp i{right:0;background:linear-gradient(270deg,#c2232a,#ff6a6e)}
+.st{height:4px;margin-top:3px}.st i{background:#e6d36a}.bar.l .st i{left:0}.bar.r .st i{right:0}
+.st.tired i{background:#ff7a3c}
+.clock{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:92px;height:42px;background:var(--plate);border:1px solid #555;border-radius:4px;text-align:center;box-shadow:0 3px 0 #000}
+.clock b{display:block;font:800 18px/24px ui-monospace,monospace}.clock small{font-size:10px;color:var(--dim)}
+.kit{position:absolute;top:56px;right:12px;display:flex;gap:3px;align-items:center}
+.kit em{font-size:9px;color:var(--dim);font-style:normal;margin-right:3px}
+.kit span{min-width:30px;height:24px;padding:0 3px;border-radius:5px;background:#1a1d24;border:1px solid #3a3f49;display:grid;place-items:center;font:700 11px inherit;font-family:inherit;color:#555}
+.kit span.seen{background:#4a1518;border-color:var(--red);color:#ffd0d1;font-size:9px}
+.kit span.flash{animation:fl .6s}
+@keyframes fl{0%{transform:scale(1.5);background:var(--gold);color:#000}100%{transform:scale(1)}}
+.stickzone{position:absolute;left:0;bottom:0;width:300px;height:250px}
+.stick{position:absolute;left:34px;bottom:26px;width:112px;height:112px;border-radius:50%;background:radial-gradient(#ffffff10,#ffffff05);border:2px solid #ffffff25;pointer-events:none}
+.knob{position:absolute;left:30px;top:30px;width:52px;height:52px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#666,#222);border:2px solid #888;box-shadow:0 4px 0 #000}
+.dodge{position:absolute;left:162px;bottom:104px;width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#5fe0c0,#11795f);border:2px solid #9ff5df;box-shadow:0 4px 0 #04382b;display:grid;place-items:center;font:800 14px/1 inherit;font-family:inherit;color:#03241b;text-align:center}
+.btns{position:absolute;right:14px;bottom:10px;width:250px;height:170px}
+.k{position:absolute;width:62px;height:62px;border-radius:50%;display:grid;place-items:center;align-content:center;text-align:center;font:800 12px/1.1 inherit;font-family:inherit;border:2px solid #ffffff55;box-shadow:0 4px 0 #000;background:radial-gradient(circle at 35% 30%,#e9534f,#7d1210);overflow:hidden}
+.k small{display:block;font-size:9px;font-weight:600;opacity:.85}
+.k kbd{position:absolute;top:2px;right:10px;font:700 8px ui-monospace,monospace;opacity:.6}
+.k.off{filter:grayscale(.8) brightness(.5)}
+.k.far{filter:brightness(.62)}
+.k.down,.dodge.down{transform:translateY(3px);box-shadow:0 1px 0 #000}
+.k.guard{width:76px;height:76px;right:0;bottom:0;background:radial-gradient(circle at 35% 30%,#7aa7ff,#173d8e);font-size:14px}
+.k.s0{right:84px;bottom:2px}.k.s1{right:150px;bottom:32px}.k.s2{right:10px;bottom:86px}.k.s3{right:78px;bottom:80px}
+.k.kick{background:radial-gradient(circle at 35% 30%,#ff9a3c,#8a3b00)}
+.k .cd{position:absolute;inset:0;border-radius:50%;pointer-events:none}
+.pop{position:absolute;font:900 16px/1 inherit;font-family:inherit;pointer-events:none;text-shadow:0 2px 0 #000,0 0 6px #000;transform:translate(-50%,-50%);animation:up .8s forwards;white-space:nowrap}
+@keyframes up{to{transform:translate(-50%,-160%);opacity:0}}
+.banner{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);font:900 30px/1 inherit;font-family:inherit;letter-spacing:2px;text-shadow:0 3px 0 #000,0 0 14px #000;pointer-events:none;opacity:0;transition:opacity .25s}
+.banner.on{opacity:1}
+.ov{position:absolute;inset:0;background:#000c;display:none;place-items:center;z-index:30}
+.ov.on{display:grid}
+.panel{width:560px;background:var(--plate);border:1px solid #666;border-radius:8px;padding:14px 18px;box-shadow:0 6px 0 #000}
+.panel h2{font-size:18px;margin-bottom:6px}
+.panel p,.panel li{font-size:12px;line-height:1.6;color:#cfd5df}
+.panel ul{list-style:none;columns:2;margin:6px 0}
+.panel b{color:var(--gold)}
+.panel table{width:100%;font-size:12px;border-collapse:collapse;margin:6px 0}
+.panel td{padding:2px 4px;border-bottom:1px solid #ffffff14}
+.panel td:last-child{text-align:right;color:var(--gold)}
+.go{margin-top:10px;display:inline-block;padding:8px 22px;border-radius:6px;background:linear-gradient(#ffd56a,#c48a12);color:#211;font-weight:800;font-size:14px;box-shadow:0 4px 0 #6a4700;cursor:pointer;border:0;font-family:inherit}
+.go:active{transform:translateY(3px);box-shadow:0 1px 0 #6a4700}
+.hint{position:absolute;left:50%;bottom:4px;transform:translateX(-50%);font-size:9px;color:#ffffff55;pointer-events:none;white-space:nowrap}
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+</head>
+<body>
+<div id="stage">
+  <div class="bar l"><div class="nm">藍角 · 你</div><div class="meter hp"><i id="hp0"></i></div><div class="meter st" id="stb0"><i id="st0"></i></div></div>
+  <div class="clock"><b id="clock">1:30</b><small id="rnd">第 1 回合</small></div>
+  <div class="bar r"><div class="nm" id="oppName">紅角 · 對手</div><div class="meter hp"><i id="hp1"></i></div><div class="meter st" id="stb1"><i id="st1"></i></div></div>
+  <div class="kit" id="kit"></div>
+  <div class="stickzone" id="stickzone"><div class="stick" id="stick"><div class="knob" id="knob"></div></div></div>
+  <div class="dodge" id="dodge">閃<br><small style="font-size:8px">Shift</small></div>
+  <div class="btns" id="btns"></div>
+  <div class="banner" id="banner"></div>
+  <div class="hint">鍵盤：WASD／方向鍵移動 · J K L I 出招 · 空白鍵按住防禦 · Shift 閃躲</div>
+  <div class="ov on" id="ov"><div class="panel" id="panel"></div></div>
+</div>
+<script type="module" src="v3/view.js"></script>
+</body>
+</html>

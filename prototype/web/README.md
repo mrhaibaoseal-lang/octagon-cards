@@ -35,6 +35,10 @@ uv run --no-project --with pillow --with numpy python -I pipeline/sprite_sheet.p
 
 > 上面講的是最早的 `index.html` 玩法（`engine.js`、`game.js`），已停止更新；留在原地是因為 `stage.js` 掛在它上面。
 
+## V3 即時灰盒
+- `v3.html`：即時站立對打灰盒。鍵盤 WASD 移動、J K L I 出招、空白鍵防禦、Shift 閃；手機用左下搖桿。網址可加 `?ai=pressure|counter|kicker`、`?seed=數字`。
+- 檔案：`v3/engine.js`（純邏輯）、`v3/ai.js`、`v3/view.js`（three.js，從 unpkg 載入，要連網）、`rules/v3/config.json`。測試 `node --test prototype/web/v3/test.js`。
+
 ## 戰場式玩法（目前在驗證的方向）
 - 開 `http://localhost:5173/bg.html`（`.claude/launch.json` 的 `prototype`）。地面可切：預設 21 點、`?ground=ea`、`?ground=poker`、`?ground=rps`；`?debug=1` 可在主控台用 `__bg` 改牌。規則在 `docs/GAME_DESIGN.md` 最上面一節。
 - 檔案：`bg/engine.js`（規則）、`bg/ai.js`、`bg/ui.js`、`bg/bg.css`、`rules/bg/{config,skills,fighters}.json`。
