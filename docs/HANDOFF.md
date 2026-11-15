@@ -7,7 +7,9 @@
 - 做了：`gemini_paint.py` 沒有 `--shape-ok` 就不呼叫 Gemini，只出灰模 `clay_<mesh>.png`；`smooth_head.py` 臉中段不磨，頭髮遮罩蓋到臉中段超過 10% 就停（`--force` 可強制）；`exaggerate_head.py --jaw` 預設改 1.0。
 - 驗證：Topuria 遮罩 1.5%、照常輸出（遮罩只差 7 點）；O'Malley 實心頭 19% 被擋下、沒存檔；`gemini_paint` 不加 `--shape-ok` 停在灰模，`painted.png` 沒動、沒用額度。只有兩位選手的數字。
 - 還沒做：頭髮改成獨立髮型零件（等下一位難髮型選手再試）、身體共用體型範本。
-- 下一步：使用者選一位短髮或光頭選手，照流程不改程式跑一次並計時（Gemini 剩 1 次，用前先問）。
+- 第三位：使用者選 Volkanovski。沒有 `_ufc.png` 也不在 `paint_skin.FIGHTERS`，只有全身照；裁頭（`inputs/volkanovski_photo.png`，(440,0,1120,455)，避開肩上的腰帶）直接跑 TRELLIS（免費，270 秒，要設 `HF_HOME=D:/img2_3d/hf`）→ 灰模 `_img2_3d/clay_volkanovski_photo_fix.png`：光頭、鬍子、鼻子、耳朵像本人。
+- 卡住：照片的頭轉了約 20 度、幾乎沒脖子，`smooth_head` 假設臉朝正前方，找不到鼻子與眼睛而當掉（NaN）。照片路線要先轉正才能接後面。
+- 下一步：等使用者決定——加「自動轉正」讓照片路線能用（省一次 Gemini），或把最後 1 次 Gemini 用在正面頭像走原流程（上色要等額度）。
 
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 臉貼回原始網格）
 - 做了：`keep_face.py` 重寫分類（輸入圖投影、色相判斷紅粉藍頭髮、從鼻尖長出臉、刺青小島算臉、破洞補平）；`solid_head.py` 加 `--no-uv`。
