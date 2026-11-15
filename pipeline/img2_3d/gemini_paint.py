@@ -89,7 +89,8 @@ def main():
     ap.add_argument("--model", default="gemini-3-pro-image")
     ap.add_argument("--style", choices=["real", "painted"], default="real", help="painted = hand-painted animation look")
     ap.add_argument("--reuse", action="store_true", help="reuse painted.png (no new Gemini call)")
-    ap.add_argument("--power", type=float, default=4.0, help="facing weight exponent")
+    ap.add_argument("--shape-ok", action="store_true", help="the user approved this mesh's clay turntable; without it no Gemini call is made")
+    ap.add_argument("--power",type=float, default=4.0, help="facing weight exponent")
     ap.add_argument("--painted", default="painted.png", help="painted grid to project (in the work folder)")
     ap.add_argument("--tag", default="", help="suffix for the output glb: <mesh>_paint<tag>.glb")
     ap.add_argument("--thr", type=float, default=0.15, help="total facing weight at which the new paint fully replaces the old texture")
@@ -111,6 +112,15 @@ def main():
     grid.save(work / "grid.png")
     painted = work / args.painted
     if not (args.reuse and painted.exists()):
+        if not args.shape_ok:
+            # O'Malley: 7 calls, several of them painted onto a head whose face was wrong. Shape is judged in clay first.
+            clay = (OUT / f"clay_{args.mesh}.png").resolve()
+            r = subprocess.run([BLENDER, "-b", "-P", str(HERE / "render_turntable.py"), "--", str(glb.resolve()), str(clay),
+                                "--clay", "--head", "1.0"], capture_output=True, text=True)
+            if r.returncode or not clay.exists():
+                sys.exit(r.stdout[-2000:] + r.stderr[-2000:])
+            sys.exit(f"No Gemini call made. Show the clay turntable {clay} to the user next to the fighter's photo; "
+                     "once they say the head and face shape are right, run again with --shape-ok.")
         prompt = (PROMPT_PAINTED if args.style == "painted" else PROMPT).format(
             name=ps.FIGHTERS[args.fighter][0], hair=args.hair or HAIR.get(args.fighter, "hair, hairline and facial hair"))
         gemini(grid, ps.PRIVATE / f"_source/{args.fighter}_ufc.png", args.model, prompt).resize((2 * S, 2 * S), Image.LANCZOS).save(painted)

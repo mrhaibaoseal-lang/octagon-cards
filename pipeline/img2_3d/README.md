@@ -111,8 +111,8 @@
   2. `run_trellis2.py --src D:/img2_3d/src/TRELLIS.2 --inputs omalley_gemini_real`（約 6 分鐘，顯存峰值 7.7GB）
   3. `fix_texture.py omalley_gemini_real`
   4. 捲髮／蓬鬆頭髮才要：`blender -b -P solid_head.py -- <P>/trellis2/omalley_gemini_real_fix.glb <P>/trellis2/omalley_solid.glb --voxel 0.015`
-  5. `smooth_head.py <solid 或 fix>.glb omalley_smooth.glb` → `exaggerate_head.py ... omalley_arcane3.glb --brow 0.007 --jaw 1.06 --chin 0.005`
-  6. `gemini_paint.py --mesh omalley_arcane3 --fighter omalley --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar` → `degreen.py`
+  5. `smooth_head.py <solid 或 fix>.glb omalley_smooth.glb` → `exaggerate_head.py ... omalley_arcane3.glb --brow 0.007 --chin 0.005`（`--jaw` 預設 1.0；Topuria 用 1.06，窄下巴的人不要加）
+  6. `gemini_paint.py --mesh omalley_arcane3 --fighter omalley --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar` → `degreen.py`。第一次跑不加 `--shape-ok`，只會出灰模 `clay_<mesh>.png`；使用者看過說像了才加 `--shape-ok` 上色
   7. `paint_body.py omalley` → `bake_skin.py --dir <private>/_model3d/omalley_painted` → 看 `align_check.png`（紅線要貼著人）→ `match_body_skin.py` → `attach_head.py`（參數同 Topuria，加 `--toon`）
 - **只對 Topuria 有效、已改成通用的地方**：
   - `common.py` 輸入表只有 Topuria：現在 `inputs/<名字>.png` 都能用。`gemini_paint.py` 的選手名、髮型、照片寫死 Topuria：加 `--fighter`（名字取 `paint_skin.FIGHTERS`、照片 `_source/<fighter>_ufc.png`）與 `--hair`（頭部外觀，預設查 `HAIR` 表）。
@@ -141,3 +141,10 @@
 - 下一步：使用者選頭髮（第 3 或 4 列）→ 減面到約 6 萬面＋xatlas UV → `gemini_paint.py` 上色（要再呼叫 Gemini 先問，剩 1 次）。第 3、4 列臉上看得到原始網格的平面三角形，上色後應該不明顯；不要用 `exaggerate_head --jaw`。
 - **使用者選第 3 列（捲髮塊）**。減面＋UV＋烘底色：`solid_head.py <P>/trellis2/omalley_gemini_real_fix.glb <P>/trellis2/omalley_keep06_uv.glb --shape <P>/trellis2/omalley_keep06.glb --faces 60000`（約 1 分鐘，UV 用到 58%）→ `om_keep06_uv_turn.png`、`clay_omalley_keep06_uv.png`：臉型不變，平滑著色後三角形看不出來，頭頂幾點黑斑。下一步：`gemini_paint.py --mesh omalley_keep06_uv --fighter omalley --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar` → `degreen.py` → `attach_head.py`（Gemini 剩 1 次，先問）。
 - **上色（同日，使用者同意，Gemini 第 7 次）**：`uv run --no-project --with google-genai --with google-auth --with pillow --with numpy --with trimesh python -I pipeline/img2_3d/gemini_paint.py --mesh omalley_keep06_uv ...`（TRELLIS venv 沒有 google-genai，直接用 venv 跑會在呼叫前失敗）→ `degreen.py`（171 點）→ `attach_head.py`（`omalley_painted/skinned.blend`，參數同 Topuria 加 `--toon`）→ `om_body_keep.png`、`om_body_keep_close.png`；新舊對照 `om_keep_vs_old_close.png`（上舊、下新）。結果：臉變回長窄臉，捲髮塊有蓬度，舊版臉頰那道粉紅消失。還有：後頸髮際下一塊偏白、右側瀏海下幾小塊膚色縫、脖子刺青和身體交界照舊。
+
+## 量產前的兩個預設：先看灰模、臉不磨（2026-11-15）
+- 原因：O'Malley 用了 7 次 Gemini，好幾次畫在臉型不對的頭上；臉是被 `smooth_head` 的頭髮遮罩磨掉的。Topuria（短髮）整條流程沒這個問題。
+- `gemini_paint.py`：要呼叫 Gemini 時沒有 `--shape-ok` 就停，先用 `render_turntable.py --clay --head 1.0` 出 `_img2_3d/clay_<mesh>.png`。把灰模和選手照片一起給使用者看，他說頭型、臉型對了才加 `--shape-ok`。`--reuse` 不受影響。
+- `smooth_head.py`：臉中段（眼睛下緣到鼻尖、左右各 0.2 頭高、正面）權重歸零，永遠不磨；頭髮遮罩蓋到這一區超過 `--face-max 0.1` 就印 ERROR、不存檔、結束碼 1。實測 Topuria 1.5%（遮罩 66664 → 66657 點，輸出幾乎不變）、O'Malley 實心頭 19%、原始網格 22%。被擋下就走捲髮流程（`solid_head --no-uv` → `keep_face --image` → `solid_head --shape --faces 60000`）；`--force` 照舊輸出。門檻只有兩位選手的數字，第三位之後再看要不要調。
+- `exaggerate_head.py`：`--jaw` 預設 1.12 → 1.0（加寬下巴是個人臉型，不是畫風）；`--brow`、`--chin` 沒動。
+- 還沒做的想法：頭髮不從照片重建，改成一小組髮型塊套到頭上（等下一位難髮型的選手再試）；身體改成 3～4 種體型範本共用。

@@ -1,7 +1,7 @@
 """Push a head's shapes towards a stylised animated-film look: heavier brow ridge, wider and squarer jaw, stronger chin.
 Smooth falloffs, eyes untouched.
 
-  blender -b -P pipeline/img2_3d/exaggerate_head.py -- in.glb out.glb [--brow 0.014] [--jaw 1.12] [--chin 0.01]
+  blender -b -P pipeline/img2_3d/exaggerate_head.py -- in.glb out.glb [--brow 0.014] [--jaw 1.0] [--chin 0.01]
 (amounts are fractions of the mesh height; --jaw is a sideways scale)
 """
 import argparse
@@ -15,7 +15,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("mesh")
 ap.add_argument("out")
 ap.add_argument("--brow", type=float, default=0.014)
-ap.add_argument("--jaw", type=float, default=1.12)
+ap.add_argument("--jaw", type=float, default=1.0, help="off by default: widening is per fighter (Topuria 1.06; O'Malley has a narrow jaw)")
 ap.add_argument("--chin", type=float, default=0.01)
 a = ap.parse_args(argv)
 

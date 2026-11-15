@@ -26,7 +26,9 @@ ap.add_argument("--beard", type=float, default=0.55, help="stubble = neighbourho
 ap.add_argument("--hue", type=float, default=1.2, help="hair = neighbourhood chromaticity this far from the cheek skin (x10); catches dyed hair, 0 = off")
 ap.add_argument("--eye-r", type=float, default=0.03, help="eyeball protection radius, as a fraction of head height")
 ap.add_argument("--brow-up", type=float, default=0.09, help="brow band reaches this far above the eye (x head height)")
-ap.add_argument("--debug-lum", choices=["raw", "blur"], default=None, help="with --debug: show luminance instead")
+ap.add_argument("--face-max", type=float, default=0.1, help="stop when the hair mask covers more than this share of the bare mid-face")
+ap.add_argument("--force", action="store_true", help="export even when the mask covers the face")
+ap.add_argument("--debug-lum",choices=["raw", "blur"], default=None, help="with --debug: show luminance instead")
 ap.add_argument("--debug", default=None, help="render a front + 3/4 picture of the masks here")
 a = ap.parse_args(argv)
 
@@ -147,6 +149,16 @@ print("face verts flagged: dark", int((ck & (lum < a.dark * skin)).sum()), "stub
       "hue", int((ck & (cd_b > a.hue)).sum()), "of", int(ck.sum()))
 hair = blur(((lum < a.dark * skin) | (lum_b < a.beard * skin) | ((cd_b > a.hue) & (a.hue > 0))).astype(float), ring(8))
 hair = np.clip(hair * 2.5, 0, 1) * keep_eye
+# The bare middle of the face (under the eyes down to the nose tip, cheek to cheek) is never hair on anyone. A mask
+# that reaches it means the hair test failed (O'Malley: dyed curls -> mask over the whole face; eyes, nose and
+# cheekbones were smoothed away and it took three rounds to get the face back). Stop instead of exporting, and never
+# smooth this zone whatever the mask says.
+# Measured 2026-11-15 with this zone: Topuria 1.5%, O'Malley 19% (solid shell) and 22% (raw mesh).
+mid = ((np.abs(P[:, 0] - ec[0]) < 0.2 * Hh) & (P[:, 2] < ec[2] - 0.02 * Hh) & (P[:, 2] > nose[2])
+       & (P[:, 1] < ec[1] + 0.12 * Hh) & (d_eye > 0.03 * Hh))
+face_hit = float((hair[mid] > 0.5).mean()) if mid.any() else 0.0
+print("mid-face verts", int(mid.sum()), "masked as hair:", round(face_hit, 3), "(limit", a.face_max, ")")
+hair *= 1 - np.clip(blur(mid.astype(float), ring(3)) * 2, 0, 1)
 
 # Brow band: above each eye up to --brow-up, a little wider than the eye socket, front-facing.
 ez = eyes[:, 2].mean()
@@ -207,6 +219,11 @@ if a.debug:
         shots.append(f)
     print("debug", shots)
 
+if face_hit > a.face_max and not a.force:
+    print(f"ERROR: the hair mask covers {face_hit:.0%} of the middle of the face; nothing saved. Look at the mask "
+          "(--debug mask.png, red = hair). Curly or dyed hair: use the solid_head -> keep_face route (README); "
+          "--force exports anyway.")
+    sys.exit(1)
 for att in list(me.color_attributes):
     me.color_attributes.remove(att)
 bpy.ops.export_scene.gltf(filepath=a.out, export_format="GLB")
