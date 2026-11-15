@@ -34,6 +34,7 @@ ap.add_argument("--close", action="store_true", help="also render <out>_close.pn
 ap.add_argument("--face", action="store_true", help="also render <out>_face.png: eyes-height close-up from front, 3/4, side")
 ap.add_argument("--ink", type=float, default=0.0, help="with --toon: body outline width (m), 0 = none (default: an outline draws a line where the shoulder overlaps the trapezius)")
 ap.add_argument("--toon", action="store_true", help="3-tone toon light, cool shadows, rim light and ink outline on everything")
+ap.add_argument("--poster", action="store_true", help="2-tone flat light (one cool shadow, one warm light), no rim light (implies --toon); snapping the texture to few colours was tried and looked blotchy")
 ap.add_argument("--match-skin", action="store_true", help="scale the head's vertex colours to the body's neck skin")
 a = ap.parse_args(argv)
 
@@ -374,6 +375,8 @@ sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
 sun.data.energy = 3.5
 sun.rotation_euler = (math.radians(50), 0, math.radians(-30))
 scene.collection.objects.link(sun)
+if a.poster:
+    a.toon = True
 if a.toon:
     # Same look as style_head.py --style painted: whatever feeds Base Color x a 3-step light ramp, as emission.
     for ob in [o for o in scene.objects if o.type == "MESH" and o.visible_get()]:
@@ -395,6 +398,10 @@ if a.toon:
             cr.elements[0].position, cr.elements[0].color = 0.0, (0.32, 0.30, 0.42, 1)
             cr.elements[1].position, cr.elements[1].color = 0.22, (0.72, 0.68, 0.70, 1)
             cr.elements.new(0.55).color = (1.0, 0.97, 0.92, 1)
+            if a.poster:  # two tones: one cool shadow, one warm light
+                cr.elements.remove(cr.elements[2])
+                cr.elements[0].color = (0.40, 0.38, 0.52, 1)
+                cr.elements[1].position, cr.elements[1].color = 0.30, (1.0, 0.97, 0.92, 1)
             mul = nt.nodes.new("ShaderNodeMix")
             mul.data_type, mul.blend_type = "RGBA", "MULTIPLY"
             mul.inputs["Factor"].default_value = 1.0
@@ -422,11 +429,14 @@ if a.toon:
         so = ob.modifiers.new("ink", "SOLIDIFY")
         so.thickness, so.use_flip_normals, so.material_offset, so.offset = a.ink, True, k, 1
         so.use_rim = False  # the body is cut open at the neck: a rim there draws an ink ring round the neck
-    rim = bpy.data.objects.new("rim", bpy.data.lights.new("rim", "SUN"))
-    rim.data.energy, rim.data.color = 2.0, (0.6, 0.75, 1.0)
-    rim.rotation_euler = (math.radians(70), 0, math.radians(150))
-    scene.collection.objects.link(rim)
-    scene.world.color = (0.16, 0.17, 0.2)
+    if a.poster:
+        scene.world.color = (0.86, 0.84, 0.78)
+    else:
+        rim = bpy.data.objects.new("rim", bpy.data.lights.new("rim", "SUN"))
+        rim.data.energy, rim.data.color = 2.0, (0.6, 0.75, 1.0)
+        rim.rotation_euler = (math.radians(70), 0, math.radians(150))
+        scene.collection.objects.link(rim)
+        scene.world.color = (0.16, 0.17, 0.2)
 cam = bpy.data.objects.new("expcam", bpy.data.cameras.new("expcam"))
 cam.data.type = "ORTHO"
 cam.data.ortho_scale = body_top * 1.08
