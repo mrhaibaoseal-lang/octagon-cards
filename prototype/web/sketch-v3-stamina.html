@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>V3 體力草圖</title>
+<style>
+:root{--bg:#07090d;--blue:#2f7bff;--red:#e8383d;--gold:#f2c14e;--sta:#e6d36a;--ok:#4fd39a;--ink:#eef1f6;--dim:#8b93a3;--plate:linear-gradient(#3a3f49,#1d2027)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;color:var(--ink);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;overflow:hidden}
+#stage{position:relative;width:844px;height:390px;max-width:100vw;max-height:100vh;margin:auto;overflow:hidden;background:radial-gradient(ellipse at 50% 30%,#1b2230,#05070a 70%)}
+.tabs{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:20}
+.tabs button{font:600 11px inherit;font-family:inherit;padding:3px 10px;border-radius:10px;border:1px solid #444;background:#111a;color:var(--dim);cursor:pointer}
+.tabs button.on{background:var(--gold);color:#111;border-color:var(--gold)}
+.view{position:absolute;inset:0;display:none}.view.on{display:block}
+.note{position:absolute;font-size:10.5px;line-height:1.45;color:#cfd5df;background:#000a;border:1px dashed #f2c14e88;border-radius:6px;padding:5px 8px}
+.note b{color:var(--gold)}
+/* fight HUD */
+.bar{position:absolute;top:18px;width:290px;height:34px;background:var(--plate);border:1px solid #555;border-radius:4px;box-shadow:0 3px 0 #000;padding:4px 8px}
+.bar.l{left:12px}.bar.r{right:12px;text-align:right}
+.bar .nm{font:800 12px/1 inherit;font-family:inherit}
+.bar.l .nm{color:#9cc0ff}.bar.r .nm{color:#ffa3a6}
+.sbar{position:relative;height:9px;margin-top:5px;background:#0009;border-radius:2px;overflow:hidden}
+.sbar .cur{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,#b9a43a,var(--sta))}
+.sbar .gone{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#5a1b1d 0 4px,#2a0d0e 4px 8px)}
+.bar.r .sbar{transform:scaleX(-1)}
+.regen{position:absolute;top:3px;font:800 10px/1 inherit;font-family:inherit}
+.bar.l .regen{right:8px}.bar.r .regen{left:8px}
+.clock{position:absolute;top:18px;left:50%;transform:translateX(-50%);width:84px;height:34px;background:var(--plate);border:1px solid #555;border-radius:4px;text-align:center}
+.clock b{display:block;font:800 16px/20px ui-monospace,monospace}.clock small{font-size:9px;color:var(--dim)}
+svg.arena{position:absolute;inset:0;width:100%;height:100%}
+/* chart */
+#chart{position:absolute;left:12px;top:44px;width:600px;height:300px}
+.side{position:absolute;right:12px;top:44px;width:212px}
+.pick{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.pick button{font:700 12px inherit;font-family:inherit;text-align:left;padding:6px 8px;border-radius:6px;border:1px solid #444;background:#151922;color:var(--ink);cursor:pointer}
+.pick button.on{border-color:var(--gold);background:#2a2412}
+.stat{font-size:11px;line-height:1.7;color:#cfd5df;background:#0b0e14;border:1px solid #2a2f3a;border-radius:6px;padding:6px 8px}
+.stat b{color:var(--ink);font-family:ui-monospace,monospace}
+h2{position:absolute;left:12px;top:12px;font-size:14px;font-weight:800}
+h2 small{font-weight:500;color:var(--dim);font-size:10.5px;margin-left:8px}
+/* corner */
+.corner{position:absolute;left:50%;top:40px;transform:translateX(-50%);width:560px;height:300px;background:var(--plate);border:1px solid #555;border-radius:8px;box-shadow:0 4px 0 #000;display:flex;gap:14px;padding:14px}
+.corner .col{flex:1}
+.corner h3{font-size:12px;color:var(--gold);margin-bottom:6px}
+.lim{display:flex;align-items:center;gap:6px;font-size:11px;margin:5px 0}
+.lim .sbar{flex:1;height:10px;margin:0}
+.tip{font-size:10.5px;color:#cfd5df;line-height:1.5;margin-top:8px}
+/* table */
+table{border-collapse:collapse;font-size:10.5px;line-height:1.35}
+td,th{border-bottom:1px solid #2a2f3a;padding:3px 6px;text-align:left;vertical-align:top}
+th{color:var(--gold);font-weight:700;white-space:nowrap}
+td:nth-child(2){font-family:ui-monospace,monospace;color:#fff;white-space:nowrap}
+.tbl{position:absolute;left:12px;right:12px;top:36px;bottom:30px;overflow:auto}
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- ========== 1 打鬥畫面 ========== -->
+<div class="view on" id="v-fight">
+  <svg class="arena" viewBox="0 0 844 390">
+    <defs><radialGradient id="mat" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#d8d1bd"/><stop offset="1" stop-color="#8f8876"/></radialGradient></defs>
+    <ellipse cx="422" cy="300" rx="390" ry="80" fill="url(#mat)"/>
+    <ellipse cx="422" cy="300" rx="390" ry="80" fill="none" stroke="#222" stroke-width="6"/>
+    <!-- 對手的打擊範圍：地上淡淡的一圈 -->
+    <ellipse cx="520" cy="300" rx="150" ry="34" fill="#e8383d22" stroke="#e8383d66" stroke-dasharray="6 5"/>
+    <text x="470" y="352" fill="#7a1d20" font-size="11" font-weight="700">交火區（他打得到你）</text>
+    <text x="150" y="352" fill="#1d5a3f" font-size="11" font-weight="700">回氣區</text>
+    <!-- 選手：你退到圈外 -->
+    <g><ellipse cx="300" cy="300" rx="24" ry="7" fill="#0005"/><rect x="284" y="200" width="32" height="96" rx="16" fill="#2f7bff"/><circle cx="300" cy="186" r="15" fill="#2f7bff"/></g>
+    <g><ellipse cx="520" cy="300" rx="24" ry="7" fill="#0005"/><rect x="504" y="200" width="32" height="96" rx="16" fill="#e8383d"/><circle cx="520" cy="186" r="15" fill="#e8383d"/>
+      <!-- 頭傷重：搖晃的示意 -->
+      <path d="M496 172 q-8 14 0 28 M544 172 q8 14 0 28" stroke="#ffd36a" stroke-width="2" fill="none" opacity=".8"/></g>
+    <path d="M330 160 l-26 0" stroke="#4fd39a" stroke-width="3" marker-end="url(#ar)"/>
+    <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="#4fd39a"/></marker></defs>
+  </svg>
+  <div class="bar l"><div class="nm">藍角 · 你</div><span class="regen" style="color:var(--ok)">回氣 ▲▲▲</span>
+    <div class="sbar"><i class="cur" style="left:0;width:48%"></i><i class="gone" style="left:86%;right:0"></i></div></div>
+  <div class="clock"><b>2:41</b><small>第 2 回合</small></div>
+  <div class="bar r"><div class="nm">紅角 · 對手</div><span class="regen" style="color:#c88">交火 ▲</span>
+    <div class="sbar"><i class="cur" style="left:0;width:62%"></i><i class="gone" style="left:78%;right:0"></i></div></div>
+  <div class="note" style="left:12px;top:62px;width:270px">
+    <b>沒有血條了。</b>上面只剩體力：黃色＝現在的體力，<b>紅斜線＝這場永遠回不來的</b>（出拳、揮空、被打身體都會讓它變長）。</div>
+  <div class="note" style="right:12px;top:62px;width:250px">
+    受傷看選手動作：頭傷重會搖晃（右邊紅角），身體傷重會護肚子，腳傷重會跛。傷到多少不顯示數字。</div>
+  <div class="note" style="left:330px;top:110px;width:190px">
+    你退到他打不到的地方 → <b>體力回得快</b>（▲▲▲）；站在交火區只回一點點（▲）。</div>
+</div>
+
+<!-- ========== 2 三種打法 ========== -->
+<div class="view" id="v-chart">
+  <h2>三回合的體力：同樣是打 3 回合<small>粗估模型，不是引擎；實線＝現在體力，虛線＝體力上限</small></h2>
+  <canvas id="chart" width="1200" height="600"></canvas>
+  <div class="side">
+    <div class="pick" id="pick">
+      <button data-p="spam" class="on">一直打（現在灰盒的打法）</button>
+      <button data-p="burst">打一波就退</button>
+      <button data-p="feel">第一回合試探，後面再打</button>
+    </div>
+    <div class="stat" id="stat"></div>
+  </div>
+</div>
+
+<!-- ========== 3 回合休息 ========== -->
+<div class="view" id="v-corner">
+  <div class="corner">
+    <div class="col">
+      <h3>你的傷（休息時才看得到）</h3>
+      <svg viewBox="0 0 120 170" width="120" height="170" style="display:block;margin:0 auto">
+        <circle cx="60" cy="22" r="16" fill="#e8a33d"/>
+        <rect x="38" y="42" width="44" height="58" rx="10" fill="#7bbf5a"/>
+        <rect x="16" y="44" width="16" height="50" rx="8" fill="#555"/><rect x="88" y="44" width="16" height="50" rx="8" fill="#555"/>
+        <rect x="40" y="104" width="17" height="60" rx="8" fill="#e8383d"/><rect x="63" y="104" width="17" height="60" rx="8" fill="#e8383d"/>
+      </svg>
+      <div class="tip">頭：中（黃）· 身體：輕（綠）· 腳：重（紅，被低踢踢很多）。顏色分 4 階，不給數字。</div>
+    </div>
+    <div class="col">
+      <h3>體力</h3>
+      <div class="lim">你<div class="sbar"><i class="cur" style="left:0;width:80%"></i><i class="gone" style="left:80%;right:0"></i></div></div>
+      <div class="lim">他<div class="sbar"><i class="cur" style="left:0;width:68%"></i><i class="gone" style="left:68%;right:0"></i></div></div>
+      <div class="tip">休息時現在體力回到上限，上限再回 8。<br>第一回合亂打掉的上限，第三回合就拿不回來。</div>
+      <h3 style="margin-top:12px">他的傷</h3>
+      <div class="tip">只看得到你打中最多的一個部位：「他的腳開始拖了」。<br>（和現在灰盒「對手招式用過才翻開」同一個想法：給線索，不給數字）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 4 數值 ========== -->
+<div class="view" id="v-num">
+  <h2>草案數值<small>放 rules/v3/config.json，全部可調</small></h2>
+  <div class="tbl"><table>
+    <tr><th>項目</th><th>數值</th><th>意思</th></tr>
+    <tr><th>A 體力上限</th><td>100 起</td><td>每出一拳上限 −（體力花費 × 0.03）；揮空 ×2；被打身體每 1 點傷 −0.4。休息時上限 +8、現在體力回到上限。</td></tr>
+    <tr><th>B 交火區</th><td>他最長招 +0.2 m</td><td>在這個距離內體力每秒回 4；外面每秒回 18（現在不分區，一律 14）。舉手防守每秒回 4。</td></tr>
+    <tr><th>沒力</th><td>&lt; 上限 25%</td><td>出拳傷害 ×0.75、前搖 +20%，被打 ×1.15（現在只有傷害打折）。</td></tr>
+    <tr><th>頭</th><td>100</td><td>被打中累積頭傷，60% 會慢慢回（回氣區每秒 3、交火區 1）、40% 留到比賽結束。重 2 以上的招打中頭時判定倒地：機率 ≈ 0.35 ×（頭傷 / 100）³ × 傷害 / 10，反擊照乘 1.4；頭傷滿 100 必倒。</td></tr>
+    <tr><th>身體</th><td>100</td><td>每 1 點傷讓上限 −0.4；超過 50 後體力恢復 ×0.7。<b>現在的招沒有打身體的</b>，這格先留著，要加招（例如身體刺拳）寫進「之後再說」。</td></tr>
+    <tr><th>腳</th><td>100</td><td>移動速度 ×（1 − 腳傷 / 100 × 0.35）；低踢原本的短暫減速保留。</td></tr>
+    <tr><th>招式打哪</th><td>—</td><td>刺拳、直拳、勾拳、超人拳、高踢 → 頭；低踢 → 腳。每招多一個欄位 <code>target</code>，引擎不比對招名。</td></tr>
+    <tr><th>取代</th><td>hp 150</td><td>拿掉單一血量與 healBetween；KO 改成倒地判定。三回合打完沒倒 → 比造成的總傷害（之後再談評分）。</td></tr>
+    <tr><th>D AI 試探</th><td>第 1 回合前 25 秒</td><td>出手意願 ×0.4、只用刺拳和低踢、站在交火區邊緣量距離。</td></tr>
+    <tr><th>D AI 打一波</th><td>2～3 招</td><td>打完一波（或吃到反擊）就退到回氣區 1.5～3 秒，體力回到上限 60% 才再進來。三種打法照舊：壓迫型退得短、反擊型待在外面等你進來。</td></tr>
+    <tr><th>玩家多的決定</th><td>—</td><td>什麼時候進去打一波、打幾拳就退；這拳值不值得花掉第三回合的力氣；要打頭找倒地還是踢腳讓他跑不動。</td></tr>
+  </table></div>
+</div>
+
+<div class="tabs">
+  <button data-v="v-fight" class="on">打鬥畫面</button>
+  <button data-v="v-chart">三種打法</button>
+  <button data-v="v-corner">回合休息</button>
+  <button data-v="v-num">數值</button>
+</div>
+</div>
+
+<script>
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === b.dataset.v));
+  if (b.dataset.v === "v-chart") draw();
+});
+
+// 粗估模型：每 0.1 秒一步，一招平均花 7 體力、平均傷害 7
+const P = { inRegen: 4, outRegen: 18, ceilPer: 0.03, missMult: 2, tired: 0.25, betweenCeil: 8, cost: 7, dmg: 7, bodyTaken: 0.25, bodyCeil: 0.4 };
+function plan(kind, rnd, t) {
+  // 回傳 {inRange, rate(每秒想出幾招), miss}
+  if (kind === "spam") return { inRange: true, rate: 1.4, miss: 0.4 };
+  const burst = { inRange: (t % 5) < 2, rate: (t % 5) < 2 ? 1.5 : 0, miss: 0.25 };
+  if (kind === "burst") return burst;
+  if (rnd === 0 && t < 60) return { inRange: (t % 6) < 1.5, rate: (t % 6) < 1.5 ? 0.7 : 0, miss: 0.35, light: true };
+  return burst;
+}
+function sim(kind) {
+  let sta = 100, ceil = 100, out = [], strikes = 0, dealt = 0, acc = 0;
+  for (let r = 0; r < 3; r++) {
+    for (let s = 0; s < 900; s++) {
+      const t = s / 10, p = plan(kind, r, t), dt = 0.1;
+      const cost = p.light ? 4 : P.cost, dmg = p.light ? 3 : P.dmg;
+      sta = Math.min(ceil, sta + (p.inRange ? P.inRegen : P.outRegen) * dt);
+      acc += p.rate * dt;
+      if (acc >= 1 && sta >= cost) {
+        acc -= 1; sta -= cost; strikes++;
+        const miss = Math.random() < p.miss;
+        ceil -= cost * P.ceilPer * (miss ? P.missMult : 1);
+        if (!miss) dealt += dmg * (sta < ceil * P.tired ? 0.75 : 1);
+      } else if (acc >= 1) acc = 1;
+      if (p.inRange) ceil -= P.bodyTaken * dt * P.bodyCeil * (kind === "spam" ? 1 : 0.6);
+      ceil = Math.max(20, ceil); sta = Math.min(sta, ceil);
+      if (s % 5 === 0) out.push({ x: r * 95 + t, sta, ceil });
+    }
+    ceil = Math.min(100, ceil + P.betweenCeil); sta = ceil;
+    out.push(null);
+  }
+  return { out, strikes, dealt: Math.round(dealt), endCeil: Math.round(ceil) };
+}
+let cur = "spam";
+document.querySelectorAll("#pick button").forEach(b => b.onclick = () => {
+  cur = b.dataset.p;
+  document.querySelectorAll("#pick button").forEach(x => x.classList.toggle("on", x === b));
+  draw();
+});
+function draw() {
+  const c = document.getElementById("chart"), g = c.getContext("2d"), W = c.width, H = c.height;
+  const L = 60, R = 20, T = 20, B = 50, X = x => L + x / 275 * (W - L - R), Y = y => T + (1 - y / 100) * (H - T - B);
+  g.clearRect(0, 0, W, H); g.font = "22px system-ui"; g.fillStyle = "#8b93a3";
+  g.strokeStyle = "#2a2f3a"; g.lineWidth = 1;
+  [0, 25, 50, 75, 100].forEach(v => { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(W - R, Y(v)); g.stroke(); g.fillText(v, 14, Y(v) + 7); });
+  ["第 1 回合", "第 2 回合", "第 3 回合"].forEach((s, i) => g.fillText(s, X(i * 95 + 30), H - 14));
+  [90, 185].forEach(x => { g.fillStyle = "#ffffff0d"; g.fillRect(X(x), T, X(x + 5) - X(x), H - T - B); });
+  // 跑 20 次取第一次畫線、平均算數字
+  const runs = Array.from({ length: 20 }, () => sim(cur)), d = runs[0];
+  const line = (key, color, dash, w) => {
+    g.strokeStyle = color; g.lineWidth = w; g.setLineDash(dash); g.beginPath(); let pen = false;
+    d.out.forEach(p => { if (!p) { pen = false; return; } pen ? g.lineTo(X(p.x), Y(p[key])) : g.moveTo(X(p.x), Y(p[key])); pen = true; });
+    g.stroke(); g.setLineDash([]);
+  };
+  line("ceil", "#e8383d", [10, 8], 3); line("sta", "#e6d36a", [], 3);
+  const avg = k => Math.round(runs.reduce((s, r) => s + r[k], 0) / runs.length);
+  document.getElementById("stat").innerHTML =
+    `出手次數　<b>${avg("strikes")}</b><br>打出的傷害（粗估）　<b>${avg("dealt")}</b><br>打完時體力上限　<b>${avg("endCeil")}</b> / 100<br>` +
+    `<span style="color:#8b93a3">${cur === "spam" ? "一直打：出手最多，但黃線長時間貼底（沒力 ×0.75），上限一路掉。" : cur === "burst" ? "打一波就退：黃線一直回得滿，上限掉得慢，每一拳都是有力的。" : "先試探：第一回合幾乎不花上限，第三回合最有力。"}</span>`;
+}
+</script>
+</body>
+</html>
