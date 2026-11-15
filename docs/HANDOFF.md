@@ -15,7 +15,8 @@
 - 使用者看灰模：「應該可以試試看」。已做 `exaggerate_head --brow 0.007 --chin 0.005` → `volkanovski_arcane.glb`；`gemini_paint.py` 加 `--name`（不用改 `paint_skin.FIGHTERS`）和 Volkanovski 的 `HAIR`；四視角綠底圖已出（`paint/volkanovski_arcane/grid.png`），沒呼叫 Gemini。
 - 使用者同意超出額度再用 1 次：頭已上色、去綠邊 → `trellis2/volkanovski_arcane_paint_ar_ng.glb`，轉圈圖 `_img2_3d/volk_paint_turn.png`（一般光，不是三階卡通光）：五官、鬍子、髮根陰影都畫上了；頭皮表面一粒粒的凹凸還在，額頭髮際和太陽穴有幾塊淺色。**等使用者看**。
 - 使用者：效果比想的好，可以修。`smooth_head.py` 加 `--scalp`（光頭用，依位置圈頭皮磨掉髮根顆粒）→ `trellis2/volkanovski_final.glb`、`_img2_3d/volk_final_turn.png`：頭頂和後腦平了，鬍子沒動；耳朵後上方還有少量顆粒，髮際和太陽穴的淺色塊（貼圖）沒修。Topuria 不加 `--scalp` 輸出不變。
-- 下一步：**等使用者看**；之後做身體（MPFB、`paint_body`、`attach_head --toon`，要再用 Gemini，先問）。
+- 使用者看了說：鬍子側面有膚色坑洞、鼻子被切掉。鼻子是轉圈圖格子太窄裁到鼻尖，放大圖 `_img2_3d/volk_final_profiles.png` 鼻子完整。鬍子的坑是真的：新 `fill_pits.py`（依表面鄰居把深色區裡偏亮的貼圖點補成鬍子色，補了 72,776 點）→ 重做 `volkanovski_final.glb`。**只改善一部分**：側面少了，3/4 角度下緣還看得到幾顆淺色點，鬍子表面仍一粒粒。
+- 下一步：鬍子再修（`fill_pits` 放寬 `--dark`／`--gap` 或跑第二輪；或上色前就把鬍子形狀磨平）→ 使用者看過 → 身體（要 Gemini，先問）。對話已很長，建議新 session 接手。
 
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 臉貼回原始網格）
 - 做了：`keep_face.py` 重寫分類（輸入圖投影、色相判斷紅粉藍頭髮、從鼻尖長出臉、刺青小島算臉、破洞補平）；`solid_head.py` 加 `--no-uv`。
