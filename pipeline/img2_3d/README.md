@@ -157,4 +157,5 @@
 - **自動轉正試過、沒成功（同日，腳本沒留）**：(1) 左右鏡射比對正面深度圖找最對稱角度：圓的頭骨佔大多數，Volkanovski 只算出 5 度；(2) 以頭頂圓心為軸、找正面最凸的點（鼻尖、下巴）的方向：Volkanovski 7 度、Topuria（應該 0）5 度、O'Malley 被捲髮帶到 190 度。轉完灰模 `clay_volkanovski_front.png` 還是歪：90 度那格看到後腦、270 度那格是正側面，左耳大右耳幾乎看不到。不是整顆頭轉了一個角度，是 TRELLIS 照微側臉照片生出的頭本身扭曲（頭骨朝一邊、五官朝另一邊），剛體旋轉救不了。
 - 轉正後 `smooth_head` 能跑但量錯：整個半身高度被當成頭高（1.0），「鼻子」找到胸口，遮罩蓋到臉中段 32% 被守門擋下。`smooth_head`／`exaggerate_head` 的比例是照 Gemini 正面頭像的取景寫的。`fix_texture` 也把膚色拉到過曝（中位數 269）。
 - **結論**：真人照片直接跑只適合正面、取景和 Gemini 頭像差不多的照片。全身宣傳照多半是微側臉，照片路線不能當預設；還是走 `gen_head.py`（Gemini 正面頭像，Topuria 的做法）。
+- **改走 Gemini 正面頭像（同日，使用者同意，最後 1 次額度）**：`_source/volkanovski_ufc.png`（全身照裁 (420,0,1140,820)）→ `gen_head.py --fighter volkanovski`（不需要 `paint_skin.FIGHTERS`，沒動那個檔）→ `run_trellis2` 226 秒 → `fix_texture` → `smooth_head`（臉中段遮罩 2.2%，守門通過，眼睛都找到）→ 灰模 `clay_volkanovski_smooth.png`、`clay_volkanovski_gemini_real_fix.png`。從頭像到灰模約 5 分鐘，沒改任何程式。正面、左右對稱、有脖子肩膀；光頭的髮根和鬍子表面還是一粒粒（磨平沒磨掉）。**等使用者看頭型**；上色要 `gemini_paint --shape-ok`，還要先在 `paint_skin.FIGHTERS` 加他，額度已用完。
 
