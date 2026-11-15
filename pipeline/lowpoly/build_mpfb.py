@@ -117,7 +117,7 @@ def build(n_tris):
         return sum(pts, Vector()) / len(pts)
 
     # rest-pose joint places for the keep weights (joint cubes are helpers, read them before they go)
-    JC = {n: center("joint-" + n) for n in ("head", "head-2", "mouth", "l-hand", "r-hand", "l-shoulder", "r-shoulder")}
+    JC = {n: center("joint-" + n) for n in ("head", "head-2", "mouth", "l-hand", "r-hand", "l-shoulder", "r-shoulder", "l-eye", "r-eye")}
 
     # Keep skin and the two eyeballs (they fill the eye holes); drop other helpers and both hands.
     keep_g = {vg["body"].index, vg["helper-l-eye"].index, vg["helper-r-eye"].index}
@@ -128,21 +128,51 @@ def build(n_tris):
     drop = [v for v in bm.verts if not any(g in keep_g and w > 0.5 for g, w in v[dl].items())
             or sum(w for g, w in v[dl].items() if g in hand_g) > 0.5]
     bmesh.ops.delete(bm, geom=drop, context="VERTS")
+    # Close the mouth: drop the mouth cavity behind the lips (teeth and tongue are already gone) and fill the slit flat,
+    # so nothing inside the head needs texture. (Not what fixed the beak-like mouth; that was the keep weights below.)
+    lg = vg["lips"].index
+    bm.verts.ensure_lookup_table()
+    lip = [v.co for v in bm.verts if lg in v[dl]]
+    lx = max(abs(c.x) for c in lip)
+    lz0, lz1 = min(c.z for c in lip), max(c.z for c in lip)
+    lback = max(c.y for c in lip)
+    cav = [v for v in bm.verts if lg not in v[dl] and abs(v.co.x) < lx and lz0 < v.co.z < lz1
+           and lback < v.co.y < JC["mouth"].y + 0.04]
+    bmesh.ops.delete(bm, geom=cav, context="VERTS")
+    rim = [e for e in bm.edges if e.is_boundary and all(abs(v.co.x) <= lx + 1e-4 and lz0 - 0.01 < v.co.z < lz1 + 0.01
+                                                         and v.co.y < JC["mouth"].y + 0.04 for v in e.verts)]
+    bmesh.ops.holes_fill(bm, edges=rim, sides=0)
+    print("mouth: removed", len(cav), "cavity verts, filled rim of", len(rim), "edges")
     bm.to_mesh(body.data)
     bm.free()
     for m in list(body.modifiers):
         if m.type == "MASK":
             body.modifiers.remove(m)
 
-    # keep weights: face, wrists (glove seam), shoulders
+    # keep weights (0-1): what reads as a face gets most: lips, nose, eye rims; the rest of the face front less; ears little and
+    # eyeballs nothing (their folds would eat the budget and the mouth collapses into a beak); wrists and shoulders a little.
     head_r = (JC["head"] + JC["head-2"]) / 2
-    spots = [(head_r, 0.14), (JC["mouth"], 0.08), (JC["l-hand"], 0.08), (JC["r-hand"], 0.08),
-             (JC["l-shoulder"], 0.10), (JC["r-shoulder"], 0.10)]
+    gidx = {n: vg[n].index for n in ("lips", "ears", "helper-l-eye", "helper-r-eye")}
+    lip_c = sum((v.co for v in body.data.vertices if any(e.group == gidx["lips"] for e in v.groups)), Vector())
+    lip_c /= sum(1 for v in body.data.vertices if any(e.group == gidx["lips"] for e in v.groups))
+    face = [v.co for v in body.data.vertices if abs(v.co.x) < 0.01 and lip_c.z < v.co.z < (JC["l-eye"].z + lip_c.z) / 2 + 0.03]
+    nose_c = min(face, key=lambda c: c.y)
+    spots = [  # centre, radius, weight
+        (lip_c, 0.045, 1.0), (nose_c, 0.035, 1.0), (JC["l-eye"], 0.04, 0.8), (JC["r-eye"], 0.04, 0.8),
+        (lip_c + Vector((0, 0, -0.04)), 0.04, 0.7),  # chin
+        (head_r, 0.13, 0.35), (JC["l-hand"], 0.07, 0.4), (JC["r-hand"], 0.07, 0.4),
+        (JC["l-shoulder"], 0.10, 0.4), (JC["r-shoulder"], 0.10, 0.4)]
+    fixed = {gidx["ears"]: 0.3, gidx["helper-l-eye"]: 0.0, gidx["helper-r-eye"]: 0.0}  # ears keep a flap, not their folds
     keep = vg.new(name="keep")
     for v in body.data.vertices:
-        w = max(max(0.0, 1.0 - (v.co - c).length / r) for c, r in spots)
+        f = [fixed[e.group] for e in v.groups if e.group in fixed and e.weight > 0.5]
+        if f:
+            if f[0] > 0:
+                keep.add([v.index], f[0], "REPLACE")
+            continue
+        w = max(wt * min(1.0, 2.0 * max(0.0, 1.0 - (v.co - c).length / r)) for c, r, wt in spots)
         if w > 0:
-            keep.add([v.index], min(1.0, w * 2.0), "REPLACE")
+            keep.add([v.index], w, "REPLACE")
 
     # Decimate in the symmetric rest pose (the gloves are added later and are low-poly already).
     glove_tris = 2 * (10 * 5 * 2 + 20 + 16)
@@ -293,7 +323,8 @@ def build(n_tris):
     shoot(tag + "_back.png", (-1.5, 3.0, 1.3), (0, 0, mid_z), 50)
     shoot(tag + "_head.png", (hc.x + 0.32, hc.y - 0.62, hc.z + 0.04), (hc.x, hc.y - 0.03, hc.z - 0.01), 60, res=(600, 600))
     bpy.ops.wm.save_as_mainfile(filepath=tag + ".blend")
-    print(f"TRIS {n_tris}: {tris}")
+    face = sum(1 for p in body.data.polygons if (p.center - head_c).length < 0.12 and p.center.y < head_c.y)
+    print(f"TRIS {n_tris}: {tris}, face front {face}")
     return meta
 
 

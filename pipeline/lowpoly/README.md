@@ -25,5 +25,5 @@ uv run --no-project --with pillow python -I pipeline/lowpoly/mpfb_sheet.py proto
 - 流程：MPFB 人體（巨集＋`BULK_TARGETS` 加肌肉）→ 加 mixamo 骨架（這一步需要 MPFB 的關節小方塊，輔助幾何要在它之後才刪）→ 只留皮膚和兩顆眼球、刪掉手 → 在對稱站姿減面（`use_symmetry`，`keep` 群組讓臉、手腕、肩膀多留面）→ 擺架式（`STANCE` 是方向不是座標，換身高照用）→ 套用骨架、加方塊手套（超橢球＋護腕）→ 腳貼地、平面著色、物件名 `fighter`。
 - 體型範本只是 `PRESETS` 的參數（身高、體重、muscle、bulk、proportions、額外 target、手套大小）；`feather_muscle` 是 Topuria 型，其他三個還沒看過。
 - 輸出：`mpfb_<preset>_<面數>.blend`（含相機，`paint_blender.py render` 會用）、四張灰模、`mpfb_<preset>_meta.json`（`head_z` 約 1.44、鼻子位置、頭中心）。`--tris` 給比網格大的數字就是不減面。
-- 坑：在擺好的姿勢上減面會左右不對稱、身體被削成細竹竿，要先減再擺；EEVEE 灰模有大塊黑影像破洞，改用 Workbench 看形狀；用骨架彎手指握拳很難調，減面後也只剩一團，直接換手套。
+- 坑：在擺好的姿勢上減面會左右不對稱、身體被削成細竹竿，要先減再擺；EEVEE 灰模有大塊黑影像破洞，改用 Workbench 看形狀；用骨架彎手指握拳很難調，減面後也只剩一團，直接換手套。嘴巴凸成鳥嘴（2026-11-15 使用者指出）：臉的面被耳朵摺和眼皮吃掉，而保護嘴巴的中心點原本放在嘴巴關節（嘴唇後 7 公分），嘴唇幾乎沒保護到；改成以嘴唇、鼻尖、眼睛、下巴為中心加權，耳朵只給 0.3、眼球 0。只刪口腔內壁沒有用。
 - 接上色前要改 `paint_lowpoly.py`：讀 meta 的 `head_z` 和鼻子位置（不再寫死 1.545）、`clay` 路徑改成選定的 blend、加一個由上往下的視角（v2 有 24% 的面沒上到色，腳和肩頂最明顯）。
