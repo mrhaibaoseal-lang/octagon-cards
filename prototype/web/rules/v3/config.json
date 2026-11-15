@@ -29,6 +29,14 @@
   "guard": { "staPerSec": 0 },
   "dodge": { "ms": 360, "invuln": 260, "dist": 1.1, "sta": 12, "cd": 650 },
   "counter": { "dmg": 1.4, "stun": 1.5 },
+  "feel": {
+    "_doc": "打擊感（只影響畫面與聲音，引擎不看）。陣列依招式重量 1／2／3 取值。hitstop 命中停頓毫秒（兩人一起停），反擊 +counterStop、擦到 ×tipMult、被擋 blockStop、KO koStop；shake 鏡頭晃動量；snap 頭被打歪的角度（弧度），snapMs 回正的時間常數；koZoom KO 後鏡頭拉近比例、koSlow KO 後慢動作倍率與 koSlowMs 長度；volume 音量（0 靜音，網址 ?mute=1 也可）；vibrate 手機震動毫秒（iPhone Safari 不支援，Unity 再做）。",
+    "hitstop": [50, 100, 140], "counterStop": 60, "tipMult": 0.5, "blockStop": 40, "koStop": 380,
+    "shake": [0, 0.06, 0.12], "counterShake": 0.06, "koShake": 0.3,
+    "snap": [0.25, 0.5, 0.75], "snapMs": 130,
+    "koZoom": 0.6, "koSlow": 0.3, "koSlowMs": 1400,
+    "volume": 0.7, "vibrate": [10, 25, 40]
+  },
   "tip": { "_doc": "打在射程最後 from 比例以外（招式最遠端）＝擦到：傷害與僵直打折", "from": 0.75, "dmg": 0.7, "stun": 0.5 },
   "moves": {
     "jab":      { "name": "刺拳",     "tag": "中", "min": 0.85, "max": 1.6, "windup": 130, "active": 80, "recovery": 210, "weight": 1, "dmg": 3,  "sta": 4,  "cd": 0,    "block": 0.15, "guardSta": 4,  "stun": 140, "push": 0.08, "limb": "lead", "target": "head" },

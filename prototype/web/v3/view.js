@@ -91,7 +91,7 @@ function makeRig(color, glove, skinColor) {
   const shorts = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.08, 4, 12), std(0x1a1c22));
   shorts.position.y = 0.86; shorts.scale.set(1.05, 1, 0.8); body.add(shorts);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 20, 14), std(skinColor));
-  head.scale.set(0.9, 1.1, 0.95); head.position.y = 1.62; body.add(head);
+  const headM = head.material; head.scale.set(0.9, 1.1, 0.95); head.position.y = 1.62; body.add(head);
   const legs = [], gloves = [], gloveM = [];
   for (const side of [-1, 1]) {
     const hip = new THREE.Group(); hip.position.set(side * 0.11, 0.82, side * 0.08); g.add(hip);
@@ -111,7 +111,7 @@ function makeRig(color, glove, skinColor) {
   shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.014; g.add(shadow);
   scene.add(g);
   // side: index 0 = lead (left, toward +x local when facing +z?) — we use: lead hand/leg = index 0
-  return { g, body, torso, torsoM, head, legs, gloves, gloveM, arms };
+  return { g, body, torso, torsoM, head, legs, gloves, gloveM, arms, snap: null, headM };
 }
 const rigs = [makeRig(0x2f7bff, 0x1d3f9c, skin[0]), makeRig(0xe8383d, 0x8a1418, skin[1])];
 
@@ -174,7 +174,18 @@ function poseRig(rig, f, o, now) {
   rig.head.position.set(0, 1.62, 0);
   if (hh > 0.4) { const a = (hh - 0.4) * 0.35; rig.head.position.x = Math.sin(now / 140 + f.id) * a * 0.3; rig.head.position.z = Math.cos(now / 170) * a * 0.15; rig.head.rotation.z = Math.sin(now / 160) * a * 1.4; }
   else rig.head.rotation.z = 0;
-  if (f.down) { g.rotation.x = lerp(g.rotation.x, -Math.PI / 2, 0.08); g.position.y = 0.2; } else g.rotation.x = 0;
+  // hit reaction: head / upper body thrown away from the strike, then eases back (feel.snap)
+  if (rig.snap) {
+    const sn = rig.snap, k = sn.a * Math.exp(-sn.t / cfg.feel.snapMs);
+    if (k < 0.01) rig.snap = null;
+    else if (sn.kind === "leg") { body.position.y -= k * 0.12; body.rotation.z += sn.side * k * 0.35; }
+    else {
+      rig.head.position.z -= k * 0.22; rig.head.position.y -= k * 0.04; body.rotation.x -= k * 0.35;
+      if (sn.kind === "hook") { rig.head.position.x += sn.side * k * 0.2; rig.head.rotation.z += sn.side * k * 0.8; body.rotation.z += sn.side * k * 0.25; }
+      rig.headM.emissive.setRGB(k, k, k);
+    }
+  } else rig.headM.emissive.setRGB(0, 0, 0);
+  if (f.down) { g.rotation.x = lerp(g.rotation.x, -Math.PI / 2, 0.08 * timeScale); g.position.y = 0.2; } else g.rotation.x = 0;
   gloves.forEach((gl, i) => gl.position.copy(gp[i]));
   rig.arms.forEach((a, i) => placeArm(a, gloves[i], new THREE.Vector3(i ? 0.2 : -0.2, 1.36, 0.02)));
   gloveM.forEach((m, i) => m.emissive.setRGB(glow[i], glow[i] * 0.75, 0));
@@ -305,22 +316,69 @@ function playerInput() {
 }
 
 // ---------- events -> effects ----------
-let shake = 0;
+let shake = 0, freeze = 0, timeScale = 1, koT = -1;
+const fl = cfg.feel;
+// ---------- impact sounds: synthesized (no audio files), unlocked on the first touch / key ----------
+let actx = null, master = null, touched = false;
+const vol = q.has("mute") ? 0 : fl.volume;
+function unlockAudio() {
+  touched = true;
+  if (actx || !vol) return;
+  try { actx = new AudioContext(); master = actx.createGain(); master.gain.value = vol; master.connect(actx.destination); } catch { actx = null; }
+}
+addEventListener("pointerdown", unlockAudio); addEventListener("keydown", unlockAudio);
+let noiseBuf = null;
+function noise(dur, type, f0, f1, gain, q = 1) {
+  if (!noiseBuf) { noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const t = actx.currentTime, src = actx.createBufferSource(), fi = actx.createBiquadFilter(), g = actx.createGain();
+  src.buffer = noiseBuf; fi.type = type; fi.Q.value = q;
+  fi.frequency.setValueAtTime(f0, t); fi.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(fi).connect(g).connect(master); src.start(t, Math.random() * 0.5); src.stop(t + dur);
+}
+function thump(dur, f0, f1, gain) {
+  const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+  o.type = "sine"; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(master); o.start(t); o.stop(t + dur);
+}
+function sfx(kind, w = 1) {
+  if (!actx) return;
+  const k = w / 3;
+  if (kind === "hit") { noise(0.05 + 0.03 * k, "bandpass", 2600, 900, 0.5 + 0.4 * k, 0.8); thump(0.1 + 0.12 * k, 110 + 40 * k, 40, 0.5 + 0.5 * k); }
+  else if (kind === "counter") { noise(0.09, "bandpass", 3000, 700, 1, 0.7); thump(0.28, 150, 35, 1); }
+  else if (kind === "tip") noise(0.04, "highpass", 2500, 1800, 0.25);
+  else if (kind === "block") { noise(0.05, "lowpass", 900, 300, 0.45); thump(0.06, 90, 60, 0.25); }
+  else if (kind === "ko") { thump(0.6, 140, 28, 1); noise(0.12, "bandpass", 2400, 500, 1, 0.6); }
+  else if (kind === "whoosh") noise(0.14, "bandpass", 500, 1600, 0.12 + 0.08 * k, 2);
+}
+function impact(ms, sh, vib) {
+  freeze = Math.max(freeze, ms); shake = Math.max(shake, sh);
+  if (vib && touched && navigator.vibrate) try { navigator.vibrate(vib); } catch {}
+}
 function handleEvents() {
   for (const e of st.events) {
     const t = e.target != null ? st.f[e.target] : null;
     const at = t ? new THREE.Vector3(t.x, 1.45, t.z) : null;
     // no numbers or words on screen (user 2026-11-15: like the EA UFC games); only a small impact and a shake on big shots
+    const m = cfg.moves[e.move], wi = m ? Math.min(3, m.weight) - 1 : 0;
     if (e.type === "hit") {
       const big = e.dmg >= 9 || e.counter;
       spark(at, 0xffffff, big ? 0.9 : 0.5);
-      if (big) shake = 0.12;
-    } else if (e.type === "block") spark(at, 0x9fb6d8, 0.3);
+      // hitstop: both fighters freeze for a beat, longer for heavier strikes; a graze barely stops
+      const stop = (fl.hitstop[wi] + (e.counter ? fl.counterStop : 0)) * (e.tip ? fl.tipMult : 1);
+      impact(stop, fl.shake[wi] + (e.counter ? fl.counterShake : 0), e.tip ? 0 : fl.vibrate[wi]);
+      const side = m && m.limb === "lead" ? -1 : 1;
+      const kind = m && m.target === "leg" ? "leg" : m && m.arc ? "hook" : "head";
+      rigs[e.target].snap = { a: fl.snap[wi] * (e.tip ? 0.5 : 1) * (e.counter ? 1.3 : 1), t: 0, kind, side };
+      sfx(e.tip ? "tip" : e.counter ? "counter" : "hit", wi + 1);
+    } else if (e.type === "block") { spark(at, 0x9fb6d8, 0.3); impact(fl.blockStop, 0, 0); sfx("block"); }
+    else if (e.type === "miss" || e.type === "dodged") sfx("whoosh", wi + 1);
     if ((e.type === "hit" || e.type === "block" || e.type === "dodged" || e.type === "miss") && e.by === 1) {
       const el = $("kit").querySelector(`[data-id="${e.move}"]`);
       if (el && !el.classList.contains("seen")) { renderKit(); $("kit").querySelector(`[data-id="${e.move}"]`).classList.add("flash"); }
     }
-    if (e.type === "ko") { banner(e.target === 1 ? "KO！你贏了" : "被 KO 了", 99999); shake = 0.25; }
+    if (e.type === "ko") { banner(e.target === 1 ? "KO！你贏了" : "被 KO 了", 99999); impact(fl.koStop, fl.koShake, 120); sfx("ko"); koT = 0; }
   }
 }
 
@@ -332,7 +390,8 @@ function updateCamera(dt, snap) {
   const want = new THREE.Vector3(-dz, 0, dx);
   if (snap) camN.copy(want); else camN.lerp(want, 1 - Math.pow(0.004, dt)).normalize();
   const mid = new THREE.Vector3((a.x + b.x) / 2, 0, (a.z + b.z) / 2);
-  const back = Math.max(5.2, Math.min(8, 4 + d * 1.1));
+  let back = Math.max(5.2, Math.min(8, 4 + d * 1.1));
+  if (koT >= 0) back *= 1 - (1 - fl.koZoom) * Math.min(1, koT / 600);
   camera.position.copy(mid).addScaledVector(camN, back); camera.position.y = 2.6;
   if (shake > 0) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake = Math.max(0, shake - dt * 0.8); }
   camera.lookAt(mid.x, 0.95, mid.z);
@@ -352,6 +411,7 @@ function updateRings() {
 
 // ---------- screens ----------
 function startFight() {
+  koT = -1; timeScale = 1; freeze = 0; for (const r of rigs) r.snap = null;
   const seed = Number(q.get("seed")) || (Date.now() % 100000);
   st = createFight(cfg, { seed });
   ai = createAI(cfg, st.rand, q.get("ai"));
@@ -432,15 +492,20 @@ let last = performance.now(), acc = 0, wasPhase = "fight";
 function update(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   const live = !$("ov").classList.contains("on");
-  if (live && st.phase === "fight") {
+  const frozen = freeze > 0;
+  if (frozen) { freeze -= dt * 1000; acc = 0; }
+  else if (live && st.phase === "fight") {
     acc += dt;
-    while (acc >= DT && st.phase === "fight") {
+    while (acc >= DT && st.phase === "fight" && freeze <= 0) {
       acc -= DT;
       st.events = [];
       step(st, DT, [playerInput(), aiInput(ai, st, 1, DT)]);
       handleEvents();
     }
   } else acc = 0;
+  // KO: slow motion and the camera pushes in
+  if (koT >= 0 && !frozen) { koT += dt * 1000; timeScale = koT < fl.koSlowMs ? fl.koSlow : 1; }
+  if (!frozen) for (const r of rigs) if (r.snap) r.snap.t += dt * 1000 * timeScale;
   if (st.phase !== wasPhase) {
     wasPhase = st.phase;
     if (st.phase === "break") setTimeout(showBreak, 700);
@@ -454,4 +519,4 @@ function update(now) {
 function frame(now) { update(now); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 // debug: __v3.tick(frames) advances the game without rAF (hidden tabs pause rAF)
-window.__v3 = { get st() { return st; }, cfg, input, camera, THREE, tick(n = 60) { for (let i = 0; i < n; i++) update(last + 1000 / 60); } };
+window.__v3 = { get st() { return st; }, cfg, input, camera, THREE, rigs, tick(n = 60) { for (let i = 0; i < n; i++) update(last + 1000 / 60); } };
