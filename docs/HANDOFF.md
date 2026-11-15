@@ -5,8 +5,9 @@
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 臉貼回原始網格）
 - 做了：`keep_face.py` 重寫分類（輸入圖投影、色相判斷紅粉藍頭髮、從鼻尖長出臉、刺青小島算臉、破洞補平）；`solid_head.py` 加 `--no-uv`。
 - 驗證：灰模 `_img2_3d/clay_keep_new_cmp.png`，第 3、4 列的臉和原始網格（第 1 列）一樣；只看灰模，沒上色。
-- **要使用者確認**：頭髮選第 3 列（捲髮塊）還是第 4 列（平滑一團，表面有細皺）。
-- 下一步：減面＋xatlas UV → `gemini_paint.py` 上色（Gemini 剩 1 次，用前先問）；坑與指令在 `pipeline/img2_3d/README.md` 最後一節。
+- 使用者選第 3 列（捲髮塊）；`solid_head --shape --faces 60000` 減面、展 UV、烘底色完成（`omalley_keep06_uv.glb`），臉型不變。
+- **要使用者確認**：用最後 1 次 Gemini 額度上色。
+- 下一步：`gemini_paint.py --mesh omalley_keep06_uv` 上色（Gemini 剩 1 次，用前先問）；坑與指令在 `pipeline/img2_3d/README.md` 最後一節。
 
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 頭型重做：找出臉被磨掉的原因）
 - 做了：`gen_head.py` 加 `--look`／`--name`，生了貼頭短髮頭像（Gemini 第 6 次，NT$5）；`render_turntable.py` 加 `--clay` 灰模；新 `keep_face.py`（把處理過的頭的臉貼回 TRELLIS 原始表面）；直接用真人照片跑 TRELLIS（免費）。

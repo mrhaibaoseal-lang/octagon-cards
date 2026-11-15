@@ -33,6 +33,10 @@ ap.add_argument("--voxel", type=float, default=0.012)
 ap.add_argument("--tex", type=int, default=2048)
 ap.add_argument("--close", type=float, default=1.5, help="fill pits and gaps narrower than 2x this many voxels (0 = off); "
                 "TRELLIS's small face holes became square pits after the remesh")
+ap.add_argument("--shape", default=None, help="skip the remesh: take this mesh (e.g. keep_face.py output) as the shell, "
+                "then UV it and bake mesh's colour onto it")
+ap.add_argument("--faces", type=int, default=0, help="decimate the shell to about this many faces first (xatlas on 194k "
+                "verts ran 45+ min)")
 ap.add_argument("--no-uv", action="store_true", help="shape only (no UVs, no bake): quick look, or keep_face.py input")
 a = ap.parse_args(argv)
 
@@ -59,34 +63,51 @@ for slot in hi.material_slots:
         em.inputs["Color"].default_value = bsdf.inputs["Base Color"].default_value
     nt_.links.new(em.outputs["Emission"], out.inputs["Surface"])
 
-lo = hi.copy()
-lo.data = hi.data.copy()
-bpy.context.scene.collection.objects.link(lo)
-bpy.ops.object.select_all(action="DESELECT")
-lo.select_set(True)
-bpy.context.view_layer.objects.active = lo
-lo.data.remesh_voxel_size = a.voxel * H
-bpy.ops.object.voxel_remesh()
-if a.close > 0:  # morphological closing: push out, remesh (pits and gaps narrower than 2x close merge), pull back
-    for k, sgn in enumerate((1, -1)):
-        mod = lo.modifiers.new("close", "DISPLACE")
-        mod.direction, mod.mid_level, mod.strength = "NORMAL", 0.0, sgn * a.close * a.voxel * H
-        bpy.ops.object.modifier_apply(modifier=mod.name)
-        if k == 0:
-            bpy.ops.object.voxel_remesh()
-# The remesh leaves closed cavities inside the hair (inner shells nobody sees, most of the surface area): keep the
-# outer shell, i.e. the loose part with the most faces.
-bpy.ops.mesh.separate(type="LOOSE")
-parts = [o for o in bpy.context.selected_objects]
-lo = max(parts, key=lambda o: len(o.data.polygons))
-for o in parts:
-    if o is not lo:
-        bpy.data.objects.remove(o)
-bpy.ops.object.select_all(action="DESELECT")
-lo.select_set(True)
-bpy.context.view_layer.objects.active = lo
-print("loose parts", len(parts))
-print("solid verts", len(lo.data.vertices), "faces", len(lo.data.polygons), "from", len(hi.data.vertices))
+if a.shape:
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=a.shape, merge_vertices=True)
+    lo = [o for o in bpy.data.objects if o not in before and o.type == "MESH"][0]
+    lo.parent = None
+    bpy.ops.object.select_all(action="DESELECT")
+    lo.select_set(True)
+    bpy.context.view_layer.objects.active = lo
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    lo.data.materials.clear()
+    parts = [lo]
+else:
+    lo = hi.copy()
+    lo.data = hi.data.copy()
+    bpy.context.scene.collection.objects.link(lo)
+    bpy.ops.object.select_all(action="DESELECT")
+    lo.select_set(True)
+    bpy.context.view_layer.objects.active = lo
+    lo.data.remesh_voxel_size = a.voxel * H
+    bpy.ops.object.voxel_remesh()
+    if a.close > 0:  # morphological closing: push out, remesh (pits and gaps narrower than 2x close merge), pull back
+        for k, sgn in enumerate((1, -1)):
+            mod = lo.modifiers.new("close", "DISPLACE")
+            mod.direction, mod.mid_level, mod.strength = "NORMAL", 0.0, sgn * a.close * a.voxel * H
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+            if k == 0:
+                bpy.ops.object.voxel_remesh()
+    # The remesh leaves closed cavities inside the hair (inner shells nobody sees, most of the surface area): keep the
+    # outer shell, i.e. the loose part with the most faces.
+    bpy.ops.mesh.separate(type="LOOSE")
+    parts = [o for o in bpy.context.selected_objects]
+    lo = max(parts, key=lambda o: len(o.data.polygons))
+    for o in parts:
+        if o is not lo:
+            bpy.data.objects.remove(o)
+    bpy.ops.object.select_all(action="DESELECT")
+    lo.select_set(True)
+    bpy.context.view_layer.objects.active = lo
+    print("loose parts", len(parts))
+    print("solid verts", len(lo.data.vertices), "faces", len(lo.data.polygons), "from", len(hi.data.vertices))
+if a.faces and len(lo.data.polygons) > a.faces:
+    m = lo.modifiers.new("dec", "DECIMATE")
+    m.ratio = a.faces / len(lo.data.polygons)
+    bpy.ops.object.modifier_apply(modifier=m.name)
+    print("decimated to", len(lo.data.polygons), "faces")
 bpy.ops.object.shade_smooth()
 
 if a.no_uv:
