@@ -12,9 +12,9 @@
     "tiredFrac": 0.25, "tiredDmg": 0.75, "tiredWindup": 1.2, "tiredTaken": 1.15
   },
   "damage": {
-    "_doc": "隱藏傷害，頭／身體／腳各 max。頭：softFrac 的傷害會慢慢回（回氣區每秒 recoverOut、交火區 recoverIn），其餘留到比賽結束；重量 ≥ koWeight 的招打中頭時判倒地，機率 ≈ koBase × (頭傷/max)³ × 傷害/koDmgDiv，反擊 ×koCounter，頭傷滿＝必倒。身體：每 1 點讓上限 −bodyCeil；超過 bodySlowAbove 後體力恢復 ×bodyRegen。腳：移動速度 ×（1 − 腳傷/max × legSpeed）。",
-    "max": 100, "softFrac": 0.6, "recoverOut": 3, "recoverIn": 1,
-    "koWeight": 2, "koBase": 0.35, "koDmgDiv": 10, "koCounter": 1.4,
+    "_doc": "隱藏傷害，頭／身體／腳各 max。頭：softFrac 的傷害會慢慢回（回氣區每秒 recoverOut、交火區 recoverIn），其餘留到比賽結束；重量 ≥ koWeight 的招打中頭時判倒地，機率 ≈ (koFlat + koBase × (頭傷/max)^koPow) × 傷害/koDmgDiv，反擊 ×koCounter，頭傷滿＝必倒。身體：每 1 點讓上限 −bodyCeil；超過 bodySlowAbove 後體力恢復 ×bodyRegen。腳：移動速度 ×（1 − 腳傷/max × legSpeed）。",
+    "max": 100, "softFrac": 0.85, "recoverOut": 8, "recoverIn": 3,
+    "koWeight": 2, "koFlat": 0.008, "koBase": 0.05, "koPow": 5, "koDmgDiv": 10, "koCounter": 1.4,
     "bodyCeil": 0.4, "bodySlowAbove": 50, "bodyRegen": 0.7, "legSpeed": 0.35
   },
   "hurt": {

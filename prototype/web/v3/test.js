@@ -119,7 +119,7 @@ test("stamina comes back faster outside the fire zone", () => {
   assert.ok(outside > inside * 3, `outside ${outside}`);
 });
 
-test("head damage at 100 always knocks down; a fresh head does not", () => {
+test("head damage at 100 always knocks down; a fresh head rarely does (only the small flat chance)", () => {
   let st = createFight(cfg, { kits }); at(st, 1.2);
   st.f[1].dmg.head = 100;
   const ev = run(st, 400, [{ atk: "jab" }]);
@@ -127,7 +127,7 @@ test("head damage at 100 always knocks down; a fresh head does not", () => {
   assert.ok(ev.some((e) => e.type === "hit" && e.ko));
   let kos = 0;
   for (let seed = 1; seed <= 30; seed++) { st = createFight(cfg, { kits, seed }); at(st, 1.2); run(st, 600, [{ atk: "cross" }]); if (st.phase === "over") kos++; }
-  assert.equal(kos, 0);
+  assert.ok(kos <= 2, `fresh-head KOs ${kos}/30`);
 });
 
 test("head damage rises with hits, only 60% heals; leg damage slows; low kick targets leg", () => {

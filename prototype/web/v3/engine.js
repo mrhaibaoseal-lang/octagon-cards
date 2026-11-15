@@ -103,7 +103,7 @@ function resolveHit(st, a, mId) {
   let ko = false;
   if (m.target === "head" && m.weight >= cfg.damage.koWeight) {
     const dc = cfg.damage;
-    const p = dc.koBase * Math.pow(t.dmg.head / dc.max, 3) * (dmg / dc.koDmgDiv) * (counter ? dc.koCounter : 1);
+    const p = (dc.koFlat + dc.koBase * Math.pow(t.dmg.head / dc.max, dc.koPow)) * (dmg / dc.koDmgDiv) * (counter ? dc.koCounter : 1);
     ko = t.dmg.head >= dc.max || st.rand() < p;
   } else if (m.target === "head" && t.dmg.head >= cfg.damage.max) ko = true;
   if (ko) t.down = true;
