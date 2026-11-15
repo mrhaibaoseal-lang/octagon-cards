@@ -9,8 +9,9 @@
 - 還沒做：頭髮改成獨立髮型零件（等下一位難髮型選手再試）、身體共用體型範本。
 - 第三位：使用者選 Volkanovski。沒有 `_ufc.png` 也不在 `paint_skin.FIGHTERS`，只有全身照；裁頭（`inputs/volkanovski_photo.png`，(440,0,1120,455)，避開肩上的腰帶）直接跑 TRELLIS（免費，270 秒，要設 `HF_HOME=D:/img2_3d/hf`）→ 灰模 `_img2_3d/clay_volkanovski_photo_fix.png`：光頭、鬍子、鼻子、耳朵像本人。
 - 使用者看第一版灰模：形狀完全不對（側面臉凸又長像馬、下巴凹洞）。原因是裁太緊沒脖子肩膀；第二版留脖子肩膀、擦掉腰帶重跑 → `clay_volkanovski_photo2_fix.png`，側面正常很多、下巴沒洞，**等使用者看**。
-- 卡住：照片的頭轉了約 20 度、幾乎沒脖子，`smooth_head` 假設臉朝正前方，找不到鼻子與眼睛而當掉（NaN）。照片路線要先轉正才能接後面。
-- 下一步：等使用者決定——加「自動轉正」讓照片路線能用（省一次 Gemini），或把最後 1 次 Gemini 用在正面頭像走原流程（上色要等額度）。
+- 使用者說第二版可以、要加自動轉正：試了兩種算法都不行（細節在 `pipeline/img2_3d/README.md` 最後一節），腳本沒留。問題不是頭轉了角度，是微側臉照片生出的頭本身扭曲；`smooth_head` 的比例也只認 Gemini 頭像的取景。
+- 結論：照片路線不能當預設，Volkanovski 要走 `gen_head.py`（Gemini 正面頭像，同 Topuria）。先要在 `paint_skin.FIGHTERS` 加他（那個檔有 Gemini 未 commit 的修改，動之前先問）並準備 `_source/volkanovski_ufc.png`。
+- 下一步：等使用者同意把最後 1 次 Gemini 用在正面頭像；頭上色、身體上色要等額度。
 
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 臉貼回原始網格）
 - 做了：`keep_face.py` 重寫分類（輸入圖投影、色相判斷紅粉藍頭髮、從鼻尖長出臉、刺青小島算臉、破洞補平）；`solid_head.py` 加 `--no-uv`。
