@@ -1,5 +1,5 @@
 // V3 greybox AI. Produces the same input object a player would. Reaction delay, no peeking at the future.
-import { canUse, dist, inRange } from "./engine.js";
+import { canUse, dist, inRange, reach, isTired } from "./engine.js";
 
 const between = (r, [a, b]) => a + (b - a) * r();
 function weighted(r, w) {
@@ -19,6 +19,8 @@ export function createAI(cfg, rand, styleId) {
     rangeBias: s.rangeBias || 0, prefer: s.prefer || [],
     think: 0, plan: null, circleDir: rand() < 0.5 ? 1 : -1, circleT: 0,
     seenAct: null, react: null, guardT: 0, out: {},
+    restMult: s.restMult ?? 1, lurk: !!s.lurk,
+    myAct: null, prevPhase: null, prevStun: 0, wave: 0, waveMax: 0, resting: false, restT: 0, lurkT: cfg.ai.lurkMs, probeHold: 0,
   };
 }
 
@@ -27,7 +29,25 @@ export function aiInput(ai, st, me, dt) {
   const f = st.f[me], o = st.f[1 - me];
   const d = dist(f, o);
   const inp = { fwd: 0, side: 0, guard: false, dodge: false, atk: null };
+  const S = cfg.stamina, PR = cfg.ai.probe;
+  const probing = st.round === 1 && cfg.round.seconds * 1000 - st.clock < PR.seconds * 1000;
+  const zoneEdge = reach(cfg, o) + S.zonePad;
+  const mayUse = (k) => !probing || PR.moves.includes(k);
   ai.guardT -= ms; ai.think -= ms; ai.circleT -= ms;
+
+  // wave bookkeeping: a wave is 2-3 strikes (or one counter taken), then back off to recover
+  if (!ai.waveMax) ai.waveMax = cfg.ai.wave[0] + Math.floor(r() * (cfg.ai.wave[1] - cfg.ai.wave[0] + 1));
+  if (f.act && f.act !== ai.myAct) { ai.myAct = f.act; ai.wave++; }
+  const gotCountered = f.stun > 0 && ai.prevStun <= 0 && ai.prevPhase === "windup";
+  ai.prevPhase = f.act ? f.act.phase : null; ai.prevStun = f.stun;
+  if (!ai.resting && !f.act && (ai.wave >= ai.waveMax || gotCountered)) {
+    ai.resting = true; ai.restT = between(r, cfg.ai.rest.ms) * ai.restMult;
+    ai.wave = 0; ai.waveMax = 0; ai.guardT = 0;
+  }
+  if (ai.resting) {
+    ai.restT -= ms;
+    if (ai.restT <= 0 && f.sta >= f.ceil * cfg.ai.rest.staFrac) { ai.resting = false; ai.lurkT = cfg.ai.lurkMs; }
+  }
 
   // 1. react to the opponent's attack after a human-like delay
   ai.now = (ai.now || 0) + ms;
@@ -53,7 +73,7 @@ export function aiInput(ai, st, me, dt) {
         if (c === "guard") ai.guardT = cfg.ai.guardHold;
         else if (c === "dodge") { inp.dodge = true; inp.fwd = -0.6; inp.side = ai.circleDir; }
         else if (c === "counter") {
-          const ok = f.kit.filter((k) => canUse(st, f, k) && inRange(st, f, k) && d <= cfg.moves[k].max);
+          const ok = f.kit.filter((k) => mayUse(k) && canUse(st, f, k) && inRange(st, f, k) && d <= cfg.moves[k].max);
           // prefer something heavier that walks through his strike; else the quickest thing that lands first
           const heavy = ok.filter((k) => cfg.moves[k].weight > m.weight).sort((a, b) => cfg.moves[b].dmg - cfg.moves[a].dmg)[0];
           const fast = ok.filter((k) => act.phase !== "windup" || cfg.moves[k].windup < m.windup - act.t)
@@ -70,19 +90,28 @@ export function aiInput(ai, st, me, dt) {
     inp.fwd = -0.3;
     return inp;
   }
+  // resting: get out of his strike zone (that is where stamina comes back fast) and wait
+  if (ai.resting) {
+    if (d < zoneEdge + 0.2) inp.fwd = -1;
+    if (ai.circleT <= 0) { ai.circleT = between(r, [700, 1800]); if (r() < 0.4) ai.circleDir *= -1; }
+    inp.side = ai.circleDir * 0.5;
+    const rr0 = Math.hypot(f.x, f.z);
+    if (rr0 > cfg.arena.radius * 0.8) { inp.side = ai.circleDir; if (inp.fwd < 0) inp.fwd = 0; }
+    return inp;
+  }
 
   // 2. pick a plan (the move it wants to land next) and spacing
   if (!ai.plan || !f.kit.includes(ai.plan) || ai.think <= 0) {
-    const ready = f.kit.filter((k) => !(f.cds[k] > 0));
-    const pool = ready.length ? ready : f.kit;
+    const ready = f.kit.filter((k) => mayUse(k) && !(f.cds[k] > 0));
+    const pool = ready.length ? ready : f.kit.filter(mayUse);
     const w = {};
     for (const k of pool) w[k] = cfg.moves[k].dmg * (ai.prefer.includes(k) ? 2.5 : 1) + 4;
     ai.plan = weighted(r, w);
     ai.think = between(r, cfg.ai.think);
     // 3. throw something if a move reaches
-    const tired = f.sta < cfg.fighter.tiredBelow;
-    if (!tired && r() < ai.aggro) {
-      const now = f.kit.filter((k) => canUse(st, f, k) && inRange(st, f, k) && d <= cfg.moves[k].max && d >= cfg.moves[k].min * 0.8);
+    const tired = isTired(cfg, f);
+    if (!tired && r() < ai.aggro * (probing ? PR.aggro : 1)) {
+      const now = f.kit.filter((k) => mayUse(k) && canUse(st, f, k) && inRange(st, f, k) && d <= cfg.moves[k].max && d >= cfg.moves[k].min * 0.8);
       if (now.length) {
         inp.atk = now.includes(ai.plan) ? ai.plan : now[Math.floor(r() * now.length)];
         return inp;
@@ -92,7 +121,9 @@ export function aiInput(ai, st, me, dt) {
   const m = cfg.moves[ai.plan];
   const lo = m.min, hi = m.max;
   let want = lo + (hi - lo) * (0.55 + ai.rangeBias);
-  if (f.sta < cfg.fighter.tiredBelow) want = 2.4;
+  if (probing) want = PR.dist;
+  else if (ai.lurk && ai.lurkT > 0) { ai.lurkT -= ms; want = zoneEdge + 0.15; }
+  if (isTired(cfg, f)) want = 2.4;
   if (d > want + 0.15) inp.fwd = 1;
   else if (d < want - 0.15) inp.fwd = -1;
   if (ai.circleT <= 0) { ai.circleT = between(r, [700, 1800]); if (r() < 0.4) ai.circleDir *= -1; }

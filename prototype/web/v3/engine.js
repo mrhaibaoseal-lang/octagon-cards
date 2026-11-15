@@ -8,7 +8,8 @@ export function rng(seed = 1) {
 
 function makeFighter(id, kit, x, cfg) {
   return {
-    id, kit, x, z: 0, hp: cfg.fighter.hp, sta: cfg.fighter.sta,
+    id, kit, x, z: 0, sta: cfg.stamina.max, ceil: cfg.stamina.max,
+    parts: { head: 0, body: 0, legs: 0 }, headPerm: 0, inZone: false,
     act: null, guard: false, dodge: null, stun: 0, slow: 0, slowMult: 1, cds: {},
     dodgeCd: 0, down: false,
     stats: { thrown: 0, landed: 0, blocked: 0, dmg: 0, byMove: {} },
@@ -40,6 +41,11 @@ function axis(a, b) {
   return { dx: (b.x - a.x) / d, dz: (b.z - a.z) / d, d };
 }
 
+export const reach = (cfg, f) => Math.max(...f.kit.map((k) => cfg.moves[k].max));
+export const isTired = (cfg, f) => f.sta < f.ceil * cfg.stamina.tiredBelow;
+const windupOf = (f) => f.act.windup;
+function dropCeil(cfg, f, amount) { f.ceil = Math.max(cfg.stamina.ceilMin, f.ceil - amount); f.sta = Math.min(f.sta, f.ceil); }
+
 // Can this fighter start a move right now?
 export function canUse(st, f, id) {
   const m = st.cfg.moves[id];
@@ -53,6 +59,20 @@ export function inRange(st, f, id) {
   return d <= m.max + (m.lunge || 0) && d >= m.min * 0.5;
 }
 
+// damage goes to one body part (hidden). Head: part of it heals, part stays. Head hits by a heavy move can drop the target.
+function wound(st, t, m, dmg, knockCheck = false) {
+  const p = st.cfg.parts, part = m.target;
+  t.parts[part] = Math.min(p.max, t.parts[part] + dmg);
+  if (part === "head") {
+    t.headPerm = Math.min(p.max, t.headPerm + dmg * (1 - p.headSoft));
+    if (knockCheck && m.weight >= p.knockWeight) {
+      const prob = p.knockK * Math.pow(t.parts.head / p.max, 3) * dmg / p.knockDmgRef;
+      if (t.parts.head >= p.max || st.rand() < prob) t.knocked = true;
+    }
+    if (t.parts.head >= p.max) t.knocked = true;
+  } else if (part === "body") dropCeil(st.cfg, t, dmg * p.bodyCeil);
+}
+
 function resolveHit(st, a, mId) {
   const cfg = st.cfg, m = cfg.moves[mId], t = st.f[1 - a.id];
   const d = dist(a, t);
@@ -61,18 +81,20 @@ function resolveHit(st, a, mId) {
   bm.thrown++;
   st.seen[a.id].add(mId);
   const ev = { by: a.id, target: t.id, move: mId };
-  if (d > m.max) return st.events.push({ ...ev, type: "miss" });
-  if (t.dodge && t.dodge.t < cfg.dodge.invuln) return st.events.push({ ...ev, type: "dodged" });
+  const whiff = () => dropCeil(cfg, a, m.sta * cfg.stamina.ceilPerCost * (cfg.stamina.missMult - 1));
+  if (d > m.max) { whiff(); return st.events.push({ ...ev, type: "miss" }); }
+  if (t.dodge && t.dodge.t < cfg.dodge.invuln) { whiff(); return st.events.push({ ...ev, type: "dodged" }); }
   let dmg = m.dmg, stunMult = 1;
   if (d < m.min) dmg *= 0.5;
   // landing with the very tip of the range: a graze
   const tip = d > m.min + (m.max - m.min) * cfg.tip.from;
   if (tip) { dmg *= cfg.tip.dmg; stunMult *= cfg.tip.stun; }
-  if (a.sta < cfg.fighter.tiredBelow) dmg *= cfg.fighter.tiredDmg;
+  if (isTired(cfg, a)) dmg *= cfg.stamina.tiredDmg;
+  if (isTired(cfg, t)) dmg *= cfg.stamina.tiredTaken;
   if (t.guard && !t.act) {
     dmg *= m.block;
     t.sta = Math.max(0, t.sta - m.guardSta);
-    t.hp -= dmg; a.stats.dmg += dmg; t.stats.blocked++;
+    wound(st, t, m, dmg); a.stats.dmg += dmg; t.stats.blocked++;
     return st.events.push({ ...ev, type: "block", dmg });
   }
   // a lighter strike can't stop a heavier one already coming: the target eats it and keeps throwing (a trade)
@@ -80,7 +102,7 @@ function resolveHit(st, a, mId) {
   const trade = !!tm && tm.weight > m.weight;
   const counter = !!tm && !trade && t.act.phase === "windup";
   if (counter) dmg *= cfg.counter.dmg;
-  t.hp -= dmg; a.stats.dmg += dmg; a.stats.landed++; bm.landed++;
+  wound(st, t, m, dmg, true); a.stats.dmg += dmg; a.stats.landed++; bm.landed++;
   if (m.slow) { t.slow = m.slow.ms; t.slowMult = m.slow.mult; }
   if (!trade) {
     t.act = null; t.guard = false;
@@ -99,24 +121,29 @@ function stepFighter(st, f, inp, dt) {
   f.dodgeCd -= ms;
   if (f.slow > 0) f.slow -= ms; else f.slowMult = 1;
   const ax = axis(f, o);
-  const regen = f.guard ? cfg.fighter.staRegenGuard : cfg.fighter.staRegen;
-  if (!f.act && !f.dodge) f.sta = Math.min(cfg.fighter.sta, f.sta + regen * dt);
+  const S = cfg.stamina, P = cfg.parts;
+  f.inZone = ax.d <= reach(cfg, o) + S.zonePad;
+  let regen = f.guard ? S.regenGuard : f.inZone ? S.regenIn : S.regenOut;
+  if (f.parts.body > P.bodyHeavy) regen *= P.bodyRegen;
+  if (!f.act && !f.dodge) f.sta = Math.min(f.ceil, f.sta + regen * dt);
+  // the soft part of head damage heals slowly; faster out of the zone
+  if (f.parts.head > f.headPerm) f.parts.head = Math.max(f.headPerm, f.parts.head - (f.inZone ? P.headHealIn : P.headHealOut) * dt);
 
   if (f.stun > 0) { f.stun -= ms; f.guard = false; return; }
 
   if (f.act) {
-    const m = cfg.moves[f.act.move];
+    const m = cfg.moves[f.act.move], wu = windupOf(f);
     const prev = f.act.t;
     f.act.t += ms;
-    if (m.lunge && prev < m.windup) {
-      const step = m.lunge * (Math.min(f.act.t, m.windup) - prev) / m.windup;
+    if (m.lunge && prev < wu) {
+      const step = m.lunge * (Math.min(f.act.t, wu) - prev) / wu;
       const room = Math.max(0, ax.d - cfg.arena.minDist);
       const s = Math.min(step, room);
       f.x += ax.dx * s; f.z += ax.dz * s;
     }
-    if (f.act.phase === "windup" && f.act.t >= m.windup) { f.act.phase = "active"; resolveHit(st, f, f.act.move); }
-    if (f.act && f.act.phase === "active" && f.act.t >= m.windup + m.active) f.act.phase = "recovery";
-    if (f.act && f.act.t >= m.windup + m.active + m.recovery) f.act = null;
+    if (f.act.phase === "windup" && f.act.t >= wu) { f.act.phase = "active"; resolveHit(st, f, f.act.move); }
+    if (f.act && f.act.phase === "active" && f.act.t >= wu + m.active) f.act.phase = "recovery";
+    if (f.act && f.act.t >= wu + m.active + m.recovery) f.act = null;
     f.guard = false;
     return;
   }
@@ -143,8 +170,10 @@ function stepFighter(st, f, inp, dt) {
 
   if (inp.atk && canUse(st, f, inp.atk)) {
     const m = cfg.moves[inp.atk];
-    f.act = { move: inp.atk, t: 0, phase: "windup" };
-    f.sta -= m.sta; f.cds[inp.atk] = m.windup + m.active + m.recovery + m.cd;
+    const wu = m.windup * (isTired(cfg, f) ? S.tiredWindup : 1);
+    f.act = { move: inp.atk, t: 0, phase: "windup", windup: wu };
+    f.sta -= m.sta; dropCeil(cfg, f, m.sta * S.ceilPerCost);
+    f.cds[inp.atk] = wu + m.active + m.recovery + m.cd;
     f.guard = false;
     st.events.push({ type: "start", by: f.id, move: inp.atk });
     return;
@@ -155,7 +184,7 @@ function stepFighter(st, f, inp, dt) {
   let fw = Math.max(-1, Math.min(1, inp.fwd || 0)), sd = Math.max(-1, Math.min(1, inp.side || 0));
   const mag = Math.hypot(fw, sd);
   if (mag > 1) { fw /= mag; sd /= mag; }
-  const mult = (f.guard ? sp.guard : 1) * f.slowMult;
+  const mult = (f.guard ? sp.guard : 1) * f.slowMult * (1 - f.parts.legs / P.max * P.legSlow);
   const vf = fw * (fw > 0 ? sp.forward : sp.back) * mult;
   const vs = sd * sp.side * mult;
   // side = along the left-hand perpendicular (-dz, dx)
@@ -186,8 +215,8 @@ export function step(st, dt, inputs) {
   for (const i of order) stepFighter(st, st.f[i], inputs[i] || {}, dt);
   constrain(st);
   for (const f of st.f) {
-    if (f.hp <= 0 && st.phase === "fight") {
-      f.hp = 0; f.down = true; st.phase = "over"; st.winner = 1 - f.id; st.how = "KO";
+    if (f.knocked && st.phase === "fight") {
+      f.down = true; st.phase = "over"; st.winner = 1 - f.id; st.how = "KO";
       st.events.push({ type: "ko", target: f.id });
     }
   }
@@ -208,8 +237,8 @@ export function nextRound(st) {
   st.round++; st.clock = cfg.round.seconds * 1000; st.phase = "fight";
   const h = cfg.arena.startDist / 2;
   st.f.forEach((f, i) => {
-    f.hp = Math.min(cfg.fighter.hp, f.hp + cfg.round.healBetween);
-    f.sta = cfg.round.staBetween;
+    f.ceil = Math.min(cfg.stamina.max, f.ceil + cfg.stamina.restCeil);
+    f.sta = f.ceil;
     f.x = i ? h : -h; f.z = 0;
     f.act = null; f.dodge = null; f.stun = 0; f.slow = 0; f.slowMult = 1; f.cds = {}; f.guard = false;
   });

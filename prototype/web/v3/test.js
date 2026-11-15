@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createFight, step, nextRound, dist } from "./engine.js";
+import { createFight, step, nextRound, dist, reach } from "./engine.js";
 import { createAI, aiInput } from "./ai.js";
 
 const cfg = JSON.parse(readFileSync(new URL("../rules/v3/config.json", import.meta.url)));
@@ -15,18 +15,19 @@ test("jab in range hits, out of range misses", () => {
   let st = createFight(cfg, { kits }); at(st, 1.2);
   let ev = run(st, 400, [{ atk: "jab" }]);
   assert.ok(ev.some((e) => e.type === "hit" && e.move === "jab"));
-  assert.equal(st.f[1].hp, cfg.fighter.hp - cfg.moves.jab.dmg);
+  assert.ok(Math.abs(ev.find((e) => e.type === "hit").dmg - cfg.moves.jab.dmg) < 1e-9);
+  assert.ok(st.f[1].parts.head > cfg.moves.jab.dmg - 1 && st.f[1].parts.head <= cfg.moves.jab.dmg);
   st = createFight(cfg, { kits }); at(st, 2.5);
   ev = run(st, 400, [{ atk: "jab" }]);
   assert.ok(ev.some((e) => e.type === "miss"));
-  assert.equal(st.f[1].hp, cfg.fighter.hp);
+  assert.equal(st.f[1].parts.head, 0);
 });
 
 test("guard cuts damage and drains stamina", () => {
   const st = createFight(cfg, { kits }); at(st, 1.2);
-  run(st, 600, [{ atk: "cross" }, { guard: true }]);
-  assert.ok(Math.abs(st.f[1].hp - (cfg.fighter.hp - cfg.moves.cross.dmg * cfg.moves.cross.block)) < 1e-6);
-  assert.ok(st.f[1].sta < cfg.fighter.sta);
+  const ev = run(st, 600, [{ atk: "cross" }, { guard: true }]);
+  assert.ok(Math.abs(ev.find((e) => e.type === "block").dmg - cfg.moves.cross.dmg * cfg.moves.cross.block) < 1e-6);
+  assert.ok(st.f[1].sta < cfg.stamina.max);
 });
 
 test("dodge makes the attack whiff", () => {
@@ -35,7 +36,7 @@ test("dodge makes the attack whiff", () => {
   run(st, 120, [{}, {}]);
   const ev = run(st, 600, [{}, { dodge: true }]);
   assert.ok(ev.some((e) => e.type === "dodged" || e.type === "miss"));
-  assert.equal(st.f[1].hp, cfg.fighter.hp);
+  assert.equal(st.f[1].parts.head, 0);
 });
 
 test("same-or-heavier hit during windup is a counter and cancels the move", () => {
@@ -99,4 +100,83 @@ test("AI vs AI fights finish and both land strikes", () => {
   }
   console.log(`  20 AI fights: ${kos} KO, avg strikes landed per fight ${(landed / 20).toFixed(0)}, avg KO time ${(secs / Math.max(1, kos)).toFixed(0)} s`);
   assert.ok(landed > 0);
+});
+
+test("a whiff drops the stamina ceiling twice as much as a hit", () => {
+  const drop = (d) => { const st = createFight(cfg, { kits }); at(st, d); run(st, 700, [{ atk: "cross" }]); return cfg.stamina.max - st.f[0].ceil; };
+  const hit = drop(1.2), miss = drop(2.6), unit = cfg.moves.cross.sta * cfg.stamina.ceilPerCost;
+  assert.ok(Math.abs(hit - unit) < 1e-9, `hit ${hit}`);
+  assert.ok(Math.abs(miss - unit * cfg.stamina.missMult) < 1e-9, `miss ${miss}`);
+});
+
+test("stamina comes back faster outside the striking zone than inside", () => {
+  const regen = (d, guard = false) => {
+    const st = createFight(cfg, { kits }); at(st, d); st.f[0].sta = 20; run(st, 1000, [{ guard }]); return st.f[0].sta - 20;
+  };
+  const zone = reach(cfg, { kit: kits[1] }) + cfg.stamina.zonePad;
+  const inside = regen(zone - 0.5), outside = regen(zone + 0.8), guarding = regen(zone + 0.8, true);
+  assert.ok(Math.abs(inside - cfg.stamina.regenIn) < 0.3, `in ${inside}`);
+  assert.ok(Math.abs(outside - cfg.stamina.regenOut) < 0.3, `out ${outside}`);
+  assert.ok(Math.abs(guarding - cfg.stamina.regenGuard) < 0.3, `guard ${guarding}`);
+});
+
+test("a full head means a knockdown; a fresh head rarely falls to one cross", () => {
+  let st = createFight(cfg, { kits }); at(st, 1.2); st.f[1].parts.head = 95;
+  run(st, 600, [{ atk: "cross" }]);
+  assert.equal(st.phase, "over"); assert.equal(st.how, "KO"); assert.equal(st.winner, 0);
+  let falls = 0;
+  for (let seed = 1; seed <= 40; seed++) { st = createFight(cfg, { kits, seed }); at(st, 1.2); run(st, 600, [{ atk: "cross" }]); if (st.phase === "over") falls++; }
+  assert.ok(falls <= 1, `${falls} falls on a fresh head`);
+});
+
+test("40% of head damage stays, the rest heals outside the zone", () => {
+  const st = createFight(cfg, { kits }); at(st, 1.2);
+  const hit = run(st, 600, [{ atk: "cross" }]).find((e) => e.type === "hit").dmg; assert.ok(hit > 0);
+  st.f[0].x = -5; st.f[1].x = 5; // far apart
+  run(st, 20000, [{}, {}]);
+  assert.ok(Math.abs(st.f[1].headPerm - hit * 0.4) < 1e-6);
+  assert.ok(Math.abs(st.f[1].parts.head - st.f[1].headPerm) < 1e-6);
+});
+
+test("tired fighters hit softer and wind up slower", () => {
+  const st = createFight(cfg, { kits }); at(st, 1.2); st.f[0].sta = 5;
+  run(st, 20, [{ atk: "jab" }]);
+  assert.ok(Math.abs(st.f[0].act.windup - cfg.moves.jab.windup * cfg.stamina.tiredWindup) < 1e-9);
+});
+
+test("round break refills stamina to the ceiling and lifts the ceiling", () => {
+  const st = createFight(cfg, { kits }); st.f[0].ceil = 70; st.f[0].sta = 10; st.phase = "break";
+  nextRound(st);
+  assert.equal(st.f[0].ceil, 70 + cfg.stamina.restCeil); assert.equal(st.f[0].sta, st.f[0].ceil);
+  st.f[1].ceil = 98; nextRound(st); assert.equal(st.f[1].ceil, cfg.stamina.max);
+});
+
+test("AI only uses the jab and low kick in the first 25 seconds of round 1", () => {
+  const used = new Set();
+  for (let seed = 1; seed <= 8; seed++) {
+    const st = createFight(cfg, { seed, kits: [cfg.player.kit, ["jab", "cross", "hook", "lowkick"]] });
+    const ai = createAI(cfg, st.rand);
+    for (let t = 0; t < 24000 && st.phase === "fight"; t += DT * 1000) {
+      st.events = [];
+      const d = dist(st.f[0], st.f[1]);
+      step(st, DT, [{ fwd: d > 1.5 ? 1 : 0, atk: Math.random() < 0.03 ? "hook" : null, guard: t % 3000 > 2500 }, aiInput(ai, st, 1, DT)]);
+      for (const e of st.events) if (e.type === "start" && e.by === 1) used.add(e.move);
+    }
+  }
+  console.log("  AI moves in the probing window:", [...used].join(", "));
+  assert.ok(used.size > 0);
+  for (const m of used) assert.ok(cfg.ai.probe.moves.includes(m), m);
+});
+
+test("AI backs off out of the strike zone after a wave", () => {
+  const st = createFight(cfg, { seed: 3, kits: [cfg.player.kit, ["jab", "cross", "hook", "lowkick"]] });
+  const ai = createAI(cfg, st.rand, "kicker");
+  st.round = 2; let retreats = 0, was = false;
+  for (let t = 0; t < 40000 && st.phase === "fight"; t += DT * 1000) {
+    st.events = [];
+    const d = dist(st.f[0], st.f[1]);
+    step(st, DT, [{ fwd: d > 1.3 ? 1 : 0 }, aiInput(ai, st, 1, DT)]);
+    if (ai.resting && !was) retreats++; was = ai.resting;
+  }
+  assert.ok(retreats >= 3, `retreats ${retreats}`);
 });

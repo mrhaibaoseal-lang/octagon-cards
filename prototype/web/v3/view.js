@@ -145,10 +145,11 @@ function poseRig(rig, f, o, now) {
   let glow = [0, 0], glowLeg = [0, 0];
   if (f.act) {
     const m = cfg.moves[f.act.move], t = f.act.t;
-    const wu = t / m.windup, ac = (t - m.windup) / m.active, rc = (t - m.windup - m.active) / m.recovery;
-    const ext = t < m.windup ? -0.12 * ease(wu) : t < m.windup + m.active ? ease(ac) : 1 - ease(rc);
+    const W = f.act.windup ?? m.windup;
+    const wu = t / W, ac = (t - W) / m.active, rc = (t - W - m.active) / m.recovery;
+    const ext = t < W ? -0.12 * ease(wu) : t < W + m.active ? ease(ac) : 1 - ease(rc);
     const reach = Math.min(m.max, Math.max(0.6, dist(f, o))) - 0.15;
-    const tele = t < m.windup ? 0.3 + 0.7 * wu : 0;
+    const tele = t < W ? 0.3 + 0.7 * wu : 0;
     if (m.limb === "lead" || m.limb === "rear") {
       const i = m.limb === "lead" ? 0 : 1;
       const p = gp[i];
@@ -168,6 +169,8 @@ function poseRig(rig, f, o, now) {
     }
   }
   if (f.dodge) { const k = Math.sin(Math.min(1, f.dodge.t / cfg.dodge.ms) * Math.PI); body.position.y -= 0.25 * k; body.rotation.x = -0.25 * k; }
+  // a badly hurt head makes him wobble
+  if (f.parts.head >= cfg.parts.wobbleHead && !f.down) { const k = (f.parts.head - cfg.parts.wobbleHead) / (cfg.parts.max - cfg.parts.wobbleHead); body.rotation.z += Math.sin(now / 140 + f.id) * (0.05 + 0.1 * k); body.position.x += Math.sin(now / 230) * 0.03; }
   if (f.stun > 0) { body.rotation.x = -0.25; body.position.z = -0.05; }
   if (f.down) { g.rotation.x = lerp(g.rotation.x, -Math.PI / 2, 0.08); g.position.y = 0.2; } else g.rotation.x = 0;
   gloves.forEach((gl, i) => gl.position.copy(gp[i]));
@@ -224,9 +227,13 @@ const fmt = (ms) => { const s = Math.ceil(ms / 1000); return `${Math.floor(s / 6
 function hud() {
   for (const i of [0, 1]) {
     const f = st.f[i];
-    $("hp" + i).style.width = (100 * f.hp / cfg.fighter.hp) + "%";
-    $("st" + i).style.width = (100 * f.sta / cfg.fighter.sta) + "%";
-    $("stb" + i).classList.toggle("tired", f.sta < cfg.fighter.tiredBelow);
+    const mx = cfg.stamina.max;
+    $("st" + i).style.width = (100 * f.sta / mx) + "%";
+    $("lost" + i).style.width = (100 * (mx - f.ceil) / mx) + "%";
+    $("stb" + i).classList.toggle("tired", f.sta < f.ceil * cfg.stamina.tiredBelow);
+    // regen speed: ▲▲▲ fast (out of his strike zone), ▲ slow (inside it, or guarding)
+    $("rg" + i).textContent = f.act || f.dodge ? "" : f.guard || f.inZone ? "▲" : "▲▲▲";
+    $("rg" + i).style.color = f.guard || f.inZone ? "#8b93a3" : "#7fe0a0";
   }
   $("clock").textContent = fmt(st.clock);
   $("rnd").textContent = `第 ${st.round} 回合`;
@@ -355,13 +362,24 @@ function moveRows(f, onlySeen) {
   return Object.entries(f.stats.byMove).filter(([id]) => !onlySeen || st.seen[f.id].has(id))
     .map(([id, s]) => `<tr><td>${cfg.moves[id].name}</td><td>用了 ${s.thrown} 次，中 ${s.landed}</td></tr>`).join("");
 }
+const PART_COLORS = ["#3fbf6a", "#e6d36a", "#ff9a3c", "#e8383d"];
+const partLevel = (v) => Math.min(3, Math.floor(v / (cfg.parts.max / 4)));
+const partBox = (name, v) => `<span class="part" style="background:${PART_COLORS[partLevel(v)]}">${name}</span>`;
+function scoutHint(o) {
+  const P = o.parts, rows = [["head", "他的頭被打得不輕，一記重拳就可能倒"], ["legs", "他的腳步開始拖了"], ["body", "他的呼吸變重了"]];
+  const [k, txt] = rows.map(([k, t]) => [k, t]).sort((a, b) => P[b[0]] - P[a[0]])[0];
+  return P[k] < cfg.parts.max * 0.2 ? "他還沒受到什麼傷" : txt;
+}
 function showBreak() {
   const o = st.f[1], hidden = o.kit.filter((id) => !st.seen[1].has(id)).length;
   $("panel").innerHTML = `<h2>第 ${st.round} 回合結束</h2>
-    <p>你：出手 ${st.f[0].stats.thrown}、打中 ${st.f[0].stats.landed}、造成 ${Math.round(st.f[0].stats.dmg)} 傷害 · 對手：出手 ${o.stats.thrown}、打中 ${o.stats.landed}、造成 ${Math.round(o.stats.dmg)}</p>
-    <p style="margin-top:6px;color:#ffa3a6">球探：紅角目前露出的招式</p>
+    <p>你：出手 ${st.f[0].stats.thrown}、打中 ${st.f[0].stats.landed} · 對手：出手 ${o.stats.thrown}、打中 ${o.stats.landed}</p>
+    <p style="margin-top:6px"><b>你的狀況</b>（休息後體力上限 ${Math.min(cfg.stamina.max, Math.round(st.f[0].ceil + cfg.stamina.restCeil))}／${cfg.stamina.max}）</p>
+    <div class="parts">${partBox("頭", st.f[0].parts.head)}${partBox("身體", st.f[0].parts.body)}${partBox("腳", st.f[0].parts.legs)}<span class="leg">● 沒事 ● 有點 ● 不輕 ● 很糟</span></div>
+    <p style="margin-top:6px;color:#ffa3a6">球探：${scoutHint(o)}</p>
+    <p style="margin-top:2px;color:#ffa3a6">紅角目前露出的招式</p>
     <table>${moveRows(o, true) || "<tr><td>還沒出手</td><td></td></tr>"}${hidden ? `<tr><td>另外 ${hidden} 招</td><td>還沒露出來</td></tr>` : ""}</table>
-    <p style="color:var(--dim)">（商店之後才做；這版休息只回 ${cfg.round.healBetween} 耐久、體力回滿）</p>
+    <p style="color:var(--dim)">（商店之後才做；休息後體力回到上限，上限 +${cfg.stamina.restCeil}）</p>
     <button class="go" id="goNext">開始第 ${st.round + 1} 回合 ▶</button>`;
   $("ov").classList.add("on");
   $("goNext").onclick = () => { nextRound(st); $("ov").classList.remove("on"); updateCamera(0, true); banner(`第 ${st.round} 回合　開打！`); };
@@ -371,8 +389,8 @@ function showEnd() {
   const title = w === -1 ? "平手" : w === 0 ? `你贏了（${st.how}）` : `你輸了（${st.how}）`;
   $("panel").innerHTML = `<h2>${title}</h2>
     <p>對手打法：<b>${ai.name}</b>　招式：${o.kit.map((id) => cfg.moves[id].name).join("、")}</p>
-    <table><tr><td>你 出手／打中／傷害</td><td>${st.f[0].stats.thrown}／${st.f[0].stats.landed}／${Math.round(st.f[0].stats.dmg)}</td></tr>
-    <tr><td>對手 出手／打中／傷害</td><td>${o.stats.thrown}／${o.stats.landed}／${Math.round(o.stats.dmg)}</td></tr>
+    <table><tr><td>你 出手／打中</td><td>${st.f[0].stats.thrown}／${st.f[0].stats.landed}</td></tr>
+    <tr><td>對手 出手／打中</td><td>${o.stats.thrown}／${o.stats.landed}</td></tr>
     <tr><td>你擋下</td><td>${st.f[0].stats.blocked} 次</td></tr></table>
     <button class="go" id="again">再打一場 ▶</button>`;
   $("ov").classList.add("on");

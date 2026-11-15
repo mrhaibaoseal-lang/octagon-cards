@@ -1,33 +1,46 @@
 {
   "_doc": "V3 即時灰盒（v3.html）。距離單位是公尺（兩人身體中心的距離），時間是毫秒，速度是公尺／秒。招式：min～max 打得到的距離（比 min 還近算被貼住，傷害打折 jammed）；windup 出招前搖（這段被打中算反擊 counter）、active 判定、recovery 收招；dmg 傷害；sta 體力花費；cd 冷卻；block 被防禦時剩下的傷害比例；guardSta 防禦方被扣的體力；stun 打中讓對手僵住多久；push 擊退；lunge 前搖時往前衝多遠；slow 打中後對手移動速度降低的比例與時間；limb 畫面用哪隻手腳（引擎不看）；weight 輕重：打中正在出招的對手時，比他那招輕＝打不斷，他吃下這下、招照出（互換）；一樣重或更重且他在前搖＝反擊。",
   "arena": { "radius": 4.0, "minDist": 0.62, "startDist": 2.6 },
-  "round": { "count": 3, "seconds": 90, "healBetween": 15, "staBetween": 100 },
-  "fighter": {
-    "hp": 150, "sta": 100, "staRegen": 14, "staRegenGuard": 4, "tiredBelow": 25, "tiredDmg": 0.75,
-    "speed": { "forward": 2.0, "back": 1.7, "side": 1.6, "guard": 0.5 }
+  "round": { "count": 3, "seconds": 90 },
+  "fighter": { "speed": { "forward": 2.0, "back": 1.7, "side": 1.6, "guard": 0.5 } },
+  "stamina": {
+    "_doc": "兩層體力：sta 現在的、ceil 上限（只會往下掉，休息才加回一點）。每出一招上限減 招式sta x ceilPerCost，揮空（判定期間沒打中，含被閃掉）再扣一次 x missMult 倍。回氣：交火區（距離 <= 對手最長的招 + zonePad）regenIn，外面 regenOut，舉手 regenGuard（每秒）。低於上限 x tiredBelow 算沒力：傷害 x tiredDmg、前搖 x tiredWindup、被打 x tiredTaken。休息：體力回到上限，上限 + restCeil（最多 max）。",
+    "max": 100, "ceilMin": 20, "ceilPerCost": 0.03, "missMult": 2,
+    "regenIn": 4, "regenOut": 18, "regenGuard": 4, "zonePad": 0.2,
+    "tiredBelow": 0.25, "tiredDmg": 0.75, "tiredWindup": 1.2, "tiredTaken": 1.15,
+    "restCeil": 8
+  },
+  "parts": {
+    "_doc": "頭／身體／腳各 max 點，不顯示。頭傷 headSoft 比例會慢慢回（回氣區每秒 headHealOut、交火區 headHealIn），其餘留到比賽結束。倒地：打中頭、招式 weight >= knockWeight 時機率 = knockK x (頭傷/max)^3 x 傷害/knockDmgRef，頭傷滿 max 必倒。身體傷每 1 點讓體力上限掉 bodyCeil；超過 bodyHeavy 後回氣 x bodyRegen。腳傷讓移動速度 x (1 - 腳傷/max x legSlow)。",
+    "max": 100, "headSoft": 0.6, "headHealOut": 3, "headHealIn": 1,
+    "knockK": 0.35, "knockDmgRef": 10, "knockWeight": 2,
+    "bodyCeil": 0.4, "bodyHeavy": 50, "bodyRegen": 0.7, "legSlow": 0.35,
+    "wobbleHead": 60
   },
   "guard": { "staPerSec": 0 },
   "dodge": { "ms": 360, "invuln": 260, "dist": 1.1, "sta": 12, "cd": 650 },
   "counter": { "dmg": 1.4, "stun": 1.5 },
   "tip": { "_doc": "打在射程最後 from 比例以外（招式最遠端）＝擦到：傷害與僵直打折", "from": 0.75, "dmg": 0.7, "stun": 0.5 },
   "moves": {
-    "jab":      { "name": "刺拳",     "tag": "中", "min": 0.85, "max": 1.6, "windup": 130, "active": 80, "recovery": 210, "weight": 1, "dmg": 3,  "sta": 4,  "cd": 0,    "block": 0.15, "guardSta": 4,  "stun": 140, "push": 0.08, "limb": "lead" },
-    "cross":    { "name": "後手直拳", "tag": "中", "min": 0.85, "max": 1.6, "windup": 280, "active": 90, "recovery": 380, "weight": 2, "dmg": 8,  "sta": 9,  "cd": 0,    "block": 0.2,  "guardSta": 9,  "stun": 340, "push": 0.18, "limb": "rear" },
-    "hook":     { "name": "勾拳",     "tag": "短", "min": 0.6,  "max": 1.2, "windup": 300, "active": 90, "recovery": 400, "weight": 3, "dmg": 11, "sta": 10, "cd": 1200, "block": 0.25, "guardSta": 12, "stun": 420, "push": 0.2,  "limb": "lead", "arc": true },
-    "lowkick":  { "name": "低踢",     "tag": "長", "min": 1.15, "max": 1.95, "windup": 340, "active": 100, "recovery": 450, "weight": 2, "dmg": 6, "sta": 10, "cd": 800,  "block": 0.7,  "guardSta": 3,  "stun": 260, "push": 0.05, "limb": "kickLow", "slow": { "mult": 0.65, "ms": 3000 } },
-    "highkick": { "name": "高踢",     "tag": "長", "min": 1.25, "max": 2.0, "windup": 460, "active": 110, "recovery": 560, "weight": 3, "dmg": 15, "sta": 16, "cd": 2000, "block": 0.25, "guardSta": 16, "stun": 600, "push": 0.3,  "limb": "kickHigh" },
-    "superman": { "name": "超人拳",   "tag": "衝", "min": 1.0,  "max": 1.7, "windup": 380, "active": 90, "recovery": 520, "weight": 2, "dmg": 10, "sta": 14, "cd": 2500, "block": 0.2,  "guardSta": 10, "stun": 380, "push": 0.2,  "limb": "rear", "lunge": 1.0 }
+    "jab":      { "name": "刺拳", "target": "head",     "tag": "中", "min": 0.85, "max": 1.6, "windup": 130, "active": 80, "recovery": 210, "weight": 1, "dmg": 3,  "sta": 4,  "cd": 0,    "block": 0.15, "guardSta": 4,  "stun": 140, "push": 0.08, "limb": "lead" },
+    "cross":    { "name": "後手直拳", "target": "head", "tag": "中", "min": 0.85, "max": 1.6, "windup": 280, "active": 90, "recovery": 380, "weight": 2, "dmg": 8,  "sta": 9,  "cd": 0,    "block": 0.2,  "guardSta": 9,  "stun": 340, "push": 0.18, "limb": "rear" },
+    "hook":     { "name": "勾拳", "target": "head",     "tag": "短", "min": 0.6,  "max": 1.2, "windup": 300, "active": 90, "recovery": 400, "weight": 3, "dmg": 11, "sta": 10, "cd": 1200, "block": 0.25, "guardSta": 12, "stun": 420, "push": 0.2,  "limb": "lead", "arc": true },
+    "lowkick":  { "name": "低踢", "target": "legs",     "tag": "長", "min": 1.15, "max": 1.95, "windup": 340, "active": 100, "recovery": 450, "weight": 2, "dmg": 6, "sta": 10, "cd": 800,  "block": 0.7,  "guardSta": 3,  "stun": 260, "push": 0.05, "limb": "kickLow", "slow": { "mult": 0.65, "ms": 3000 } },
+    "highkick": { "name": "高踢", "target": "head",     "tag": "長", "min": 1.25, "max": 2.0, "windup": 460, "active": 110, "recovery": 560, "weight": 3, "dmg": 15, "sta": 16, "cd": 2000, "block": 0.25, "guardSta": 16, "stun": 600, "push": 0.3,  "limb": "kickHigh" },
+    "superman": { "name": "超人拳", "target": "head",   "tag": "衝", "min": 1.0,  "max": 1.7, "windup": 380, "active": 90, "recovery": 520, "weight": 2, "dmg": 10, "sta": 14, "cd": 2500, "block": 0.2,  "guardSta": 10, "stun": 380, "push": 0.2,  "limb": "rear", "lunge": 1.0 }
   },
   "player": { "kit": ["jab", "cross", "hook", "lowkick"] },
   "opponent": { "pool": ["jab", "cross", "hook", "lowkick", "highkick", "superman"], "kitSize": 4, "always": ["jab"] },
   "ai": {
     "_doc": "react 看到對手出招後多久反應（毫秒，區間隨機）；guard／dodge／counter 反應時選哪一種的權重；think 多久重新決定一次；aggro 有招打得到時出手的機率；circle 繞圈的力道。styles 是三種打法的覆寫。",
+    "probe": { "_doc": "第 1 回合前 seconds 秒：出手意願 x aggro、只用 moves、站在 dist 米。", "seconds": 25, "aggro": 0.4, "moves": ["jab", "lowkick"], "dist": 1.85 },
+    "wave": [2, 3], "rest": { "_doc": "打完一波退到對手交火區外 ms 毫秒（再乘打法的 restMult），體力回到上限 x staFrac 才再進來", "ms": [1500, 3000], "staFrac": 0.6 }, "lurkMs": 3500,
     "react": [200, 360], "think": [140, 300], "aggro": 0.45, "circle": 0.6, "guardHold": 420,
     "spam": { "_doc": "window 毫秒內對手出手 count 次以上＝連按，反擊權重 ×counter", "window": 2500, "count": 3, "counter": 3 },
     "respond": { "guard": 0.5, "dodge": 0.2, "counter": 0.1, "none": 0.2 },
     "styles": {
-      "pressure": { "name": "壓迫型", "aggro": 0.6, "rangeBias": -0.15, "respond": { "guard": 0.55, "dodge": 0.1, "counter": 0.15, "none": 0.2 } },
-      "counter":  { "name": "反擊型", "aggro": 0.3, "rangeBias": 0.15, "respond": { "guard": 0.3, "dodge": 0.35, "counter": 0.2, "none": 0.15 } },
+      "pressure": { "name": "壓迫型", "restMult": 0.5, "aggro": 0.6, "rangeBias": -0.15, "respond": { "guard": 0.55, "dodge": 0.1, "counter": 0.15, "none": 0.2 } },
+      "counter":  { "name": "反擊型", "restMult": 1.3, "lurk": true, "aggro": 0.3, "rangeBias": 0.15, "respond": { "guard": 0.3, "dodge": 0.35, "counter": 0.2, "none": 0.15 } },
       "kicker":   { "name": "踢擊型", "aggro": 0.45, "rangeBias": 0.3, "prefer": ["lowkick", "highkick"], "respond": { "guard": 0.45, "dodge": 0.25, "counter": 0.05, "none": 0.25 } }
     }
   }

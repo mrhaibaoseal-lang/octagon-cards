@@ -10,19 +10,22 @@
 html,body{height:100%;background:#000;color:var(--ink);font-family:"Noto Sans TC","PingFang TC",system-ui,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
 #stage{position:absolute;left:50%;top:50%;width:844px;height:390px;transform-origin:0 0;overflow:hidden;background:#05070a}
 #stage canvas{position:absolute;inset:0;width:844px!important;height:390px!important}
-.bar{position:absolute;top:10px;width:300px;height:42px;background:var(--plate);border:1px solid #555;border-radius:4px;box-shadow:0 3px 0 #000,inset 0 1px 0 #6a707c;padding:4px 8px}
+.bar{position:absolute;top:10px;width:300px;height:56px;background:var(--plate);border:1px solid #555;border-radius:4px;box-shadow:0 3px 0 #000,inset 0 1px 0 #6a707c;padding:4px 8px}
 .bar.l{left:12px}.bar.r{right:12px;text-align:right}
 .bar .nm{font:800 13px/1 inherit;font-family:inherit;letter-spacing:.5px}
 .bar.l .nm{color:#9cc0ff}.bar.r .nm{color:#ffa3a6}
 .meter{height:8px;margin-top:4px;background:#0008;border-radius:2px;overflow:hidden;position:relative}
 .meter i{position:absolute;top:0;bottom:0;border-radius:2px;transition:width .15s}
-.bar.l .hp i{left:0;background:linear-gradient(90deg,#1e5fd8,#59a0ff)}
-.bar.r .hp i{right:0;background:linear-gradient(270deg,#c2232a,#ff6a6e)}
-.st{height:4px;margin-top:3px}.st i{background:#e6d36a}.bar.l .st i{left:0}.bar.r .st i{right:0}
+.st{height:11px;margin-top:6px}.st i{background:#e6d36a}.bar.l .st i,.bar.l .st u{left:0}.bar.r .st i,.bar.r .st u{right:0}
 .st.tired i{background:#ff7a3c}
+.st u{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,#e8383d 0 3px,#4a0f12 3px 6px);opacity:.9;transition:width .3s}
+.bar.l .st u{left:auto;right:0}.bar.r .st u{right:auto;left:0}
+.rg{position:absolute;bottom:3px;font-size:9px;letter-spacing:1px;line-height:1}.bar.l .rg{right:8px}.bar.r .rg{left:8px}
+.stl{position:absolute;bottom:3px;font-size:9px;color:var(--dim);line-height:1}.bar.l .stl{left:8px}.bar.r .stl{right:8px}
+.parts{display:flex;gap:8px;align-items:center;margin:4px 0}.part{padding:4px 14px;border-radius:5px;font-size:12px;font-weight:800;color:#111}.leg{font-size:10px;color:var(--dim);margin-left:auto}
 .clock{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:92px;height:42px;background:var(--plate);border:1px solid #555;border-radius:4px;text-align:center;box-shadow:0 3px 0 #000}
 .clock b{display:block;font:800 18px/24px ui-monospace,monospace}.clock small{font-size:10px;color:var(--dim)}
-.kit{position:absolute;top:56px;right:12px;display:flex;gap:3px;align-items:center}
+.kit{position:absolute;top:72px;right:12px;display:flex;gap:3px;align-items:center}
 .kit em{font-size:9px;color:var(--dim);font-style:normal;margin-right:3px}
 .kit span{min-width:30px;height:24px;padding:0 3px;border-radius:5px;background:#1a1d24;border:1px solid #3a3f49;display:grid;place-items:center;font:700 11px inherit;font-family:inherit;color:#555}
 .kit span.seen{background:#4a1518;border-color:var(--red);color:#ffd0d1;font-size:9px}
@@ -65,9 +68,9 @@ html,body{height:100%;background:#000;color:var(--ink);font-family:"Noto Sans TC
 </head>
 <body>
 <div id="stage">
-  <div class="bar l"><div class="nm">藍角 · 你</div><div class="meter hp"><i id="hp0"></i></div><div class="meter st" id="stb0"><i id="st0"></i></div></div>
+  <div class="bar l"><div class="nm">藍角 · 你</div><div class="meter st" id="stb0"><i id="st0"></i><u id="lost0"></u></div><span class="stl">體力</span><span class="rg" id="rg0"></span></div>
   <div class="clock"><b id="clock">1:30</b><small id="rnd">第 1 回合</small></div>
-  <div class="bar r"><div class="nm" id="oppName">紅角 · 對手</div><div class="meter hp"><i id="hp1"></i></div><div class="meter st" id="stb1"><i id="st1"></i></div></div>
+  <div class="bar r"><div class="nm" id="oppName">紅角 · 對手</div><div class="meter st" id="stb1"><i id="st1"></i><u id="lost1"></u></div><span class="stl">體力</span><span class="rg" id="rg1"></span></div>
   <div class="kit" id="kit"></div>
   <div class="stickzone" id="stickzone"><div class="stick" id="stick"><div class="knob" id="knob"></div></div></div>
   <div class="dodge" id="dodge">閃<br><small style="font-size:8px">Shift</small></div>
