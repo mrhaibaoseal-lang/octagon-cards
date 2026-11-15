@@ -10,8 +10,8 @@
 
 ## 2. 開發順序
 1. **只有核心戰鬥在網頁驗證**（`prototype/web/`）。瀏覽器就能玩，不需要打包。
-2. **正式版完全原生**：戰鬥通過使用者試玩後就移植到 Swift（`Packages/OctagonCore`、`App/`），之後的模式都直接用 Swift 做。不用網頁殼，手機上不跑網頁程式。**畫面用 SwiftUI＋RealityKit，做成 2.5D**（2026-11-14 使用者決定）：八角籠、燈光、轉播鏡頭是即時 3D，選手仍是像素精靈圖、以面向鏡頭的平面放進場景。不用 SceneKit（Apple 2025 起不建議新專案使用），也不用 Unity／Godot（不是原生 Swift，打包多一層）。舊 App 在移植完成前保留，不要刪。
-3. **規則與數值放 JSON**（`prototype/web/rules/`），引擎不得比對特定牌名，也不得把數值寫死在流程裡。移植時 Swift 讀同一份資料。
+2. **正式版用 Unity**（2026-11-15 使用者決定，取代 11-14 的 SwiftUI＋RealityKit）：不管最後是卡牌版還是 V3，都用 Unity（Unity 6＋URP、C#）做，理由是畫面要儘可能精美。使用者沒有 Mac：在 Windows 上用 Unity 開發與試玩，匯出 Xcode 專案後由 CI 的 macOS runner 出未簽名 IPA。手機上不跑網頁程式。**現在先不換**：玩法照舊在 `prototype/web/` 驗證，排到移植才開 Unity 專案。移植時引擎寫成不依賴 Unity 畫面的 C# 程式庫，遊戲與模擬共用。不用 Unreal 5（卡通畫風要繞路、Windows 出 iOS 要接 Mac、藍圖是二進位檔）。舊 Swift App 在移植完成前保留，不要刪。
+3. **規則與數值放 JSON**（`prototype/web/rules/`），引擎不得比對特定牌名，也不得把數值寫死在流程裡。移植時 C# 讀同一份資料。
 4. **模擬必須走和遊戲相同的流程**：同一個引擎、同樣的手牌與 AI。不得用另一套簡化流程校準平衡。
 
 ## 3. 戰鬥設計原則
@@ -40,4 +40,4 @@
 - 只用免費服務：公開 repo 加標準 `macos-latest` runner。未經同意不觸發任何可能計費的流程。
 - GitHub Actions 只產出未簽名 IPA，由使用者用 FlareStore 在手機簽名。`.p12`、`.mobileprovision` 永不上傳。
 - Xcode 專案由 `project.yml`（XcodeGen）產生，不提交 `.xcodeproj`。
-- Windows 沒有 Swift 工具鏈，Swift 的編譯與測試以 CI 為準。
+- Windows 沒有 Swift 工具鏈，Swift 的編譯與測試以 CI 為準。（以上是舊 Swift App 的流程；改 Unity 後 CI 要換成「Unity 匯出 Xcode 專案 → macOS runner 編譯」，Unity 個人版授權在 CI 上的啟用方式到時再查。）
