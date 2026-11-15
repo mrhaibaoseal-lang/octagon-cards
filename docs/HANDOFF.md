@@ -2,6 +2,13 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-15 · Claude Opus 5.5（試低面數半條命風：通用人體＋Gemini 上色）
+- 使用者覺得《奧術》路線問題太多修不好，要試「低面數通用模型、1998 年 PC 遊戲（半條命）風」；這和 RULES「不再嘗試：復古低面數」衝突，是使用者明確要試，採用前要改 RULES／ART_SPEC。
+- 做了 `pipeline/lowpoly/`：`build_fighter.py` 用程式蓋乾淨的通用人體（1,122 三角形、格鬥架式）；`paint_lowpoly.py` 拍灰模四視角，Gemini 兩次（全身 16:9、頭 2×2，已用掉，約 NT$10）照照片畫成低解析遊戲貼圖，投影回 1024 貼圖、最近點取樣。
+- 結果 `_lowpoly/paint/g_cmp.png`：臉、鬍子、刺青、短褲都上了，像本人；直接貼照片的版本（`_lowpoly/lp_cmp.png`）側面全是拉長條紋，不要用。
+- 還看得到：手腳是一節節直筒、關節有折線，肩膀方塊；短褲上 Gemini 還是畫了小標誌；後腦一條接縫；胸口刺青近看很糊（遠看可以）。
+- **等使用者看**：要不要走這條路。下一步若要：身體形狀做得更像人（肩、肘、膝的過渡），再換一位選手照跑看要多久。
+
 ## 2026-11-15 · Claude Fable 5.2（40 位的做法：先看灰模、臉不磨）
 - 使用者問 40 位要不要換方法：Topuria 最符合想像，O'Malley 難在頭髮。決定畫風不變，先改兩個流程預設。
 - 做了：`gemini_paint.py` 沒有 `--shape-ok` 就不呼叫 Gemini，只出灰模 `clay_<mesh>.png`；`smooth_head.py` 臉中段不磨，頭髮遮罩蓋到臉中段超過 10% 就停（`--force` 可強制）；`exaggerate_head.py --jaw` 預設改 1.0。
@@ -27,9 +34,3 @@
 - 上色（Gemini 第 7 次，額度用完）並接回身體：`om_keep_vs_old_close.png`，臉變長窄、捲髮有蓬度。
 - 使用者：像，可以了。後頸偏白、瀏海下膚色縫先不修。
 - 下一步：使用者說可以就換下一位選手照同流程（Gemini 剩 1 次，用前先問）；坑與指令在 `pipeline/img2_3d/README.md` 最後一節。
-
-## 2026-11-15 · Claude Opus 5.5（O'Malley 頭型重做：找出臉被磨掉的原因）
-- 做了：`gen_head.py` 加 `--look`／`--name`，生了貼頭短髮頭像（Gemini 第 6 次，NT$5）；`render_turntable.py` 加 `--clay` 灰模；新 `keep_face.py`（把處理過的頭的臉貼回 TRELLIS 原始表面）；直接用真人照片跑 TRELLIS（免費）。
-- 驗證：灰模 `_img2_3d/clay_face_cmp.png`：原始網格是長窄臉像本人，`solid_head`＋`smooth_head` 把五官磨掉（`om_mask.png` 頭髮遮罩蓋滿臉）；短髮頭像被 Gemini 改成方臉，使用者說和本人沒關係。
-- **要使用者確認**：已選原始網格（第 1 列；第 5 列真人照片版也可以）。`keep_face.py` 的頭髮分類還不準，臉只回來一部分（`clay_keep_cmp.png`）。
-- 下一步：照 README 最後一節「臉被磨掉」修分類（改用幾何＋正面圖判斷），臉型對了再上色；O'Malley 不要用 `--jaw 1.06`。
