@@ -129,7 +129,13 @@ for v, gb, pb in zip(sheet_views, gboxes, pboxes):
     for _ in range(3):  # trim edge pixels so no green-screen fringe ends up on the skin
         m = m & np.roll(m, 1, 0) & np.roll(m, -1, 0) & np.roll(m, 1, 1) & np.roll(m, -1, 1)
     out[..., 3] = m.astype(np.float32)
-    out[..., 1] = np.minimum(out[..., 1], np.maximum(out[..., 0], out[..., 2]))  # remove green spill
+    # Remove green spill, only in a band along the outline: on the whole figure it also greyed out green shorts
+    # (Volkanovski, 2026-11-15).
+    inner = m.copy()
+    for _ in range(6):
+        inner = inner & np.roll(inner, 1, 0) & np.roll(inner, -1, 0) & np.roll(inner, 1, 1) & np.roll(inner, -1, 1)
+    band = ~inner
+    out[band, 1] = np.minimum(out[band, 1], np.maximum(out[band, 0], out[band, 2]))
     # Push edge colours outward over the transparent area so filtering never mixes in green.
     filled = m.copy()
     for _ in range(24):

@@ -29,6 +29,7 @@ ap.add_argument("--leg-spread", type=float, default=6.0, help="degrees each leg 
 ap.add_argument("--bulk", type=float, help="0-1 (default: preset's, else 0): extra muscle targets (chest, lats, abs, shoulders, arms, legs, neck) on top of the macros")
 ap.add_argument("--muscle", type=float, help="MakeHuman muscle macro 0-1 (default: preset's, else 1.0)")
 ap.add_argument("--head-scale", type=float, default=1.0, help="enlarge the head (and the bones that follow it) by this factor, blended into the neck; the body height is kept")
+ap.add_argument("--torso-fill", action="store_true", help="old 2.5D pixel route only: with --bulk, fill the stomach and waist (TORSO_FILL); off for the full-3D fighters")
 ap.add_argument("--targets", default="", help="extra MPFB targets, e.g. stomach/stomach-pregnant-incr=0.3,torso/torso-vshape-decr=0.2")
 ap.add_argument("--view-px", type=int, default=640, help="pixel width of one view; height is 1.35x")
 args = ap.parse_args(argv)
@@ -74,9 +75,11 @@ BULK_TARGETS = {
 }
 # The base mesh's belly sits well behind the chest, so a muscular body looks hollow under the ribs (user, 2026-11-08):
 # fill the stomach and waist so the side profile runs straight from chest to belt. No V-shape widening for the same reason.
+# That was for the small side-on pixel sprites. In full 3D the camera moves freely and the filled belly looked too big
+# (user, 2026-11-15), so it is opt-in now (--torso-fill).
 TORSO_FILL = {"stomach/stomach-pregnant-incr": 0.3, "torso/measure-waist-circ-incr": 0.35}
 extra = {t: w * args.bulk for t, w in BULK_TARGETS.items()} if args.bulk > 0 else {}
-if args.bulk > 0:
+if args.bulk > 0 and args.torso_fill:
     extra.update(TORSO_FILL)
 for t, w in list(preset.get("targets", {}).items()) + [(kv.split("=")[0], float(kv.split("=")[1])) for kv in args.targets.split(",") if kv]:
     extra[t] = extra.get(t, 0.0) + w

@@ -64,6 +64,12 @@ def prepare_reference_photo(path, max_height=1024):
 
 # name, look, shorts. Keep descriptions plain; no brand names.
 FIGHTERS = {
+    "volkanovski": ("Alexander Volkanovski",
+                "Australian featherweight, tanned skin, shaved bald head, short dark full beard, short stocky and thick "
+                "muscular build with a broad chest and thick legs, a black-and-grey tattoo sleeve on the right arm from "
+                "shoulder to forearm; copy only the tattoos visible in the photo, do not invent others. Ignore the "
+                "championship belt, the gloves and every logo: they must NOT appear",
+                "dark green with gold trim"),
     "topuria": ("Ilia Topuria",
                 "Georgian-Spanish featherweight, olive skin, short dark hair with a skin fade, full dark well-groomed beard, "
                 "many black tattoos covering the chest, both arms and the back",
