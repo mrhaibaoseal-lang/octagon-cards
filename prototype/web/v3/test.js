@@ -38,12 +38,43 @@ test("dodge makes the attack whiff", () => {
   assert.equal(st.f[1].hp, cfg.fighter.hp);
 });
 
-test("hitting during windup is a counter and cancels the move", () => {
-  const st = createFight(cfg, { kits }); at(st, 1.2);
-  st.events = []; step(st, DT, [{}, { atk: "cross" }]);
-  const ev = run(st, 300, [{ atk: "jab" }, {}]);
+test("same-or-heavier hit during windup is a counter and cancels the move", () => {
+  const st = createFight(cfg, { kits }); at(st, 1.1);
+  st.events = []; step(st, DT, [{}, { atk: "lowkick" }]);
+  const ev = run(st, 500, [{ atk: "cross" }, {}]);
   assert.ok(ev.some((e) => e.type === "hit" && e.counter && e.by === 0));
-  assert.ok(!ev.some((e) => e.type === "hit" && e.by === 1));
+  assert.ok(!ev.some((e) => e.type === "hit" && e.by === 1 && e.move === "lowkick"));
+});
+
+test("a jab can't stop a cross already coming: both land (trade)", () => {
+  const st = createFight(cfg, { kits }); at(st, 1.1);
+  st.events = []; step(st, DT, [{}, { atk: "cross" }]);
+  const ev = run(st, 500, [{ atk: "jab" }, {}]);
+  assert.ok(ev.some((e) => e.type === "hit" && e.by === 0 && e.trade));
+  assert.ok(ev.some((e) => e.type === "hit" && e.by === 1 && e.move === "cross"));
+});
+
+test("landing with the tip of the range is a graze", () => {
+  const st = createFight(cfg, { kits }); at(st, 1.58);
+  const ev = run(st, 400, [{ atk: "jab" }]);
+  const h = ev.find((e) => e.type === "hit");
+  assert.ok(h && h.tip && Math.abs(h.dmg - cfg.moves.jab.dmg * cfg.tip.dmg) < 1e-9);
+});
+
+test("spamming jab no longer wins the exchange for free", () => {
+  let mine = 0, his = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const st = createFight(cfg, { seed, kits: [cfg.player.kit, ["jab", "cross", "hook", "lowkick"]] });
+    const ai = createAI(cfg, st.rand);
+    for (let t = 0; t < 30000 && st.phase === "fight"; t += DT * 1000) {
+      st.events = [];
+      const d = dist(st.f[0], st.f[1]);
+      step(st, DT, [{ fwd: d > 1.3 ? 1 : 0, atk: "jab" }, aiInput(ai, st, 1, DT)]);
+    }
+    mine += st.f[0].stats.dmg; his += st.f[1].stats.dmg;
+  }
+  console.log(`  jab spam vs AI, 20 x 30 s: you ${mine.toFixed(0)} dmg, AI ${his.toFixed(0)} dmg`);
+  assert.ok(his > mine * 0.8);
 });
 
 test("fighters never overlap or leave the cage", () => {

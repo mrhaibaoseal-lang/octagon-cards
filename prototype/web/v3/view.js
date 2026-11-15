@@ -301,20 +301,12 @@ function handleEvents() {
   for (const e of st.events) {
     const t = e.target != null ? st.f[e.target] : null;
     const at = t ? new THREE.Vector3(t.x, 1.45, t.z) : null;
-    const mine = e.by === 0;
-    if (e.type === "start" && e.by === 1 && !st.seen[1].has(e.move)) {
-      // revealed when it lands or misses (resolveHit); flash it here as he throws it the first time
-    }
+    // no numbers or words on screen (user 2026-11-15: like the EA UFC games); only a small impact and a shake on big shots
     if (e.type === "hit") {
-      const big = e.dmg >= 9;
-      pop((e.counter ? "反擊 " : "") + "-" + Math.round(e.dmg), mine ? "#ffd56a" : "#ff6a6e", at, big ? 22 : 16);
-      spark(at, e.counter ? 0xffd56a : 0xffffff, big ? 1.4 : 0.8);
+      const big = e.dmg >= 9 || e.counter;
+      spark(at, 0xffffff, big ? 0.9 : 0.5);
       if (big) shake = 0.12;
-      if (cfg.moves[e.move].slow && e.target != null) pop("腿傷・變慢", "#ffb36a", new THREE.Vector3(t.x, 0.6, t.z), 12);
-    } else if (e.type === "block") {
-      pop("擋", "#9cc0ff", at, 14); spark(at, 0x7aa7ff, 0.5);
-    } else if (e.type === "dodged") pop("閃過", "#5fe0c0", at, 14);
-    else if (e.type === "miss" && mine) pop("打空", "#8b93a3", at, 12);
+    } else if (e.type === "block") spark(at, 0x9fb6d8, 0.3);
     if ((e.type === "hit" || e.type === "block" || e.type === "dodged" || e.type === "miss") && e.by === 1) {
       const el = $("kit").querySelector(`[data-id="${e.move}"]`);
       if (el && !el.classList.contains("seen")) { renderKit(); $("kit").querySelector(`[data-id="${e.move}"]`).classList.add("flash"); }
@@ -393,7 +385,8 @@ function showIntro() {
       <li>左右：前進／後退　上下：繞圈</li>
       <li>地上藍圈：外圈＝低踢打得到、內圈＝勾拳</li>
       <li>對手出招前手腳會<b>發黃光</b>：防禦或閃</li>
-      <li>他出招的前搖被你打中＝<b>反擊</b>（傷害 ×${cfg.counter.dmg}）</li>
+      <li>刺拳最輕、勾拳和高踢最重。<b>輕的打不斷重的</b>：你刺拳時他可以一記直拳跟你換</li>
+      <li>用一樣重或更重的招打中他出招的前搖＝<b>反擊</b>，打斷他、傷害更高</li>
       <li>防禦：擋大部分拳，但低踢擋不太住、會扣體力</li>
       <li>對手的 ${cfg.opponent.kitSize} 招一開始是「?」，用過才翻開</li>
     </ul>

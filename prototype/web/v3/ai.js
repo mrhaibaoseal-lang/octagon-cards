@@ -30,24 +30,36 @@ export function aiInput(ai, st, me, dt) {
   ai.guardT -= ms; ai.think -= ms; ai.circleT -= ms;
 
   // 1. react to the opponent's attack after a human-like delay
+  ai.now = (ai.now || 0) + ms;
   if (o.act && o.act !== ai.seenAct) {
     ai.seenAct = o.act;
     ai.react = { at: between(r, cfg.ai.react), act: o.act };
+    (ai.recent ||= []).push({ t: ai.now, w: cfg.moves[o.act.move].weight });
   }
+  ai.recent = (ai.recent || []).filter((x) => ai.now - x.t < cfg.ai.spam.window);
   if (ai.react) {
     ai.react.at -= ms;
-    if (ai.react.at <= 0) {
+    if (ai.react.at <= 0 && f.stun <= 0 && !f.act) {
       const act = ai.react.act;
       ai.react = null;
       const m = cfg.moves[act.move];
-      if (o.act === act && act.phase === "windup" && d <= m.max + (m.lunge || 0) + 0.3) {
-        const c = weighted(r, ai.respond);
+      // still answers while the strike is out or being pulled back (a jab is faster than any reaction)
+      if (o.act === act && d <= m.max + (m.lunge || 0) + 0.3) {
+        let w = { ...ai.respond };
+        // reads a repeated pattern: lots of strikes lately -> more likely to fire back through them
+        if (ai.recent.length >= cfg.ai.spam.count) w = { ...w, counter: w.counter * cfg.ai.spam.counter, none: w.none * 0.3 };
+        if (act.phase !== "windup") w = { ...w, dodge: 0, guard: w.guard * 0.5 };
+        const c = weighted(r, w);
         if (c === "guard") ai.guardT = cfg.ai.guardHold;
         else if (c === "dodge") { inp.dodge = true; inp.fwd = -0.6; inp.side = ai.circleDir; }
         else if (c === "counter") {
-          const fast = f.kit.filter((k) => canUse(st, f, k) && inRange(st, f, k) && cfg.moves[k].windup < m.windup - act.t)
+          const ok = f.kit.filter((k) => canUse(st, f, k) && inRange(st, f, k) && d <= cfg.moves[k].max);
+          // prefer something heavier that walks through his strike; else the quickest thing that lands first
+          const heavy = ok.filter((k) => cfg.moves[k].weight > m.weight).sort((a, b) => cfg.moves[b].dmg - cfg.moves[a].dmg)[0];
+          const fast = ok.filter((k) => act.phase !== "windup" || cfg.moves[k].windup < m.windup - act.t)
             .sort((a, b) => cfg.moves[a].windup - cfg.moves[b].windup)[0];
-          if (fast) inp.atk = fast; else ai.guardT = cfg.ai.guardHold;
+          const pick = heavy || fast;
+          if (pick) inp.atk = pick; else ai.guardT = cfg.ai.guardHold;
         }
       }
     }

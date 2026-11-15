@@ -63,8 +63,11 @@ function resolveHit(st, a, mId) {
   const ev = { by: a.id, target: t.id, move: mId };
   if (d > m.max) return st.events.push({ ...ev, type: "miss" });
   if (t.dodge && t.dodge.t < cfg.dodge.invuln) return st.events.push({ ...ev, type: "dodged" });
-  let dmg = m.dmg;
+  let dmg = m.dmg, stunMult = 1;
   if (d < m.min) dmg *= 0.5;
+  // landing with the very tip of the range: a graze
+  const tip = d > m.min + (m.max - m.min) * cfg.tip.from;
+  if (tip) { dmg *= cfg.tip.dmg; stunMult *= cfg.tip.stun; }
   if (a.sta < cfg.fighter.tiredBelow) dmg *= cfg.fighter.tiredDmg;
   if (t.guard && !t.act) {
     dmg *= m.block;
@@ -72,15 +75,20 @@ function resolveHit(st, a, mId) {
     t.hp -= dmg; a.stats.dmg += dmg; t.stats.blocked++;
     return st.events.push({ ...ev, type: "block", dmg });
   }
-  const counter = t.act && t.act.phase === "windup";
+  // a lighter strike can't stop a heavier one already coming: the target eats it and keeps throwing (a trade)
+  const tm = t.act && t.act.phase !== "recovery" ? cfg.moves[t.act.move] : null;
+  const trade = !!tm && tm.weight > m.weight;
+  const counter = !!tm && !trade && t.act.phase === "windup";
   if (counter) dmg *= cfg.counter.dmg;
   t.hp -= dmg; a.stats.dmg += dmg; a.stats.landed++; bm.landed++;
-  t.act = null; t.guard = false;
-  t.stun = m.stun * (counter ? cfg.counter.stun : 1);
   if (m.slow) { t.slow = m.slow.ms; t.slowMult = m.slow.mult; }
-  const ax = axis(a, t);
-  t.x += ax.dx * m.push; t.z += ax.dz * m.push;
-  st.events.push({ ...ev, type: "hit", dmg, counter });
+  if (!trade) {
+    t.act = null; t.guard = false;
+    t.stun = m.stun * stunMult * (counter ? cfg.counter.stun : 1);
+    const ax = axis(a, t);
+    t.x += ax.dx * m.push; t.z += ax.dz * m.push;
+  }
+  st.events.push({ ...ev, type: "hit", dmg, counter, trade, tip });
 }
 
 // input: { fwd: -1..1 (toward opponent), side: -1..1, guard: bool, dodge: bool, atk: moveId|null }
