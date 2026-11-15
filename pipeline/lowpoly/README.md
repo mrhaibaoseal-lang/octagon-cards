@@ -26,4 +26,6 @@ uv run --no-project --with pillow python -I pipeline/lowpoly/mpfb_sheet.py proto
 - 體型範本只是 `PRESETS` 的參數（身高、體重、muscle、bulk、proportions、額外 target、手套大小）；`feather_muscle` 是 Topuria 型，其他三個還沒看過。
 - 輸出：`mpfb_<preset>_<面數>.blend`（含相機，`paint_blender.py render` 會用）、四張灰模、`mpfb_<preset>_meta.json`（`head_z` 約 1.44、鼻子位置、頭中心）。`--tris` 給比網格大的數字就是不減面。
 - 坑：在擺好的姿勢上減面會左右不對稱、身體被削成細竹竿，要先減再擺；EEVEE 灰模有大塊黑影像破洞，改用 Workbench 看形狀；用骨架彎手指握拳很難調，減面後也只剩一團，直接換手套。嘴巴凸成鳥嘴（2026-11-15 使用者指出）：臉的面被耳朵摺和眼皮吃掉，而保護嘴巴的中心點原本放在嘴巴關節（嘴唇後 7 公分），嘴唇幾乎沒保護到；改成以嘴唇、鼻尖、眼睛、下巴為中心加權，耳朵只給 0.3、眼球 0。只刪口腔內壁沒有用。
-- 接上色前要改 `paint_lowpoly.py`：讀 meta 的 `head_z` 和鼻子位置（不再寫死 1.545）、`clay` 路徑改成選定的 blend、加一個由上往下的視角（v2 有 24% 的面沒上到色，腳和肩頂最明顯）。
+- 使用者選 5,000 面（2026-11-15）。`build_mpfb.py` 每個面數另出一份**上色姿勢**（`_guide.blend`：雙手往下外張約 25°、腿分開、頭擺正），網格和架式版是同一份減面結果、頂點順序一樣。
+- 上色（`paint_lowpoly.py`，預設就是 MPFB 5,000 面）：在上色姿勢拍灰模、投影、烘焙，最後 `paint_blender final --pose-blend` 把頂點位置換成架式版再出圖；頭的範圍改用 `mixamorig:Head` 頂點群組（不再用高度切，手套靠近臉也不會算成頭）；鼻子遮罩讀 `_guide_meta.json`；全身改 5 格（加由上往下）、Gemini 比例 21:9。
+- `--coverage` 不呼叫 Gemini，只算外面看得到的表面（26 個方向射線，排除眼球背面、護腕裡面）有多少被視角拍到：上色姿勢 96.3%（加俯視 96.6%），直接在架式上拍是 95.3%（96.2%）。俯視只多不到 1%；v2 的 24% 多半是把眼球背面這類看不到的面也算進去。

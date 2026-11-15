@@ -7,7 +7,8 @@ into one mesh called `fighter`. One clay .blend per triangle count, clay preview
 
   blender -b -P pipeline/lowpoly/build_mpfb.py -- <out dir> [--preset feather_muscle] [--tris 3000,5000] [--keep 3]
 
-Out: <out>/mpfb_<preset>_<tris>.blend (object `fighter`, camera kept for paint_blender's render mode),
+Out: <out>/mpfb_<preset>_<tris>.blend (object `fighter`, camera kept for paint_blender's render mode), and the same
+     mesh in the paint pose as mpfb_<preset>_<tris>_guide.blend (+ _guide_meta.json, _guide_*.png),
      <out>/mpfb_<preset>_<tris>_{34,side,back,head}.png, <out>/mpfb_<preset>_meta.json (head_z, nose, height).
 Body types are only data: add an entry to PRESETS. A --tris larger than the mesh skips decimation (full detail).
 """
@@ -69,11 +70,25 @@ STANCE = {
 }
 
 
+# Paint pose: arms out and down, legs apart, head straight, so the clay views see the face, chest and inner arms (in the
+# stance the guard hides a quarter of the head). Same decimated mesh as the stance, so the vertex order matches and the
+# painted texture goes straight onto the stance (paint_blender final --pose-blend).
+GUIDE = {
+    "hips_turn": 0.0, "chest_turn": 0.0, "head_turn": 0.0, "head_tilt": 0.0, "lean": 0.0,
+    "LeftArm": (0.45, 0.1, -1.0), "LeftForeArm": (0.5, -0.15, -1.0),  # ~25 deg out: narrow enough for the tall view cells
+    "RightArm": (-0.45, 0.1, -1.0), "RightForeArm": (-0.5, -0.15, -1.0),
+    "LeftUpLeg": (0.18, 0.0, -1.0), "LeftLeg": (0.12, 0.0, -1.0),
+    "RightUpLeg": (-0.18, 0.0, -1.0), "RightLeg": (-0.12, 0.0, -1.0),
+    "LeftFoot": (0.2, -1.0, 0.0), "RightFoot": (-0.2, -1.0, 0.0),
+}
+
+
 def sgnpow(x, e):
     return math.copysign(abs(x) ** e, x)
 
 
-def build(n_tris):
+def build(n_tris, pose_name="stance"):
+    STANCE = GUIDE if pose_name == "guide" else globals()["STANCE"]
     bpy.ops.wm.read_factory_settings(use_empty=True)
     from bl_ext.blender_org.mpfb.services.humanservice import HumanService
     from bl_ext.blender_org.mpfb.services.targetservice import TargetService
@@ -307,7 +322,7 @@ def build(n_tris):
     sc.collection.objects.link(cam)
     sc.camera = cam
     mid_z = meta["height"] * 0.52
-    tag = os.path.join(a.out, f"mpfb_{a.preset}_{n_tris}")
+    tag = os.path.join(a.out, f"mpfb_{a.preset}_{n_tris}" + ("_guide" if pose_name == "guide" else ""))
 
     def shoot(path, loc, target, lens, res=(720, 1000)):
         cam.location = loc
@@ -328,7 +343,9 @@ def build(n_tris):
     return meta
 
 
-for n in [int(x) for x in a.tris.split(",")]:
-    meta = build(n)
-json.dump(meta, open(os.path.join(a.out, f"mpfb_{a.preset}_meta.json"), "w"), indent=1)
-print("meta", meta)
+for pose_name in ("stance", "guide"):
+    for n in [int(x) for x in a.tris.split(",")]:
+        meta = build(n, pose_name)
+    sfx = "_guide" if pose_name == "guide" else ""
+    json.dump(meta, open(os.path.join(a.out, f"mpfb_{a.preset}{sfx}_meta.json"), "w"), indent=1)
+    print("meta", pose_name, meta)
