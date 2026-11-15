@@ -53,6 +53,7 @@ HAIR = {
     "topuria": "short haircut with faded sides, hairline and beard shape",
     "omalley": "curly vibrant solid hot pink and magenta hair on all sides of the head (no blue), hairline, thin dark "
                "goatee and light stubble, and his small face tattoos",
+    "volkanovski": "shaved head with a faint stubble shadow, receding hairline and short full brown beard",
 }
 
 
@@ -85,6 +86,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mesh", default="gemini_real_fix")
     ap.add_argument("--fighter", default="topuria", help="key in paint_skin.FIGHTERS; photo _source/<fighter>_ufc.png")
+    ap.add_argument("--name", default=None, help="fighter's full name for the prompt (default: paint_skin.FIGHTERS[fighter])")
     ap.add_argument("--hair", default=None, help="head look for the prompt (default: HAIR[fighter] or a generic line)")
     ap.add_argument("--model", default="gemini-3-pro-image")
     ap.add_argument("--style", choices=["real", "painted"], default="real", help="painted = hand-painted animation look")
@@ -122,7 +124,7 @@ def main():
             sys.exit(f"No Gemini call made. Show the clay turntable {clay} to the user next to the fighter's photo; "
                      "once they say the head and face shape are right, run again with --shape-ok.")
         prompt = (PROMPT_PAINTED if args.style == "painted" else PROMPT).format(
-            name=ps.FIGHTERS[args.fighter][0], hair=args.hair or HAIR.get(args.fighter, "hair, hairline and facial hair"))
+            name=args.name or ps.FIGHTERS[args.fighter][0], hair=args.hair or HAIR.get(args.fighter, "hair, hairline and facial hair"))
         gemini(grid, ps.PRIVATE / f"_source/{args.fighter}_ufc.png", args.model, prompt).resize((2 * S, 2 * S), Image.LANCZOS).save(painted)
         print("painted", painted)
     if not (work / "pos.npy").exists():

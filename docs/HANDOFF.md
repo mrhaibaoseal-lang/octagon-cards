@@ -12,7 +12,8 @@
 - 使用者說第二版可以、要加自動轉正：試了兩種算法都不行（細節在 `pipeline/img2_3d/README.md` 最後一節），腳本沒留。問題不是頭轉了角度，是微側臉照片生出的頭本身扭曲；`smooth_head` 的比例也只認 Gemini 頭像的取景。
 - 結論：照片路線不能當預設，Volkanovski 要走 `gen_head.py`（Gemini 正面頭像，同 Topuria）。先要在 `paint_skin.FIGHTERS` 加他（那個檔有 Gemini 未 commit 的修改，動之前先問）並準備 `_source/volkanovski_ufc.png`。
 - 使用者同意後用掉最後 1 次 Gemini 畫正面頭像：照原流程不改程式約 5 分鐘到灰模 `_img2_3d/clay_volkanovski_smooth.png`，正面對稱、守門通過（2.2%）；髮根和鬍子表面還是一粒粒。
-- 下一步：**等使用者看頭型**；可以的話等 Gemini 額度再上色（`gemini_paint --shape-ok`，要先在 `paint_skin.FIGHTERS` 加 Volkanovski，那個檔有別人未 commit 的修改，先問）。
+- 使用者看灰模：「應該可以試試看」。已做 `exaggerate_head --brow 0.007 --chin 0.005` → `volkanovski_arcane.glb`；`gemini_paint.py` 加 `--name`（不用改 `paint_skin.FIGHTERS`）和 Volkanovski 的 `HAIR`；四視角綠底圖已出（`paint/volkanovski_arcane/grid.png`），沒呼叫 Gemini。
+- 下一步：Gemini 額度用完，**使用者同意再用 1 次才上色**：`gemini_paint.py --mesh volkanovski_arcane --fighter volkanovski --name "Alexander Volkanovski" --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar --shape-ok` → `degreen.py`；身體（MPFB、`paint_body`）還沒開始。
 
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 臉貼回原始網格）
 - 做了：`keep_face.py` 重寫分類（輸入圖投影、色相判斷紅粉藍頭髮、從鼻尖長出臉、刺青小島算臉、破洞補平）；`solid_head.py` 加 `--no-uv`。
