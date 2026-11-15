@@ -16,10 +16,16 @@ html,body{height:100%;background:#000;color:var(--ink);font-family:"Noto Sans TC
 .bar.l .nm{color:#9cc0ff}.bar.r .nm{color:#ffa3a6}
 .meter{height:8px;margin-top:4px;background:#0008;border-radius:2px;overflow:hidden;position:relative}
 .meter i{position:absolute;top:0;bottom:0;border-radius:2px;transition:width .15s}
-.bar.l .hp i{left:0;background:linear-gradient(90deg,#1e5fd8,#59a0ff)}
-.bar.r .hp i{right:0;background:linear-gradient(270deg,#c2232a,#ff6a6e)}
-.st{height:4px;margin-top:3px}.st i{background:#e6d36a}.bar.l .st i{left:0}.bar.r .st i{right:0}
-.st.tired i{background:#ff7a3c}
+.st{height:12px;margin-top:6px;border:1px solid #0008}.st i.cur{background:linear-gradient(#f4e58a,#d2b83e)}.st i.gone{background:repeating-linear-gradient(135deg,#c2232a 0 3px,#5a0f12 3px 6px)}
+.bar.l .st i.cur{left:0}.bar.r .st i.cur{right:0}.bar.l .st i.gone{right:0}.bar.r .st i.gone{left:0}
+.st.tired i.cur{background:linear-gradient(#ff9a5c,#d2551c)}
+.zone{position:absolute;top:3px;font:800 10px/1 inherit;font-family:inherit;letter-spacing:1px}.bar.l .zone{right:8px}.bar.r .zone{left:8px}
+.zone.out{color:#6fe39a}.zone.in{color:#ff8a5c}
+.hurt{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:6px 0;font-size:12px;align-items:center}
+.hurt i{display:inline-block;height:10px;border-radius:3px;background:#222}
+.hurt .pips{display:flex;gap:3px}.hurt .pips i{width:34px}
+.sb{height:10px;position:relative;background:#0008;border-radius:2px;overflow:hidden;margin:3px 0}.sb i{position:absolute;top:0;bottom:0}.sb .cur{left:0;background:#e6d36a}.sb .gone{right:0;background:repeating-linear-gradient(135deg,#c2232a 0 3px,#5a0f12 3px 6px)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
 .clock{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:92px;height:42px;background:var(--plate);border:1px solid #555;border-radius:4px;text-align:center;box-shadow:0 3px 0 #000}
 .clock b{display:block;font:800 18px/24px ui-monospace,monospace}.clock small{font-size:10px;color:var(--dim)}
 .kit{position:absolute;top:56px;right:12px;display:flex;gap:3px;align-items:center}
@@ -65,9 +71,9 @@ html,body{height:100%;background:#000;color:var(--ink);font-family:"Noto Sans TC
 </head>
 <body>
 <div id="stage">
-  <div class="bar l"><div class="nm">藍角 · 你</div><div class="meter hp"><i id="hp0"></i></div><div class="meter st" id="stb0"><i id="st0"></i></div></div>
+  <div class="bar l"><div class="nm">藍角 · 你</div><span class="zone" id="zn0"></span><div class="meter st" id="stb0"><i class="gone" id="gone0"></i><i class="cur" id="st0"></i></div></div>
   <div class="clock"><b id="clock">1:30</b><small id="rnd">第 1 回合</small></div>
-  <div class="bar r"><div class="nm" id="oppName">紅角 · 對手</div><div class="meter hp"><i id="hp1"></i></div><div class="meter st" id="stb1"><i id="st1"></i></div></div>
+  <div class="bar r"><div class="nm" id="oppName">紅角 · 對手</div><span class="zone" id="zn1"></span><div class="meter st" id="stb1"><i class="gone" id="gone1"></i><i class="cur" id="st1"></i></div></div>
   <div class="kit" id="kit"></div>
   <div class="stickzone" id="stickzone"><div class="stick" id="stick"><div class="knob" id="knob"></div></div></div>
   <div class="dodge" id="dodge">閃<br><small style="font-size:8px">Shift</small></div>

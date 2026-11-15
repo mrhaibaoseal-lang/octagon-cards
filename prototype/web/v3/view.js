@@ -1,6 +1,6 @@
 // V3 greybox view: three.js octagon, capsule fighters, side broadcast camera, touch + keyboard input.
 import * as THREE from "three";
-import { createFight, step, nextRound, canUse, dist } from "./engine.js";
+import { createFight, step, nextRound, canUse, dist, ceilOf, isTired, inZone } from "./engine.js";
 import { createAI, aiInput } from "./ai.js";
 
 const cfg = await (await fetch("rules/v3/config.json")).json();
@@ -145,10 +145,10 @@ function poseRig(rig, f, o, now) {
   let glow = [0, 0], glowLeg = [0, 0];
   if (f.act) {
     const m = cfg.moves[f.act.move], t = f.act.t;
-    const wu = t / m.windup, ac = (t - m.windup) / m.active, rc = (t - m.windup - m.active) / m.recovery;
-    const ext = t < m.windup ? -0.12 * ease(wu) : t < m.windup + m.active ? ease(ac) : 1 - ease(rc);
+    const W0 = f.act.wu || m.windup, wu = t / W0, ac = (t - W0) / m.active, rc = (t - W0 - m.active) / m.recovery;
+    const ext = t < W0 ? -0.12 * ease(wu) : t < W0 + m.active ? ease(ac) : 1 - ease(rc);
     const reach = Math.min(m.max, Math.max(0.6, dist(f, o))) - 0.15;
-    const tele = t < m.windup ? 0.3 + 0.7 * wu : 0;
+    const tele = t < W0 ? 0.3 + 0.7 * wu : 0;
     if (m.limb === "lead" || m.limb === "rear") {
       const i = m.limb === "lead" ? 0 : 1;
       const p = gp[i];
@@ -169,6 +169,11 @@ function poseRig(rig, f, o, now) {
   }
   if (f.dodge) { const k = Math.sin(Math.min(1, f.dodge.t / cfg.dodge.ms) * Math.PI); body.position.y -= 0.25 * k; body.rotation.x = -0.25 * k; }
   if (f.stun > 0) { body.rotation.x = -0.25; body.position.z = -0.05; }
+  // a badly hurt head wobbles (hidden damage, the only hint on screen)
+  const hh = f.dmg.head / cfg.damage.max;
+  rig.head.position.set(0, 1.62, 0);
+  if (hh > 0.4) { const a = (hh - 0.4) * 0.35; rig.head.position.x = Math.sin(now / 140 + f.id) * a * 0.3; rig.head.position.z = Math.cos(now / 170) * a * 0.15; rig.head.rotation.z = Math.sin(now / 160) * a * 1.4; }
+  else rig.head.rotation.z = 0;
   if (f.down) { g.rotation.x = lerp(g.rotation.x, -Math.PI / 2, 0.08); g.position.y = 0.2; } else g.rotation.x = 0;
   gloves.forEach((gl, i) => gl.position.copy(gp[i]));
   rig.arms.forEach((a, i) => placeArm(a, gloves[i], new THREE.Vector3(i ? 0.2 : -0.2, 1.36, 0.02)));
@@ -224,16 +229,20 @@ const fmt = (ms) => { const s = Math.ceil(ms / 1000); return `${Math.floor(s / 6
 function hud() {
   for (const i of [0, 1]) {
     const f = st.f[i];
-    $("hp" + i).style.width = (100 * f.hp / cfg.fighter.hp) + "%";
+    const cap = ceilOf(st, f);
     $("st" + i).style.width = (100 * f.sta / cfg.fighter.sta) + "%";
-    $("stb" + i).classList.toggle("tired", f.sta < cfg.fighter.tiredBelow);
+    $("gone" + i).style.width = (100 * (cfg.fighter.sta - cap) / cfg.fighter.sta) + "%";
+    $("stb" + i).classList.toggle("tired", isTired(st, f));
+    const zin = inZone(st, f);
+    $("zn" + i).className = "zone " + (zin ? "in" : "out");
+    $("zn" + i).textContent = zin ? "交火 ▲" : "回氣 ▲▲▲";
   }
   $("clock").textContent = fmt(st.clock);
   $("rnd").textContent = `第 ${st.round} 回合`;
   const p = st.f[0], d = dist(p, st.f[1]);
   slots.forEach((id, i) => {
     const m = cfg.moves[id], el = btnEls[i];
-    const cd = p.cds[id] > 0 ? p.cds[id] / (m.windup + m.active + m.recovery + m.cd) : 0;
+    const cd = p.cds[id] > 0 ? Math.min(1, p.cds[id] / (m.windup + m.active + m.recovery + m.cd)) : 0;
     el.classList.toggle("off", p.sta < m.sta);
     el.classList.toggle("far", d > m.max + (m.lunge || 0));
     el.querySelector(".cd").style.background = cd > 0 ? `conic-gradient(#000a 0 ${cd * 100}%,transparent ${cd * 100}%)` : "none";
@@ -355,13 +364,30 @@ function moveRows(f, onlySeen) {
   return Object.entries(f.stats.byMove).filter(([id]) => !onlySeen || st.seen[f.id].has(id))
     .map(([id, s]) => `<tr><td>${cfg.moves[id].name}</td><td>用了 ${s.thrown} 次，中 ${s.landed}</td></tr>`).join("");
 }
+const tierOf = (v) => cfg.hurt.tiers.filter((t) => v >= t).length;
+const PARTS = [["head", "頭"], ["body", "身體"], ["leg", "腳"]];
+function hurtRows(f) {
+  return `<div class="hurt">${PARTS.map(([k, n]) => { const t = tierOf(f.dmg[k]); return `<span>${n}</span><span class="pips">${[0, 1, 2, 3].map((i) => `<i style="background:${i <= t ? cfg.hurt.colors[t] : "#222"}"></i>`).join("")}</span>`; }).join("")}</div>`;
+}
+// only the part you hit the most, in words
+function hurtLine(o) {
+  const best = PARTS.map(([k]) => k).sort((a, b) => st.f[0].stats.byPart[b] - st.f[0].stats.byPart[a])[0];
+  const t = tierOf(o.dmg[best]);
+  return t > 0 ? cfg.hurt.text[best][t] + "。" : "你還沒真正打痛他。";
+}
 function showBreak() {
   const o = st.f[1], hidden = o.kit.filter((id) => !st.seen[1].has(id)).length;
   $("panel").innerHTML = `<h2>第 ${st.round} 回合結束</h2>
     <p>你：出手 ${st.f[0].stats.thrown}、打中 ${st.f[0].stats.landed}、造成 ${Math.round(st.f[0].stats.dmg)} 傷害 · 對手：出手 ${o.stats.thrown}、打中 ${o.stats.landed}、造成 ${Math.round(o.stats.dmg)}</p>
+    <div class="cols"><div>
+    <p style="margin-top:6px;color:#9cc0ff">你的傷（不給數字）</p>${hurtRows(st.f[0])}
+    <p style="color:var(--dim);font-size:11px">體力上限（紅斜線＝永久失去）</p>
+    <div class="sb"><i class="cur" style="width:${ceilOf(st, st.f[0]) + cfg.round.restCeil > 100 ? 100 : ceilOf(st, st.f[0]) + cfg.round.restCeil}%"></i><i class="gone" style="width:${Math.max(0, 100 - ceilOf(st, st.f[0]) - cfg.round.restCeil)}%"></i></div>
+    <p style="color:var(--dim);font-size:11px">休息後現在體力回到上限，上限 +${cfg.round.restCeil}</p>
+    <p style="margin-top:6px;color:#ffa3a6">他的傷</p><p>${hurtLine(o)}</p></div><div>
     <p style="margin-top:6px;color:#ffa3a6">球探：紅角目前露出的招式</p>
-    <table>${moveRows(o, true) || "<tr><td>還沒出手</td><td></td></tr>"}${hidden ? `<tr><td>另外 ${hidden} 招</td><td>還沒露出來</td></tr>` : ""}</table>
-    <p style="color:var(--dim)">（商店之後才做；這版休息只回 ${cfg.round.healBetween} 耐久、體力回滿）</p>
+    <table>${moveRows(o, true) || "<tr><td>還沒出手</td><td></td></tr>"}${hidden ? `<tr><td>另外 ${hidden} 招</td><td>還沒露出來</td></tr>` : ""}</table></div></div>
+    <p style="color:var(--dim)">（商店之後才做）</p>
     <button class="go" id="goNext">開始第 ${st.round + 1} 回合 ▶</button>`;
   $("ov").classList.add("on");
   $("goNext").onclick = () => { nextRound(st); $("ov").classList.remove("on"); updateCamera(0, true); banner(`第 ${st.round} 回合　開打！`); };
@@ -389,6 +415,7 @@ function showIntro() {
       <li>用一樣重或更重的招打中他出招的前搖＝<b>反擊</b>，打斷他、傷害更高</li>
       <li>防禦：擋大部分拳，但低踢擋不太住、會扣體力</li>
       <li>對手的 ${cfg.opponent.kitSize} 招一開始是「?」，用過才翻開</li>
+      <li>沒有血條：頭／身體／腳的傷是隱藏的。上方只剩體力條（紅斜線＝永久失去的上限）；退到「回氣」區回得快，貼著打回得慢；揮空最傷</li>
     </ul>
     <p>${cfg.round.count} 回合 × ${cfg.round.seconds} 秒。鍵盤：WASD 移動、J K L I 出招、空白鍵防禦、Shift 閃。手機：左下拖曳搖桿。</p>
     <button class="go" id="start">開打 ▶</button>`;
