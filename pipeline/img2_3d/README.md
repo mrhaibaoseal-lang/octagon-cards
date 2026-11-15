@@ -173,6 +173,13 @@
 
 ## 全 3D 身體：平肚子、Volkanovski 的身體、遊戲畫面模擬（2026-11-15）
 - 使用者看遊戲畫面模擬：肚子太大。原因是 `base_body.py` 的 `TORSO_FILL`（孕肚 0.3、腰圍 0.35），原本是給 2.5D 像素側面用的。**現在預設不加**，`--torso-fill` 才加（只給舊像素路線）。已經做好的 `topuria_painted`、`omalley_painted` 用 `flatten_belly.py` 在原檔上減回去（備份 `skinned.pre_flat.blend`），貼圖不動。
-- Volkanovski 的身體：`base_body.py --out _model3d/volkanovski --preset featherweight --height 168 --weight 145` → `paint_body.py volkanovski`（Gemini 1 次；`paint_skin.FIGHTERS` 新增他，照片用 `_source/alexander-volkanovski_fullbody_ufc.png`）→ `bake_skin` → `match_body_skin`。借 Topuria 的身體時頭看起來太大，換成自己的身體後比例正常。
+- Volkanovski 的身體：`base_body.py --out _model3d/volkanovski --preset featherweight --height 168 --weight 145` → `paint_body.py volkanovski`（Gemini 1 次；`paint_skin.FIGHTERS` 新增他，照片用 `_source/alexander-volkanovski_fullbody_ufc.png`）→ `bake_skin` → `match_body_skin`。借 Topuria 的身體時頭看起來太大；換自己的身體縮放幾乎一樣（0.389 對 0.394），**問題在頭本身**，不是身體（見下一節）。
 - 坑：`bake_skin.py` 去綠幕溢色原本對整個人做，綠色短褲被壓成灰色；改成只處理輪廓往內 6 像素。`match_body_skin.py` 會沿用舊的 `skin_raw.png`，重烘之後要先刪掉它。
 - 模擬圖在 `_mockup/`（`all3.jpg`、`mockup_inline.html`）。格鬥架式、握拳、MMA 拳套都是模擬腳本臨時做的，不是正式資產；正式的動作和拳套之後再做。
+
+## 頭身比量測與自動修正（2026-11-15）
+- Volkanovski 的頭接上後像熱氣球。量測（`_mockup/scripts/measure.py`，執行 `attach_head.py` 的設定但不渲染）：頭高 24.4 cm 正常，但頭頂下 6 cm 處寬×前後 19.2 × 23.6 cm，真人約 15.5 × 20；整顆頭胖了約兩成五，不是縮放錯、也不是脖子殘塊（Topuria 14.9 × 19.2）。TRELLIS 長出來的頭有時就是偏胖。
+- `attach_head.py` 新增（預設開，`--no-fit` 關）：`--fit W D`（預設 0.158 0.205 m）頭頂下 6 cm 超過就用繞頭軸的 X／Y 壓扁，到脖子線漸漸變回 1；`--max-head`（預設 0.235 m）只有「已經太胖需要壓扁」的頭，頭頂到下巴超過就整顆縮到這個高度，頭頂比原本低一點（脖子變長）。要壓到比 0.75 還多的（O'Malley 的捲髮 27 cm 寬）判定是頭髮，整個跳過、不動。頭已在範圍內的（Topuria）不動。
+- 每次接頭後印一張表（頭高、頭頂下 6 cm 寬與前後、身高幾個頭，真人參考 22.5／15.5／20／7.5），超出約 10% 印 WARNING。O'Malley 的捲髮會被警告（頭髮算進去，高 28、寬 27.6），這是已知的，以使用者眼睛為準。
+- 結果：Topuria 不變（24.1／14.9／19.2／7.0）；Volkanovski 24.4／19.2／23.7／6.8 → 23.6／15.8／20.6／7.0；O'Malley 不變。數字全在範圍內，但 Volkanovski 側面看仍比 Topuria 的頭大一點（肩窄、嘴高度的鬍子帶仍寬：20.1 對 17.5 cm），要不要再縮看使用者。前後對照 `_mockup/volk_before_after.jpg`，總覽 `_mockup/all3_fit.jpg`。
+- 坑：`head_height_now` 的 `max()` 不能寫在迴圈裡面（O(n²)，Blender 會卡死）；頭高要加上 `--lift`（下巴比頭頂多掉的量）才和接完的量測一致。

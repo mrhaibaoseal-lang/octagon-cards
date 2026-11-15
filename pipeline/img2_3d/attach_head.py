@@ -30,6 +30,14 @@ ap.add_argument("--blend", type=float, nargs=2, metavar=("LO", "HI"), default=No
                 help="radial neck blend: below mid-neck+LO the new neck takes the body's neck shape (body cut there), fading out by mid-neck+HI; overrides --body-cut/--neck-keep/--stitch")
 ap.add_argument("--blend-color", type=float, default=0.05, help="with --blend: fade the body's skin texture onto the new neck over this height above the cut (m)")
 ap.add_argument("--lift", type=float, default=0.0, help="raise the aligned head this much (m): a longer neck")
+ap.add_argument("--fit", type=float, nargs=2, metavar=("W", "D"), default=(0.158, 0.205),
+                help="squash the head sideways / front-to-back (about its own axis, fading out to nothing at the neck) when its width / depth "
+                     "6 cm below the crown is over W / D (m). A real head is ~15.5 x 20 cm there; TRELLIS heads sometimes come out 25 percent too fat "
+                     "(Volkanovski: 19.2 x 23.6) and read as a balloon. Heads already inside the limit are not touched")
+ap.add_argument("--max-head", type=float, default=0.235,
+                help="when the head (crown to chin, beard included) is taller than this (m) after the neck-to-crown scaling, shrink the whole "
+                     "head to this height about the neck line; the crown then sits that much below the body's old crown (a longer neck). A real head is 22-23 cm")
+ap.add_argument("--no-fit", action="store_true", help="skip the --fit squash")
 ap.add_argument("--close", action="store_true", help="also render <out>_close.png: head and neck from front, 3/4, side, back")
 ap.add_argument("--face", action="store_true", help="also render <out>_face.png: eyes-height close-up from front, 3/4, side")
 ap.add_argument("--ink", type=float, default=0.0, help="with --toon: body outline width (m), 0 = none (default: an outline draws a line where the shoulder overlaps the trapezius)")
@@ -123,6 +131,62 @@ head.location = (0, 0, body_top - top * scale)
 bpy.ops.object.transform_apply(location=True)
 
 
+def layer_size(ps, z, tol=0.006):  # width (x) and depth (y) of the slice of points ps at height z
+    l = [p for p in ps if abs(p.z - z) < tol]
+    if len(l) < 4:
+        return 0.0, 0.0
+    return max(p.x for p in l) - min(p.x for p in l), max(p.y for p in l) - min(p.y for p in l)
+
+
+def head_height_now():  # crown to chin: the lowest point of the front quarter on the centre line (the beard counts)
+    ps = [v.co for v in head.data.vertices]
+    zt_ = max(q.z for q in ps)
+    up_ = [p for p in ps if p.z > (neck_z + zt_) / 2]
+    cx_ = (min(p.x for p in up_) + max(p.x for p in up_)) / 2
+    yf_ = min(p.y for p in ps if p.z > neck_z)
+    fr_ = [p for p in ps if p.y < yf_ + 0.06 and abs(p.x - cx_) < 0.03 and p.z > neck_z]
+    return max(p.z for p in ps) - min(p.z for p in fr_), cx_, (min(p.y for p in up_) + max(p.y for p in up_)) / 2
+
+
+crown_drop = 0.0
+fit_xy = (1.0, 1.0)
+hh0, cx_, cy_ = head_height_now()
+hh0 += a.lift  # --lift stretches the head below the crown by about this much (chin hangs lower than the crown rises)
+w6, d6 = layer_size([v.co for v in head.data.vertices], body_top - 0.06)
+print(f"FIT probe: crown-chin {hh0*100:.1f} cm, {w6*100:.1f} x {d6*100:.1f} cm at 6 cm below the crown")
+fx = a.fit[0] / w6 if w6 > a.fit[0] * 1.03 else 1.0
+fy = a.fit[1] / d6 if d6 > a.fit[1] * 1.03 else 1.0
+if a.no_fit:
+    pass
+elif min(fx, fy) < 0.75:
+    # More than a quarter off is not a fat skull, it is hair (O'Malley's curls are 27 cm wide): shrinking or squashing would ruin the face.
+    print(f"FIT skipped: {w6*100:.1f} x {d6*100:.1f} cm at 6 cm below the crown needs x {fx:.2f} / y {fy:.2f}; probably hair, head not touched")
+else:
+    if hh0 > a.max_head and (fx < 1.0 or fy < 1.0):  # only oversized heads: a head that is already the right width keeps its size
+        k = a.max_head / hh0
+        for v in head.data.vertices:
+            v.co.x = cx_ + (v.co.x - cx_) * k
+            v.co.y = cy_ + (v.co.y - cy_) * k
+            v.co.z = neck_z + (v.co.z - neck_z) * k
+        crown_drop = (1 - k) * (body_top - neck_z)
+        print(f"SHRINK head {hh0*100:.1f} cm crown-chin -> {a.max_head*100:.1f} cm (x{k:.3f}); crown {crown_drop*100:.1f} cm lower")
+        w6, d6 = layer_size([v.co for v in head.data.vertices], body_top - crown_drop - 0.06)
+        fx = a.fit[0] / w6 if w6 > a.fit[0] * 1.03 else 1.0
+        fy = a.fit[1] / d6 if d6 > a.fit[1] * 1.03 else 1.0
+    if fx < 1.0 or fy < 1.0:
+        fit_xy = (fx, fy)
+        up = [v.co for v in head.data.vertices if v.co.z > (neck_z + (body_top - crown_drop)) / 2]
+        cx = (min(p.x for p in up) + max(p.x for p in up)) / 2
+        cy = (min(p.y for p in up) + max(p.y for p in up)) / 2
+        z_full = neck_z + 0.35 * (body_top - crown_drop - neck_z)  # full squash from here up; nothing at the neck line (the narrowest slice)
+        for v in head.data.vertices:
+            t = min(1.0, max(0.0, (v.co.z - neck_z) / (z_full - neck_z)))
+            t = t * t * (3 - 2 * t)
+            v.co.x = cx + (v.co.x - cx) * (1 + (fx - 1) * t)
+            v.co.y = cy + (v.co.y - cy) * (1 + (fy - 1) * t)
+        print(f"FIT head {w6*100:.1f} x {d6*100:.1f} cm at 6 cm below the crown -> squashed x {fx:.3f}, y {fy:.3f}")
+
+
 def landmarks(ps, z_neck, z_top):
     """Skull = bounding-box centre above halfway (not the vertex mean: the noisy hair is dense and drags it back);
     nape = the back of the neck (+Y) on the centre line at z_neck. The beard makes the front of the neck useless."""
@@ -146,7 +210,7 @@ pitch = ang_h - ang_b
 head.data.transform(Matrix.Translation(hS) @ Matrix.Rotation(pitch, 4, "X") @ Matrix.Translation(-hS))
 hv = [v.co for v in head.data.vertices]
 hS2, _ = landmarks(hv, neck_z, body_top)
-head.data.transform(Matrix.Translation((bS.x - hS2.x, bS.y - hS2.y, body_top - max(p.z for p in hv))))
+head.data.transform(Matrix.Translation((bS.x - hS2.x, bS.y - hS2.y, body_top - crown_drop - max(p.z for p in hv))))
 if a.lift:
     # Stretch the neck rather than lift the head whole: a rigid lift carried the flaring bottom of the new neck up into
     # the blend band, where it was dropped as trapezius and holed the nape. Nothing moves below the cut; the full lift is
@@ -437,6 +501,34 @@ if a.toon:
         rim.rotation_euler = (math.radians(70), 0, math.radians(150))
         scene.collection.objects.link(rim)
         scene.world.color = (0.16, 0.17, 0.2)
+
+# Proportion report after every attach: real adults are ~22-23 cm crown to chin, ~15.5 x 20 cm wide x deep 6 cm below the crown,
+# about 7.5 heads tall. Warn when more than ~10 percent outside.
+def proportion_report():
+    hw = [head.matrix_world @ v.co for v in head.data.vertices]
+    bw2 = [body.matrix_world @ v.co for v in body.data.vertices]
+    top_ = max(p.z for p in hw)
+    feet = min(p.z for p in bw2)
+    yf = min(p.y for p in hw)
+    front = [p for p in hw if p.y < yf + 0.06 and abs(p.x) < 0.03 and p.z > neck_z]
+    hh = top_ - min(p.z for p in front)
+    w6, d6 = layer_size(hw, top_ - 0.06)
+    tall = (top_ - feet) / hh
+    rows = [("head height (crown-chin)", hh * 100, 22.5, "cm"), ("width 6 cm below crown", w6 * 100, 15.5, "cm"),
+            ("depth 6 cm below crown", d6 * 100, 20.0, "cm"), ("body height in heads", tall, 7.5, "heads")]
+    print("HEAD-BODY PROPORTIONS   (real adult)  value   verdict")
+    bad = False
+    for name, val, ref, unit in rows:
+        off = val / ref - 1
+        flag = "OK" if abs(off) <= 0.10 else f"WARNING {off*100:+.0f}%"
+        bad = bad or abs(off) > 0.10
+        print(f"  {name:26s} {ref:6.1f} {unit:5s} {val:7.1f}   {flag}")
+    print(f"  fit squash x {fit_xy[0]:.3f} y {fit_xy[1]:.3f}; total height {(top_-feet)*100:.1f} cm; head scale {scale:.3f}")
+    if bad:
+        print("WARNING: head is outside the real range by more than 10 percent - check it before painting or releasing")
+
+
+proportion_report()
 cam = bpy.data.objects.new("expcam", bpy.data.cameras.new("expcam"))
 cam.data.type = "ORTHO"
 cam.data.ortho_scale = body_top * 1.08
