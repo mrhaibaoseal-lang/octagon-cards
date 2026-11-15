@@ -27,15 +27,18 @@ LP = PRIV / "_lowpoly"
 WORK = LP / "paint"
 HEAD_Z = 1.545
 
-STYLE = ("a late-1990s PC action game character skin: low-resolution hand-painted texture made over photo reference, "
-         "clean readable shapes, flat colours with soft painted-in shading (light from above), slightly desaturated, "
-         "crisp edges, no photographic noise, no pores")
+STYLE = ("a late-1990s PC first-person-shooter character skin: a low-resolution texture assembled from real photographs "
+         "(photo-collage look, not a cartoon, not a clean illustration), photorealistic skin and fabric, with the shading "
+         "baked into the texture: dark creases and folds in the fabric, muscle definition and shadows under the pecs, "
+         "between the abs, in the elbows and knees, light from above; slightly dirty and worn, a little grime and sweat, "
+         "strong contrast, colours a bit desaturated toward grey")
 BODY_PROMPT = """The first image shows one low-polygon 3D character model from four angles on a pure green background,
 side by side from left to right: 1 front; 2 seen from his left side (he faces the left of the picture); 3 back;
 4 seen from his right side (he faces the right of the picture).
 Paint every view as the MMA fighter {name}, as {style}. The next image is a photo of him: copy his skin tone, short faded
-haircut and full dark beard, his chest, neck and arm tattoos as simplified dark grey shapes, red fight shorts with a gold
-pattern, black fingerless fight gloves, bare feet.
+haircut and full dark beard, his chest, neck and arm tattoos as faded dark grey ink, red fight shorts with a gold
+pattern and fabric folds, black fingerless fight gloves with worn leather creases, bare feet.
+The shorts must have NO logo, NO brand mark, NO emblem and NO lettering at all: only the red fabric and the gold pattern.
 VERY IMPORTANT: this is texture painting. Keep every figure exactly where it is, the same size, outline, pose and angle as
 the model; do not move, resize or redraw the outline, do not add anything outside it. Face, gloves, shorts, knees and feet
 must sit exactly on the model's own. All four must be the same man. Keep the background pure flat green #00FF00.
@@ -44,7 +47,8 @@ HEAD_PROMPT = """The first image shows one low-polygon 3D head from four angles 
 top left: front; top right: seen from his left side (profile facing left of the picture); bottom left: back;
 bottom right: seen from his right side (profile facing right of the picture).
 Paint every view as the MMA fighter {name}, as {style}. The next image is a photo of him for likeness: copy his skin
-tone, eyes, eyebrows, nose, lips, ears, short haircut with faded sides, hairline and full dark beard.
+tone, eyes, eyebrows, nose, lips, ears, short haircut with faded sides, hairline and full dark beard. Shading is painted
+into the skin: shadows in the eye sockets, under the nose, cheekbones and jaw, real skin texture, strong contrast.
 VERY IMPORTANT: this is texture painting. Keep every head exactly where it is, the same size, outline and angle as the
 model; eyes, nose, mouth, ears, hairline and beard must sit exactly on the model's own. Do not move, resize or redraw the
 outline. All four must be the same man. Keep the background pure flat green #00FF00. No text, no logos."""
