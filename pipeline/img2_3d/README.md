@@ -162,4 +162,5 @@
 - **頭皮顆粒（同日）**：`smooth_head.py --scalp`：髮根陰影不夠暗、過不了頭髮判斷，改成依位置圈頭皮（額頭中段以上整圈＋後腦到後頸，寬度限制在頭頂寬的 0.8 倍以避開耳朵）。上色後才磨的指令：`smooth_head.py volkanovski_arcane_paint_ar_ng.glb volkanovski_final.glb --scalp --brow-iter 0 --dark 0 --beard 0 --hue 0`（後三個把顏色判斷關掉，只磨頭皮）。坑：上色後連鬍子一起再磨一次，鬍子會冒出淺色斑點（凹縫裡補的顏色被翻出來）。光頭選手建議上色前就加 `--scalp`。結果 `volk_final_turn.png`：頭頂後腦平了，耳後上方剩少量顆粒。
 - **鬍子裡的膚色小坑（同日，使用者指出）**：鬍子凹縫裡的貼圖點沒有任何角度正對著畫到，補成了膚色。新 `fill_pits.py <head>_ng.glb paint/<mesh>`：用 `pos.npy` 找表面上的鄰居（TRELLIS 的 UV 島很碎，貼圖上的鄰居不是表面上的鄰居），周圍中位亮度低於 95 而自己亮 35 以上的點，改成深色鄰居的平均 → `<head>_ng_fp.glb`。Volkanovski 補了 72,776 點（共 312 萬），側面改善，3/4 角度下緣還剩幾顆。順序：`gemini_paint` → `degreen` → `fill_pits` → `smooth_head --scalp ...`。
 - 坑：`render_turntable.py` 的格子是照頭高取景的正方形，正側面的鼻尖會被格子邊裁掉，看起來像鼻子被切；要看側面用 `--head 1.0 --size 640` 再裁（`volk_final_profiles.png`）。
+- **鬍子淺色點沒修好（同日，使用者說完全沒效果）**：`fill_pits` 對看得到的淺點沒有作用，放寬門檻（`--dark 120～130`）會把太陽穴、耳旁、脖子補出深色斑，還會把眼睛塗暗，**只能用預設門檻、而且別期待它修鬍子**。先磨平再 `gemini_paint --reuse` 重投影同一張圖（`volkanovski_s2_paint_ar_ng.glb`，免費）正面變乾淨，但 3/4 的淺點一顆沒少。改貼圖沒反應 → 推測是鬍子網格的小破洞露出內側的面，還沒驗證。下一位有鬍子的選手：上色前先看灰模的鬍子有沒有破洞。
 
