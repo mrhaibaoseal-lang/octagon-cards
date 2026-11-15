@@ -158,4 +158,5 @@
 - 轉正後 `smooth_head` 能跑但量錯：整個半身高度被當成頭高（1.0），「鼻子」找到胸口，遮罩蓋到臉中段 32% 被守門擋下。`smooth_head`／`exaggerate_head` 的比例是照 Gemini 正面頭像的取景寫的。`fix_texture` 也把膚色拉到過曝（中位數 269）。
 - **結論**：真人照片直接跑只適合正面、取景和 Gemini 頭像差不多的照片。全身宣傳照多半是微側臉，照片路線不能當預設；還是走 `gen_head.py`（Gemini 正面頭像，Topuria 的做法）。
 - **改走 Gemini 正面頭像（同日，使用者同意，最後 1 次額度）**：`_source/volkanovski_ufc.png`（全身照裁 (420,0,1140,820)）→ `gen_head.py --fighter volkanovski`（不需要 `paint_skin.FIGHTERS`，沒動那個檔）→ `run_trellis2` 226 秒 → `fix_texture` → `smooth_head`（臉中段遮罩 2.2%，守門通過，眼睛都找到）→ 灰模 `clay_volkanovski_smooth.png`、`clay_volkanovski_gemini_real_fix.png`。從頭像到灰模約 5 分鐘，沒改任何程式。正面、左右對稱、有脖子肩膀；光頭的髮根和鬍子表面還是一粒粒（磨平沒磨掉）。**等使用者看頭型**；上色要 `gemini_paint --shape-ok`，還要先在 `paint_skin.FIGHTERS` 加他，額度已用完。
+- **上色（同日，使用者同意超出額度 1 次）**：`exaggerate_head --brow 0.007 --chin 0.005` → `gemini_paint.py --mesh volkanovski_arcane --fighter volkanovski --name "Alexander Volkanovski" --style painted --occlusion --thr 0.0001 --green-margin 2 --fill 12 --tag _ar --shape-ok`（新增 `--name`，選手不必在 `paint_skin.FIGHTERS`）→ `degreen.py` → `volk_paint_turn.png`。一次就對位，五官、鬍子、髮根陰影清楚；頭皮的髮根凹凸還在（TRELLIS 把髮根做成顆粒，`smooth_head` 沒磨平），額頭髮際和太陽穴有幾塊淺色。這位選手共用 Gemini 2 次（頭像、頭上色）。
 
