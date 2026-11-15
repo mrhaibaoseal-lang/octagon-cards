@@ -2,6 +2,13 @@
 
 > 格式見 `AGENTS.md` §1：最新在最上方，每筆約 5 行，只留 3 筆。舊方向的紀錄在 `docs/archive/HANDOFF_LEGACY.md` 與 `HANDOFF_ARCHIVE.md`。
 
+## 2026-11-15 · Claude Opus 5.5（低面數 v3：MPFB 共用全身灰模）
+- 新增 `pipeline/lowpoly/build_mpfb.py`：MPFB 肌肉型男性（`feather_muscle` 範本，170 cm）＋通用頭、保留眼球、手換方塊手套，先在對稱站姿減面（臉、手腕、肩膀多留面）再擺 v2 的正統架式，合成 `fighter`；`mpfb_sheet.py` 拼比較圖。
+- 結果 `_lowpoly/mpfb/mpfb_feather_muscle_cmp.png`：3,000／5,000／未減面三列，各 3/4、側、背、頭近照；沒有呼叫 Gemini。
+- 看得到的問題：3,000 面臉只剩幾塊大面、腿細有尖角；5,000 面臉讀得出眼鼻嘴耳，但腿和臀比未減面瘦一圈；身材比 Topuria 本人瘦；手套是方塊占位；後腳整個腳掌貼地；胯下是 MPFB 裸體形狀（之後畫短褲）。
+- 要使用者確認：選 3,000 或 5,000（或其他面數）、形狀可不可以；之後再決定是否加粗或改架式。
+- 下一步：使用者同意形狀後改 `paint_lowpoly.py` 讀 meta（head_z 1.44、鼻子位置）、加由上往下視角，問過再呼叫 Gemini 上色。
+
 ## 2026-11-15 · Claude Opus 5.5（低面數 v2：連續四肢＋照片拼貼質感）
 - 照使用者給的 1998 年射擊遊戲保全／白袍角色參考，`build_fighter.py` 重寫成只出灰模：手臂、腿各一條管子（環沿路徑平行移動、不扭），肩膀從上方圓頂長下來，胸肌斜方肌加厚，連指手套加拇指，2,314 三角形。
 - `paint_lowpoly.py` 提示詞改成照片拼貼、陰影皺褶畫進貼圖、輕微髒污、對比強偏灰、短褲禁止任何標誌；Gemini 2 次（約 NT$10）。
@@ -16,23 +23,3 @@
 - 還看得到：手腳是一節節直筒、關節有折線，肩膀方塊；短褲上 Gemini 還是畫了小標誌；後腦一條接縫；胸口刺青近看很糊（遠看可以）。
 - **等使用者看**：要不要走這條路。下一步若要：身體形狀做得更像人（肩、肘、膝的過渡），再換一位選手照跑看要多久。
 
-## 2026-11-15 · Claude Fable 5.2（40 位的做法：先看灰模、臉不磨）
-- 使用者問 40 位要不要換方法：Topuria 最符合想像，O'Malley 難在頭髮。決定畫風不變，先改兩個流程預設。
-- 做了：`gemini_paint.py` 沒有 `--shape-ok` 就不呼叫 Gemini，只出灰模 `clay_<mesh>.png`；`smooth_head.py` 臉中段不磨，頭髮遮罩蓋到臉中段超過 10% 就停（`--force` 可強制）；`exaggerate_head.py --jaw` 預設改 1.0。
-- 驗證：Topuria 遮罩 1.5%、照常輸出（遮罩只差 7 點）；O'Malley 實心頭 19% 被擋下、沒存檔；`gemini_paint` 不加 `--shape-ok` 停在灰模，`painted.png` 沒動、沒用額度。只有兩位選手的數字。
-- 還沒做：頭髮改成獨立髮型零件（等下一位難髮型選手再試）、身體共用體型範本。
-- 第三位：使用者選 Volkanovski。沒有 `_ufc.png` 也不在 `paint_skin.FIGHTERS`，只有全身照；裁頭（`inputs/volkanovski_photo.png`，(440,0,1120,455)，避開肩上的腰帶）直接跑 TRELLIS（免費，270 秒，要設 `HF_HOME=D:/img2_3d/hf`）→ 灰模 `_img2_3d/clay_volkanovski_photo_fix.png`：光頭、鬍子、鼻子、耳朵像本人。
-- 使用者看第一版灰模：形狀完全不對（側面臉凸又長像馬、下巴凹洞）。原因是裁太緊沒脖子肩膀；第二版留脖子肩膀、擦掉腰帶重跑 → `clay_volkanovski_photo2_fix.png`，側面正常很多、下巴沒洞，**等使用者看**。
-- 使用者說第二版可以、要加自動轉正：試了兩種算法都不行（細節在 `pipeline/img2_3d/README.md` 最後一節），腳本沒留。問題不是頭轉了角度，是微側臉照片生出的頭本身扭曲；`smooth_head` 的比例也只認 Gemini 頭像的取景。
-- 結論：照片路線不能當預設，Volkanovski 要走 `gen_head.py`（Gemini 正面頭像，同 Topuria）。先要在 `paint_skin.FIGHTERS` 加他（那個檔有 Gemini 未 commit 的修改，動之前先問）並準備 `_source/volkanovski_ufc.png`。
-- 使用者同意後用掉最後 1 次 Gemini 畫正面頭像：照原流程不改程式約 5 分鐘到灰模 `_img2_3d/clay_volkanovski_smooth.png`，正面對稱、守門通過（2.2%）；髮根和鬍子表面還是一粒粒。
-- 使用者看灰模：「應該可以試試看」。已做 `exaggerate_head --brow 0.007 --chin 0.005` → `volkanovski_arcane.glb`；`gemini_paint.py` 加 `--name`（不用改 `paint_skin.FIGHTERS`）和 Volkanovski 的 `HAIR`；四視角綠底圖已出（`paint/volkanovski_arcane/grid.png`），沒呼叫 Gemini。
-- 使用者同意超出額度再用 1 次：頭已上色、去綠邊 → `trellis2/volkanovski_arcane_paint_ar_ng.glb`，轉圈圖 `_img2_3d/volk_paint_turn.png`（一般光，不是三階卡通光）：五官、鬍子、髮根陰影都畫上了；頭皮表面一粒粒的凹凸還在，額頭髮際和太陽穴有幾塊淺色。**等使用者看**。
-- 使用者：效果比想的好，可以修。`smooth_head.py` 加 `--scalp`（光頭用，依位置圈頭皮磨掉髮根顆粒）→ `trellis2/volkanovski_final.glb`、`_img2_3d/volk_final_turn.png`：頭頂和後腦平了，鬍子沒動；耳朵後上方還有少量顆粒，髮際和太陽穴的淺色塊（貼圖）沒修。Topuria 不加 `--scalp` 輸出不變。
-- 使用者看了說：鬍子側面有膚色坑洞、鼻子被切掉。鼻子是轉圈圖格子太窄裁到鼻尖，放大圖 `_img2_3d/volk_final_profiles.png` 鼻子完整。鬍子的坑是真的：新 `fill_pits.py`（依表面鄰居把深色區裡偏亮的貼圖點補成鬍子色，補了 72,776 點）→ 重做 `volkanovski_final.glb`。**只改善一部分**：側面少了，3/4 角度下緣還看得到幾顆淺色點，鬍子表面仍一粒粒。
-- 使用者：完全沒效果，鬍子坑洞還是很嚴重。又試三次都沒解決：(1) `fill_pits` 放寬（`--dark 120 --gap 22`）＋上色後磨鬍子 → 太陽穴、耳旁多出深色斑；(2) 先磨平形狀（`smooth_head --scalp --hair-iter 60`）再把同一張 `painted.png` 用 `gemini_paint --reuse` 重投影 → `trellis2/volkanovski_s2_paint_ar_ng.glb`、`_img2_3d/volk_s2_views.png`：正面乾淨，3/4 與側面鬍子的淺色點原封不動；(3) 在它上面再跑 `fill_pits --dark 130 --gap 40 --k 96` → 淺點還是沒變，反而把眼睛塗暗、脖子多一塊深斑（`_fp` 版不要用）。
-- **鬍子淺點已診斷並處理（同日，另一個 session）**：頭是空心雙層殼，鬍子上有貫穿的小孔，淺點是從小孔看到頭對側沒畫到的內壁（射線檢查 12 顆中 10 顆如此；背面剔除、補邊界洞都沒用）。新 `pipeline/img2_3d/dark_inside.py ... --ymax -0.04` 把只能透過小孔看到的內壁塗成小孔周圍的鬍子色。
-- **目前最好的是 `trellis2/volkanovski_s2_paint_ar_ng_in.glb`**，並排圖 `_img2_3d/volk_beard_fix_cmp.png`（上起點、下修後）。驗證：8 個角度裡眼睛、眉毛、頭皮（y<300）零像素變動，正面零變動；3/4 兩側的大顆淺點消失。
-- 還剩：小孔本身還在（形狀沒補，近看是鬍子色的小凹點）；鬍子上緣靠耳朵有幾顆畫上去的淺色小點、左臉一塊法線朝內的小面仍是膚色；脖子下緣舊貼圖色帶沒動。**等使用者看並排圖。**
-- 使用者要求封孔，試了兩種都比 `_in` 版差（細節在 `pipeline/img2_3d/README.md` 最後一條）：刪內壁＋蓋開口變黑點；上色後體素重建（`volkanovski_solid.glb`）鬍子平了，但額頭、太陽穴冒粉色凸塊，脖子出洞。**目前最好的仍是 `_in` 版。**
-- 下一步：要封孔就在上色前對灰模體素重建、先修好凸塊，再 `gemini_paint --reuse` 重投影（免費，沒試過）；否則接受 `_in` 版、往身體走（要 Gemini，先問）。

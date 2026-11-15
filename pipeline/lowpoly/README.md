@@ -12,3 +12,18 @@ uv run --no-project --with google-genai --with google-auth --with pillow --with 
 - `paint_lowpoly.py`（v2 提示詞改成照片拼貼、陰影皺褶畫進貼圖、輕微髒污、對比強偏灰、短褲禁止任何標誌）：灰模拍全身四視角（16:9）和頭四視角（2×2），`--call` 才呼叫 Gemini（2 次，約 NT$10），把畫好的圖依面朝向、遮擋投影回 UV（頭在貼圖裡放大 3 倍），輸出 `_lowpoly/paint/texture.png` 和 `g_*.png`。
 - 坑：照片透明背景是黑色，要先往外補色；鼻子耳朵的面方向要朝外，不然正面照不到、會借到旁邊的紅色；頭的側面圖 Gemini 會把鼻子畫在別處，鼻子只取正面；綠幕邊緣要多切 3 像素。
 - 換選手：改 `--name`、`--body-photo`、`--head-photo` 和提示詞裡的外觀描述；改了網格要刪 `paint/` 裡的 atlas.blend、pos/nrm/vis.npy 重來。
+
+## v3：MPFB 共用全身（2026-11-15，灰模，等使用者選面數）
+
+程式拉管子做不出像樣的人體，改成 MPFB 生一個共用全身，模型只修一次，新選手只換貼圖。
+
+```
+blender -b -P pipeline/lowpoly/build_mpfb.py -- <private 絕對路徑>/_lowpoly/mpfb [--preset feather_muscle] [--tris 3000,5000] [--keep 3]
+uv run --no-project --with pillow python -I pipeline/lowpoly/mpfb_sheet.py prototype/web/assets/private/_lowpoly/mpfb [--tris 3000,5000]
+```
+
+- 流程：MPFB 人體（巨集＋`BULK_TARGETS` 加肌肉）→ 加 mixamo 骨架（這一步需要 MPFB 的關節小方塊，輔助幾何要在它之後才刪）→ 只留皮膚和兩顆眼球、刪掉手 → 在對稱站姿減面（`use_symmetry`，`keep` 群組讓臉、手腕、肩膀多留面）→ 擺架式（`STANCE` 是方向不是座標，換身高照用）→ 套用骨架、加方塊手套（超橢球＋護腕）→ 腳貼地、平面著色、物件名 `fighter`。
+- 體型範本只是 `PRESETS` 的參數（身高、體重、muscle、bulk、proportions、額外 target、手套大小）；`feather_muscle` 是 Topuria 型，其他三個還沒看過。
+- 輸出：`mpfb_<preset>_<面數>.blend`（含相機，`paint_blender.py render` 會用）、四張灰模、`mpfb_<preset>_meta.json`（`head_z` 約 1.44、鼻子位置、頭中心）。`--tris` 給比網格大的數字就是不減面。
+- 坑：在擺好的姿勢上減面會左右不對稱、身體被削成細竹竿，要先減再擺；EEVEE 灰模有大塊黑影像破洞，改用 Workbench 看形狀；用骨架彎手指握拳很難調，減面後也只剩一團，直接換手套。
+- 接上色前要改 `paint_lowpoly.py`：讀 meta 的 `head_z` 和鼻子位置（不再寫死 1.545）、`clay` 路徑改成選定的 blend、加一個由上往下的視角（v2 有 24% 的面沒上到色，腳和肩頂最明顯）。
