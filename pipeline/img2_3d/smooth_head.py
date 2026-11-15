@@ -26,6 +26,7 @@ ap.add_argument("--beard", type=float, default=0.55, help="stubble = neighbourho
 ap.add_argument("--hue", type=float, default=1.2, help="hair = neighbourhood chromaticity this far from the cheek skin (x10); catches dyed hair, 0 = off")
 ap.add_argument("--eye-r", type=float, default=0.03, help="eyeball protection radius, as a fraction of head height")
 ap.add_argument("--brow-up", type=float, default=0.09, help="brow band reaches this far above the eye (x head height)")
+ap.add_argument("--scalp", action="store_true", help="shaved head: also smooth the whole scalp (stubble grains), chosen by position")
 ap.add_argument("--face-max", type=float, default=0.1, help="stop when the hair mask covers more than this share of the bare mid-face")
 ap.add_argument("--force", action="store_true", help="export even when the mask covers the face")
 ap.add_argument("--debug-lum",choices=["raw", "blur"], default=None, help="with --debug: show luminance instead")
@@ -171,6 +172,18 @@ for e in eyes:
 brow = blur(brow, ring(4)) * keep_eye
 
 w_hair = np.maximum(hair, brow)
+if a.scalp:
+    # Shaved heads: TRELLIS turns the stubble into grains all over the scalp, and stubble is not dark enough for the
+    # hair test. Take the scalp by position: everything above mid-forehead, plus the back of the head down to the
+    # nape, ears left out (they stick out sideways past the skull's width at the crown).
+    up = P[:, 2] > ez
+    y0, y1 = P[up, 1].min(), P[up, 1].max()
+    crown = P[:, 2] > ez + 0.10 * Hh
+    halfw = np.percentile(np.abs(P[crown, 0] - cx), 99)
+    back = (P[:, 1] > y0 + 0.6 * (y1 - y0)) & (P[:, 2] > ez - 0.12 * Hh) & (np.abs(P[:, 0] - cx) < 0.8 * halfw)
+    scalp = np.clip(blur((crown | back).astype(float), ring(6)) * 1.5, 0, 1) * keep_eye
+    print("scalp verts", int((scalp > 0.5).sum()))
+    w_hair = np.maximum(w_hair, scalp)
 print("vertices", n, "hair/beard/brow", int((hair > 0.5).sum()), "brow band", int((brow > 0.5).sum()),
       "eye locked", int((keep_eye == 0).sum()))
 

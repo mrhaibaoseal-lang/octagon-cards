@@ -14,7 +14,8 @@
 - 使用者同意後用掉最後 1 次 Gemini 畫正面頭像：照原流程不改程式約 5 分鐘到灰模 `_img2_3d/clay_volkanovski_smooth.png`，正面對稱、守門通過（2.2%）；髮根和鬍子表面還是一粒粒。
 - 使用者看灰模：「應該可以試試看」。已做 `exaggerate_head --brow 0.007 --chin 0.005` → `volkanovski_arcane.glb`；`gemini_paint.py` 加 `--name`（不用改 `paint_skin.FIGHTERS`）和 Volkanovski 的 `HAIR`；四視角綠底圖已出（`paint/volkanovski_arcane/grid.png`），沒呼叫 Gemini。
 - 使用者同意超出額度再用 1 次：頭已上色、去綠邊 → `trellis2/volkanovski_arcane_paint_ar_ng.glb`，轉圈圖 `_img2_3d/volk_paint_turn.png`（一般光，不是三階卡通光）：五官、鬍子、髮根陰影都畫上了；頭皮表面一粒粒的凹凸還在，額頭髮際和太陽穴有幾塊淺色。**等使用者看**。
-- 下一步：使用者覺得可以 → 做身體（MPFB、`paint_body`、`attach_head --toon`，要再用 Gemini，先問）；頭皮凹凸要修就在 `smooth_head` 對頭頂多磨（形狀問題，不用 Gemini）。
+- 使用者：效果比想的好，可以修。`smooth_head.py` 加 `--scalp`（光頭用，依位置圈頭皮磨掉髮根顆粒）→ `trellis2/volkanovski_final.glb`、`_img2_3d/volk_final_turn.png`：頭頂和後腦平了，鬍子沒動；耳朵後上方還有少量顆粒，髮際和太陽穴的淺色塊（貼圖）沒修。Topuria 不加 `--scalp` 輸出不變。
+- 下一步：**等使用者看**；之後做身體（MPFB、`paint_body`、`attach_head --toon`，要再用 Gemini，先問）。
 
 ## 2026-11-15 · Claude Opus 5.5（O'Malley 臉貼回原始網格）
 - 做了：`keep_face.py` 重寫分類（輸入圖投影、色相判斷紅粉藍頭髮、從鼻尖長出臉、刺青小島算臉、破洞補平）；`solid_head.py` 加 `--no-uv`。
