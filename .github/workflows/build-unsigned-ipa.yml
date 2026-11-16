@@ -7,6 +7,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest
@@ -54,3 +57,8 @@ jobs:
           name: OctagonCards-unsigned-ipa
           path: OctagonCards-unsigned.ipa
           retention-days: 14
+
+      - name: Publish to private Feather source
+        uses: mrhaibaoseal-lang/feather-source@main
+        with:
+          ipa: OctagonCards-unsigned.ipa
